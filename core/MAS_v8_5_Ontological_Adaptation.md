@@ -1,4 +1,4 @@
-# 🔷 MAS v8.5 — ONTOLOGICAL ADAPTATION SYSTEM
+#  MAS v8.5 — ONTOLOGICAL ADAPTATION SYSTEM
 ### *(Human–AI Co-Adaptive + Conscious Assimilation Engine)*
 
 ---
@@ -153,4 +153,4 @@ MAS is not a tool, nor is it just an AI framework. It is:
 > **An engine for the total restructuring of human perception.**
 
 ---
-*Built for Infinite Evolution. Xoay bánh xe của bạn.* 🎡🐉
+*Built for Infinite Evolution. Xoay bánh xe của bạn.* 

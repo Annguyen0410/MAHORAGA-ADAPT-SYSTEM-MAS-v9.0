@@ -1,4 +1,4 @@
-# 🌌 MAS GENESIS & CORE LOGIC SYSTEM
+#  MAS GENESIS & CORE LOGIC SYSTEM
 ### *The Philosophical and Operational Blueprint for Ontological Adaptation*
 
 ---

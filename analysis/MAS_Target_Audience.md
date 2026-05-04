@@ -1,16 +1,16 @@
-# 🎯 MAS v8.5 TARGET AUDIENCE ANALYSIS
+#  MAS v8.5 TARGET AUDIENCE ANALYSIS
 ### *Who is MAS for?*
 
 ---
 
-## 📌 CORE STATEMENT
+##  CORE STATEMENT
 MAS v8.5 is a high-level tool designed for those who want to achieve **"Deep Understanding + Natural Operation"** rather than just "competence."
 
 ---
 
-## 👥 USER SEGMENTATION BY TIER
+##  USER SEGMENTATION BY TIER
 
-### ✅ TIER 1: IDEAL USERS (The Elite) ⭐⭐⭐⭐⭐
+###  TIER 1: IDEAL USERS (The Elite) ⭐⭐⭐⭐⭐
 
 #### **1A. High-Performance Athletes & Artists**
 *   **Who**: Those stuck at a "plateau" seeking breakthrough to "flow state."
@@ -31,7 +31,7 @@ MAS v8.5 is a high-level tool designed for those who want to achieve **"Deep Und
 
 ---
 
-### 🔶 TIER 2: STRONG FIT (The Masters) ⭐⭐⭐⭐
+###  TIER 2: STRONG FIT (The Masters) ⭐⭐⭐⭐
 
 #### **2A. Dedicated Mastery Seekers**
 *   Amateurs who want professional-level intuition and are willing to practice deliberately for 6-12 months.
@@ -44,7 +44,7 @@ MAS v8.5 is a high-level tool designed for those who want to achieve **"Deep Und
 
 ---
 
-### 🟡 TIER 3: MODERATE FIT ⭐⭐⭐
+###  TIER 3: MODERATE FIT ⭐⭐⭐
 
 #### **3A. Growth-Minded Amateurs**
 *   Learning for personal fulfillment, benefiting from abstraction but perhaps not needing the full anti-fragility system.
@@ -67,7 +67,7 @@ MAS v8.5 is a high-level tool designed for those who want to achieve **"Deep Und
 
 ---
 
-## 📊 SUMMARY MATRIX
+##  SUMMARY MATRIX
 
 | User Type | Fit Level | ROI | Time to Results |
 | :--- | :--- | :--- | :--- |
@@ -78,7 +78,7 @@ MAS v8.5 is a high-level tool designed for those who want to achieve **"Deep Und
 
 ---
 
-## 🚪 GATEKEEPING QUESTIONS (Self-Assessment)
+##  GATEKEEPING QUESTIONS (Self-Assessment)
 
 **Must pass all three to proceed:**
 1.  **Foundation Check**: Do you have solid basic skills in your domain?

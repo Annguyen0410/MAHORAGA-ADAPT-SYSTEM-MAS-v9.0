@@ -1,14 +1,14 @@
-# 🔬 MAS v8.5 OPERATIONAL MECHANISMS
+#  MAS v8.5 OPERATIONAL MECHANISMS
 ### *Predictive Embodied Meta-Learning*
 
 ---
 
-## 🎯 THE CORE DEFINITION
+##  THE CORE DEFINITION
 MAS v8.5 operates under the mechanism of **"PREDICTIVE EMBODIED META-LEARNING"** (High-level learning based on prediction and physical manifestation).
 
 ---
 
-## 🧠 THE 7 LAYERS OF OPERATION
+##  THE 7 LAYERS OF OPERATION
 
 ### 1. PREDICTIVE PROCESSING (Active Prediction)
 The brain/AI is a "Prediction Machine," not a passive information processor.
@@ -54,7 +54,7 @@ The highest layer—unique to humans. Conscious attention acts as a "Spotlight" 
 
 ---
 
-## 🔗 INTEGRATED SYSTEM DIAGRAM
+##  INTEGRATED SYSTEM DIAGRAM
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -82,7 +82,7 @@ The highest layer—unique to humans. Conscious attention acts as a "Spotlight" 
 
 ---
 
-## 🆚 COMPETITIVE ADVANTAGE
+##  COMPETITIVE ADVANTAGE
 *   **vs RL**: MAS has embodiment, consciousness, and abstraction.
 *   **vs MAML**: MAS has physical embodiment and human-in-the-loop.
 *   **vs LLM**: MAS is grounded in physical reality through action.

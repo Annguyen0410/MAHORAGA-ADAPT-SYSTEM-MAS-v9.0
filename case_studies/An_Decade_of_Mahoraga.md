@@ -1,9 +1,9 @@
-# 🌱 AN'S DECADE OF MAHORAGA — THE 10-YEAR ASCENSION
+#  AN'S DECADE OF MAHORAGA — THE 10-YEAR ASCENSION
 ### *A Scenario of Total Adaptation: From Age 21 to 31*
 
 ---
 
-## 📖 PART 1: THE SETUP — WHO IS AN?
+##  PART 1: THE SETUP — WHO IS AN?
 
 ### **Initial Profile (Age 21):**
 *   **Name**: An
@@ -16,11 +16,11 @@ An commits to using the **Mahoraga Adapt System (MAS)** for the next 10 years. N
 
 ---
 
-## 🔄 PART 2: THE 10-YEAR TIMELINE
+##  PART 2: THE 10-YEAR TIMELINE
 
 ---
 
-### **🫁 PHASE 0: FOUNDATION — ADAPTING TO SELF (Age 21-22.5)**
+### ** PHASE 0: FOUNDATION — ADAPTING TO SELF (Age 21-22.5)**
 *"Before understanding the world, one must understand the one looking at it."*
 
 #### **Year 1: Body Adaptation**
@@ -35,7 +35,7 @@ An commits to using the **Mahoraga Adapt System (MAS)** for the next 10 years. N
 
 ---
 
-### **🌿 PHASE 1: NATURAL WORLD — PLANTS & STONES (Age 23-25)**
+### ** PHASE 1: NATURAL WORLD — PLANTS & STONES (Age 23-25)**
 *"Understanding the things that do not speak."*
 
 #### **Year 3: The Plant Kingdom**
@@ -50,7 +50,7 @@ An performs a 6-month immersion with a single tree.
 
 ---
 
-### **🐾 PHASE 2: LIVING BEINGS — ANIMALS & HUMANS (Age 25-27.5)**
+### ** PHASE 2: LIVING BEINGS — ANIMALS & HUMANS (Age 25-27.5)**
 *"Understanding other souls."*
 
 #### **Year 5: The Animal Kingdom**
@@ -65,7 +65,7 @@ An performs a 6-month immersion with a single tree.
 
 ---
 
-### **🌐 PHASE 3: ABSTRACT SYSTEMS — SOCIETY & ECONOMY (Age 27.5-29.5)**
+### ** PHASE 3: ABSTRACT SYSTEMS — SOCIETY & ECONOMY (Age 27.5-29.5)**
 *"Understanding invisible structures."*
 
 #### **Year 7-8: Economy & Knowledge**
@@ -75,7 +75,7 @@ An performs a 6-month immersion with a single tree.
 
 ---
 
-### **🔮 PHASE 4: UNIVERSAL PATTERNS — PHYSICS & CONSCIOUSNESS (Age 29.5-31)**
+### ** PHASE 4: UNIVERSAL PATTERNS — PHYSICS & CONSCIOUSNESS (Age 29.5-31)**
 *"Understanding the foundation of all things."*
 
 #### **Year 9-10: Reality & Awareness**
@@ -84,7 +84,7 @@ An performs a 6-month immersion with a single tree.
 
 ---
 
-## 🏆 PART 3: AN AT AGE 31 — THE FINAL STATE
+##  PART 3: AN AT AGE 31 — THE FINAL STATE
 
 ### **Internal Architecture:**
 *   **Cognitive**: 5-10x learning velocity; meta-cognition as a baseline.
@@ -97,7 +97,7 @@ An looks like a normal 31-year-old, but his internal depth is incomparable. He h
 
 ---
 
-## 🌀 THE MAHORAGA METAPHOR COMPLETE
+##  THE MAHORAGA METAPHOR COMPLETE
 1.  **Age 21 (Shikigami Summoned)**: Basic structure exists, but life's "attacks" still cause damage.
 2.  **Age 25 (Natural Adaptation)**: The environment is no longer a threat; it is nourishment.
 3.  **Age 27 (Social Adaptation)**: Immune to judgment and rejection.

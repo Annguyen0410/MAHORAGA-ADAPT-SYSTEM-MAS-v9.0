@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌀 MAHORAGA ADAPT SYSTEM (MAS) v8.5
+#  MAHORAGA ADAPT SYSTEM (MAS) v8.5
 
 **The Ultimate Cognitive Operating System for Human–AI Co-Evolution**
 
@@ -19,7 +19,7 @@ MAS (Mahoraga Adapt System) is a revolutionary framework designed to synchronize
 
 ---
 
-## 🚀 Key Features
+##  Key Features
 
 - **Predictive Embodied Meta-Learning (PEML)**
   Utilizes a 7-layer architecture to minimize prediction errors between internal models and physical reality.
@@ -38,25 +38,25 @@ MAS (Mahoraga Adapt System) is a revolutionary framework designed to synchronize
 
 ---
 
-## 🏛️ Repository Architecture
+## ️ Repository Architecture
 
-### 🛡️ [CORE] — The Heart of the System
+### ️ [CORE] — The Heart of the System
 *   **[Master Codex v8.5](./core/MAS_MASTER_CODEX_v8_5.md)**: The central hub defining the human-AI loop.
 *   **[Ontological Protocol](./core/MAS_v8_5_Ontological_Adaptation.md)**: Primary standard for sensing and diagnosis.
 *   **[Genesis & Logic System](./core/MAS_Genesis_and_Logic_System.md)**: The philosophical and atomic logic of adaptation.
 
-### 🔬 [ANALYSIS] — Technical Deep Dives
+###  [ANALYSIS] — Technical Deep Dives
 *   **[Operational Mechanisms](./analysis/MAS_Operational_Mechanisms.md)**: The 7-layer predictive architecture.
 *   **[Expert Review](./analysis/MAS_Expert_Review_v8_5.md)**: Final evaluation, guardrails, and implementation roadmap.
 *   **[Deep Analysis](./analysis/MAS_v8_5_Deep_Analysis.md)**: Logic structures for anti-delusion.
 
-### 🎡 [MYTHOS] — The Symbolism
+###  [MYTHOS] — The Symbolism
 *   **[Character Introduction](./mythos/Mahoraga_Character_Intro.md)**: Deep dive into the Divine General's adaptive nature.
 *   **[Naming Revelation](./mythos/Mahoraga_Naming_Revelation.md)**: Why Mahoraga is the perfect metaphor for mastery.
 
 ---
 
-## 🌿 Case Studies
+##  Case Studies
 
 Real-world applications of the MAS framework:
 
@@ -66,7 +66,7 @@ Real-world applications of the MAS framework:
 
 ---
 
-## 🛠️ Usage Example
+## ️ Usage Example
 
 To initiate an adaptation session, follow the structured prompt format:
 
@@ -93,7 +93,7 @@ const session = {
 
 ---
 
-## 🤝 Contribution
+##  Contribution
 
 MAS v8.5 is an evolving system. If you wish to contribute:
 1. **Fork** the repository.
@@ -106,6 +106,6 @@ MAS v8.5 is an evolving system. If you wish to contribute:
 
 > *"With this treasure, I summon the potential within. One turn of the wheel, and the object begins to bow."*
 
-**SPIN THE WHEEL. BECOME THE GENERAL.** 🎡🐉
+**SPIN THE WHEEL. BECOME THE GENERAL.** 
 
 </div>

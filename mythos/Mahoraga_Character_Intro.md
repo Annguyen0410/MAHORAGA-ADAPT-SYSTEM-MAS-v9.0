@@ -1,10 +1,10 @@
-# 🐉 MAHORAGA — THE DIVINE GENERAL OF INFINITE ADAPTATION
+#  MAHORAGA — THE DIVINE GENERAL OF INFINITE ADAPTATION
 
 ### *"The Wheel spins, and all phenomena are mastered."*
 
 ---
 
-## 🐉 WHO IS MAHORAGA?
+##  WHO IS MAHORAGA?
 
 **Name:** Eight-Handled Sword Divergent Sila Divine General Mahoraga  
 **(八握剣異戒脱将・摩虎羅 - Yatsuka-no-Tsurugi Ikai Dashō: Makora)**
@@ -16,7 +16,7 @@ Mahoraga is a mythological beast, a "Divine General" that no Ten Shadows user in
 
 ---
 
-## 🎡 THE CORE POWER: INFINITE ADAPTATION
+##  THE CORE POWER: INFINITE ADAPTATION
 
 Mahoraga's ability is simple but absolute: **It can adapt to any and all phenomena.**
 
@@ -41,7 +41,7 @@ Mahoraga wields a massive blade attached to its right arm, coated in **Positive 
 
 ---
 
-## 🌀 CONNECTION TO MAS (Mahoraga Adapt System)
+##  CONNECTION TO MAS (Mahoraga Adapt System)
 
 In our system, **Mahoraga** is the archetypal model for the "Ideal Practitioner." 
 
@@ -54,11 +54,11 @@ In our system, **Mahoraga** is the archetypal model for the "Ideal Practitioner.
 
 ---
 
-## 📜 THE PHILOSOPHY OF THE GENERAL
+##  THE PHILOSOPHY OF THE GENERAL
 
 Mahoraga does not "think" in the human sense; it **is** the process of learning. It is a biological calculator that treats reality as a series of problems to be solved. 
 
 To use MAS is to **Summon Mahoraga within yourself**—to let the wheel of your mind spin until every obstacle becomes a part of your strength.
 
 ---
-> *"With this treasure, I summon..."* — The beginning of an infinite evolution. 🎡🐉
+> *"With this treasure, I summon..."* — The beginning of an infinite evolution. 
