@@ -56,6 +56,77 @@ MAS (Mahoraga Adapt System) is a revolutionary framework designed to synchronize
 
 ---
 
+## Demo (Try It)
+
+This repo includes a local interactive demo UI (no external AI calls, no internet required).
+
+### Where the demo lives
+- UI: `index.html`
+- Style: `style.css`
+- Logic: `app.js`
+
+### How to run
+**Option A (fastest):** open `index.html` in Chrome / Edge / Firefox.
+
+**Option B (recommended):** run a local server from the repo root, then open:
+- `http://localhost:5500/index.html`
+
+Command (Windows, from this folder):
+```bat
+python -m http.server 5500
+```
+
+### How to use the demo (step-by-step)
+1. Go to **Roadmap Builder**.
+2. In **Session Target**, fill:
+   - **Target, object, environment, or concept** (keep it specific)
+   - **Domain**
+   - **Adaptation goal**
+   - (Optional) **Skill level**, **Historical patterns**, **Previous adaptation attempts**
+3. Scroll to **Step 1: Human Operational Capture** and fill any of these (best is to fill most):
+   - **Observed properties**
+   - **Evaluation**
+   - **Description**
+   - **Test performed**
+   - **Test result**
+   - **Environment/context**
+   - **Measured signals** (numbers if you have them)
+   - **Failure or constraint type**
+4. Click **Save Human Capture**.
+5. Click **Generate** under **Step 2: AI Property Assessment**.
+6. Click **Generate** under **Step 3: Adaptive Roadmap**.
+7. (Optional) Edit the roadmap in the **roadmap editor** textarea, then:
+   - Click **Save Roadmap Template** to store it in **Template Memory**, or
+   - Click **Copy Packet** to copy the complete MAS packet (you can always copy manually from the textbox if clipboard is blocked).
+
+### Notes
+- The demo saves session/template data in your browser via `localStorage`.
+- Roadmaps are generated deterministically from the text you provide (no network requests). 
+
+### Strong Test Example
+Use this example if you want to quickly verify that the demo can turn raw human observation into a useful assessment and roadmap.
+
+**Session Target**
+- **Target, object, environment, or concept:** Laptop keyboard actuation consistency during fast typing
+- **Domain:** Physical skill / tool interaction
+- **Adaptation goal:** Reduce accidental double presses and missed keys while maintaining 90+ WPM typing speed
+- **Skill level:** 4
+- **Historical patterns:** Errors increase after 20 minutes; left ring finger misses `S` and `W`; right pinky over-presses Enter and Backspace
+- **Previous adaptation attempts:** Tried typing slower, changing chair height, and switching keyboards; speed improved briefly but errors returned under pressure
+
+**Step 1: Human Operational Capture**
+- **Observed properties:** Keys require a shallow press, but my fingers continue pushing after actuation. Wrists hover high, shoulders tense, and error bursts happen when I rush.
+- **Evaluation:** The main issue is not knowing the exact actuation threshold. I treat every key like it needs a full-force bottom-out press.
+- **Description:** During normal typing I feel smooth for the first 5 minutes, then my left hand starts lagging behind my right hand. When correcting mistakes, I hit Backspace too hard and lose rhythm.
+- **Test performed:** Typed a 3-minute paragraph test at normal speed, then repeated it while intentionally pressing only until I felt the key trigger.
+- **Test result:** Normal test: 94 WPM, 91% accuracy, 18 Backspace presses, 7 missed letters. Light-actuation test: 86 WPM, 96% accuracy, 9 Backspace presses, 2 missed letters.
+- **Environment/context:** Laptop on desk, external monitor, elbows below desk height, late evening session after coding for 2 hours.
+- **Measured signals:** 94 WPM baseline, 91% accuracy, 18 corrections in 3 minutes, finger fatigue 6/10, shoulder tension 7/10.
+- **Failure or constraint type:** Execution failure with context fatigue; the model of the keyboard is too force-heavy for the actual switch behavior.
+
+
+---
+
 ##  Case Studies
 
 Real-world applications of the MAS framework:
