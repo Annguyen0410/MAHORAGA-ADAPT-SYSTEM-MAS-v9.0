@@ -1,0 +1,21 @@
+name: Demo Workflow
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run demo script
+        run: |
+          echo "GitHub Actions demo workflow is running"
+          echo "Repository root contents:"
+          ls -la
+          echo "Done."
