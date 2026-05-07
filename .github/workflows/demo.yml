@@ -1,4 +1,4 @@
-name: Demo Workflow
+name: Demo Multi-OS Workflow
 
 on:
   push:
@@ -7,15 +7,52 @@ on:
     branches: ["main"]
 
 jobs:
-  hello:
-    runs-on: ubuntu-latest
+  demo:
+    name: Demo on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run demo script
+      - name: Show environment
         run: |
-          echo "GitHub Actions demo workflow is running"
-          echo "Repository root contents:"
-          ls -la
-          echo "Done."
+          echo "Running on: $RUNNER_OS"
+          echo "Shell: $SHELL"
+          echo "Workspace: $GITHUB_WORKSPACE"
+        shell: bash
+
+      - name: List repository files
+        run: |
+          echo "--- List files in repository root ---"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            dir
+          else
+            ls -la
+          fi
+        shell: bash
+
+      - name: Demo Windows CMD command
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          echo --- Demo command output ---
+          echo Running Windows command: ver
+          ver
+          echo.
+          echo Listing current directory using dir:
+          dir
+
+      - name: Demo Unix shell command
+        if: runner.os != 'Windows'
+        run: |
+          echo "--- Demo command output ---"
+          echo "Running Unix command: uname -a"
+          uname -a
+
+      - name: Final confirmation
+        run: |
+          echo "Demo workflow completed successfully on $RUNNER_OS"
