@@ -4,18 +4,19 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MAS Knowledge Graph + Roadmap Trainer</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
     <link rel="stylesheet" href="style.css">
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Application navigation">
-        <div class="brand">
-          <div class="brand-mark" aria-hidden="true">MAS</div>
-          <div>
-            <h1>Mahoraga Adapt System</h1>
-            <p>Manufacturing Adaptive Programming</p>
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">MAS</div>
+            <div>
+              <h1>Adaptation Trainer</h1>
+              <p>Learn to adapt to anything — objects, tools, environments, people, ideas</p>
+            </div>
           </div>
-        </div>
 
         <nav class="nav-list" aria-label="Primary">
           <button class="nav-button active" type="button" data-view="graph">Knowledge Graph</button>
@@ -25,9 +26,23 @@
         </nav>
         <button class="help-button" type="button" id="open-background">Background / How To Use</button>
 
+        <div class="rate-limit-badge" id="rate-limit-badge">
+          <div class="rate-limit-header">
+            <span class="rate-limit-label">Gemma AI</span>
+            <span class="rate-limit-status" id="api-status-indicator">●</span>
+          </div>
+          <div class="rate-limit-body">
+            <span class="rate-limit-remaining" id="rate-limit-remaining">--</span>
+            <span class="rate-limit-text" id="rate-limit-text">calls remaining</span>
+          </div>
+          <div class="rate-limit-bar">
+            <div class="rate-limit-fill" id="rate-limit-fill" style="width:100%"></div>
+          </div>
+        </div>
+
         <div class="system-note">
-          <strong>Two-layer MAS</strong>
-          <span>Mahoraga is the metaphor. Manufacturing Adaptive Programming is the practical engine: human capture, AI-style assessment, roadmap, then adaptation.</span>
+          <strong>How it works</strong>
+          <span>1. Describe what you want to adapt to → 2. Write down what you notice → 3. Get a step-by-step plan to improve → 4. Run the plan, track results, repeat.</span>
         </div>
       </aside>
 
@@ -81,155 +96,177 @@
         <section class="view" id="trainer-view" aria-labelledby="trainer-title">
           <header class="view-header">
             <div>
-              <p class="section-label">Roadmap Builder</p>
-              <h2 id="trainer-title">Human Capture -> AI Assessment -> Adaptive Roadmap</h2>
+              <p class="section-label">Trainer</p>
+              <h2 id="trainer-title">Adapt to anything, step by step</h2>
             </div>
-            <button class="ghost-button" type="button" id="clear-session">Clear Current Session</button>
           </header>
 
-          <div class="trainer-grid">
-            <section class="panel">
-              <h3>Session Target</h3>
-              <form id="session-form" class="stacked-form">
-                <label>
-                  Target, object, environment, or concept
-                  <input id="target-name" type="text" maxlength="80" placeholder="Example: pencil pressure control">
-                  <span class="input-note">Name the exact thing you want to adapt to. Keep it specific, not broad.</span>
-                </label>
-                <label>
-                  Domain
-                  <select id="target-domain">
-                    <option value="object">Physical object</option>
-                    <option value="environment">Environment</option>
-                    <option value="concept">Concept or mental model</option>
-                    <option value="tool">Tool or instrument</option>
-                    <option value="social">Human or social system</option>
-                  </select>
-                  <span class="input-note">Domain changes how the AI-style roadmap thinks about success, failure, and drills.</span>
-                </label>
-                <label>
-                  Adaptation goal
-                  <textarea id="target-goal" rows="3" placeholder="What should improve after adaptation?"></textarea>
-                  <span class="input-note">Describe the final capability you want, such as smoother control, less fatigue, better transfer, or clearer understanding.</span>
-                </label>
-                <label>
-                  Skill level self-assessment (1-10)
-                  <input id="skill-level" type="number" min="1" max="10" step="1" placeholder="Example: 3">
-                  <span class="input-note">Use your honest current level. This helps the roadmap avoid drills that are too advanced.</span>
-                </label>
-                <label>
-                  Historical patterns
-                  <textarea id="historical-patterns" rows="3" placeholder="Example: When I focus on precision, my grip tightens automatically."></textarea>
-                  <span class="input-note">Record repeated problems you have noticed before this session.</span>
-                </label>
-                <label>
-                  Previous adaptation attempts
-                  <textarea id="previous-attempts" rows="3" placeholder="Example: Tried gripping higher, relaxing hand, changing pencil."></textarea>
-                  <span class="input-note">List what you already tried so the roadmap does not repeat failed approaches blindly.</span>
-                </label>
-                <button class="primary-button" type="submit">Start or Update Session</button>
-              </form>
-            </section>
-
-            <section class="panel">
-              <h3>Current Session</h3>
-              <div class="session-summary" id="session-summary"></div>
-            </section>
+          <!-- quick guide -->
+          <div class="guide-banner">
+            <div class="guide-title">📋 How this works</div>
+            <div class="guide-steps">
+              <span><strong>1.</strong> Name what you want to adapt to</span>
+              <span>→</span>
+              <span><strong>2.</strong> Write what you observe</span>
+              <span>→</span>
+              <span><strong>3.</strong> Click one button → get a plan</span>
+              <span>→</span>
+              <span><strong>4.</strong> Run the plan, track results</span>
+            </div>
           </div>
 
-          <section class="panel turn-panel">
-            <div class="panel-heading">
-              <div>
-                <p class="section-label">Step 1</p>
-                <h3>Human Operational Capture</h3>
-              </div>
-              <span id="capture-status">No capture saved</span>
-            </div>
-            <form id="capture-form" class="turn-form">
-              <label>
-                Observed properties
-                <textarea id="observed-properties" rows="3" placeholder="Material, shape, texture, behavior, tone, friction, resistance, visible constraints."></textarea>
-                <span class="input-note">Only write what you can directly see, hear, feel, or measure. This is raw evidence.</span>
-              </label>
-              <label>
-                Evaluation
-                <textarea id="evaluation" rows="3" placeholder="What seems stable, weak, strong, risky, flexible, noisy, or hard to control?"></textarea>
-                <span class="input-note">Interpret the evidence: what seems important, unstable, costly, or controllable?</span>
-              </label>
-              <label>
-                Description
-                <textarea id="description" rows="3" placeholder="Plain-language description of what this thing is and how it behaves."></textarea>
-                <span class="input-note">Explain the target simply enough that another person or AI could understand the situation.</span>
-              </label>
-              <label>
-                Test performed
-                <textarea id="test-performed" rows="3" placeholder="What did the human test directly?"></textarea>
-                <span class="input-note">Write the actual action you performed. The system needs test evidence, not only thoughts.</span>
-              </label>
-              <label>
-                Test result
-                <textarea id="test-result" rows="3" placeholder="What happened after the test?"></textarea>
-                <span class="input-note">Record what changed after the test, including unexpected side effects.</span>
-              </label>
-              <label>
-                Environment/context
-                <textarea id="environment" rows="3" placeholder="Lighting, surface, people, pressure, timing, weather, emotional context, tool setup."></textarea>
-                <span class="input-note">Context explains why a technique may work here but fail somewhere else.</span>
-              </label>
-              <label>
-                Measured signals
-                <textarea id="measured-signals" rows="3" placeholder="Numbers if available; otherwise describe signals like vibration, heat, wobble, latency, sound, fatigue."></textarea>
-                <span class="input-note">Use numbers if possible. If not, record sensory signals like vibration, sound, tension, fatigue, speed, or wobble.</span>
-              </label>
-              <label>
-                Failure or constraint type
-                <select id="failure-type">
-                  <option value="perception">Perception error</option>
-                  <option value="model">Model error</option>
-                  <option value="execution">Execution error</option>
-                  <option value="context">Context shift error</option>
-                  <option value="material">Material/property constraint</option>
-                </select>
-                <span class="input-note">Pick the best current diagnosis. The roadmap will use this to avoid the wrong fix.</span>
-              </label>
-              <button class="primary-button full-width" type="submit">Save Human Capture</button>
-            </form>
-          </section>
+          <!-- example buttons -->
+          <div class="example-bar">
+            <span class="example-label">Try an example:</span>
+            <button class="chip example-chip" type="button" data-example="pencil">✏️ Pencil pressure control</button>
+            <button class="chip example-chip" type="button" data-example="public-speaking">🎤 Public speaking nerves</button>
+          </div>
+
+          <div class="step-progress" id="step-progress">
+            <span class="step-dot active" data-step="1">1. What</span>
+            <span class="step-line"></span>
+            <span class="step-dot" data-step="2">2. Observe</span>
+            <span class="step-line"></span>
+            <span class="step-dot" data-step="3">3. Plan</span>
+            <span class="step-line"></span>
+            <span class="step-dot" data-step="4">4. Deep dive</span>
+          </div>
 
           <div class="trainer-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="section-label">Step 1</p>
+                  <h3>What do you want to adapt to?</h3>
+                </div>
+                <span class="save-badge" id="session-save-status">● Auto-saved</span>
+              </div>
+              <form id="session-form" class="compact-form">
+                <div class="compact-row">
+                  <label class="c-label">
+                    Name it
+                    <input id="target-name" type="text" maxlength="80" placeholder="e.g. pencil, guitar, stairs, audience, a math concept">
+                  </label>
+                  <label class="c-label">
+                    Type
+                    <select id="target-domain">
+                      <option value="object">Physical object (e.g. tool, material)</option>
+                      <option value="environment">Environment (e.g. room, terrain)</option>
+                      <option value="concept">Idea / mental model (e.g. a skill, theory)</option>
+                      <option value="tool">Tool / instrument (e.g. software, device)</option>
+                      <option value="social">People / social setting (e.g. conversation)</option>
+                    </select>
+                  </label>
+                </div>
+                <label class="c-label">
+                  What do you want to improve?
+                  <textarea id="target-goal" rows="2" placeholder="e.g. smoother control, less shaking, clearer understanding"></textarea>
+                </label>
+                <div class="compact-row triple">
+                  <label class="c-label">
+                    Your skill level (1-10)
+                    <input id="skill-level" type="number" min="1" max="10" step="1" placeholder="3">
+                  </label>
+                  <label class="c-label">
+                    What keeps going wrong?
+                    <input id="historical-patterns" type="text" placeholder="e.g. I grip too hard when focusing">
+                  </label>
+                  <label class="c-label">
+                    What have you tried?
+                    <input id="previous-attempts" type="text" placeholder="e.g. tried relaxing my hand">
+                  </label>
+                </div>
+              </form>
+              <div class="session-summary" id="session-summary"></div>
+            </section>
+
             <section class="panel">
               <div class="panel-heading">
                 <div>
                   <p class="section-label">Step 2</p>
-                  <h3>AI Property Assessment</h3>
+                  <h3>Write down what you notice</h3>
                 </div>
-                <button class="ghost-button" type="button" id="generate-assessment">Generate</button>
+                <span class="save-badge" id="capture-save-status">● Auto-saved</span>
               </div>
-              <div id="assessment-output" class="generated-output"></div>
-            </section>
-
-            <section class="panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="section-label">Step 3</p>
-                  <h3>Adaptive Roadmap</h3>
+              <form id="capture-form" class="compact-form compact-capture">
+                <div class="compact-row capture-row">
+                  <label class="c-label">
+                    What do you see / feel / hear?
+                    <textarea id="observed-properties" rows="2" placeholder="Texture, sound, pressure, resistance, shape..."></textarea>
+                  </label>
+                  <label class="c-label">
+                    What seems good or bad?
+                    <textarea id="evaluation" rows="2" placeholder="What feels stable, weak, risky, or hard to control?"></textarea>
+                  </label>
+                  <label class="c-label">
+                    Describe it in plain words
+                    <textarea id="description" rows="2" placeholder="What is this thing and how does it behave?"></textarea>
+                  </label>
+                  <label class="c-label">
+                    What did you try?
+                    <textarea id="test-performed" rows="2" placeholder="One small test you did"></textarea>
+                  </label>
+                  <label class="c-label">
+                    What happened?
+                    <textarea id="test-result" rows="2" placeholder="What changed, improved, or got worse?"></textarea>
+                  </label>
+                  <label class="c-label">
+                    Where / when?
+                    <textarea id="environment" rows="2" placeholder="Location, lighting, time pressure, mood, noise..."></textarea>
+                  </label>
+                  <label class="c-label">
+                    Numbers or signals?
+                    <textarea id="measured-signals" rows="2" placeholder="Vibration, heat, wobble, tension, speed, error count..."></textarea>
+                  </label>
+                  <label class="c-label">
+                    What kind of problem?
+                    <input id="failure-type" type="text" placeholder="e.g. I'm not sensing it clearly, my body can't do it yet, the thing has limits...">
+                  </label>
                 </div>
-                <button class="ghost-button" type="button" id="generate-roadmap">Generate</button>
-              </div>
-              <textarea id="roadmap-editor" class="roadmap-editor" rows="18" placeholder="Generate a roadmap after saving human capture. You can edit it before saving to Template Memory."></textarea>
-              <button class="primary-button full-width" type="button" id="save-roadmap-template">Save Roadmap Template</button>
+              </form>
+              <div id="capture-score" class="compact-score"></div>
             </section>
           </div>
 
           <section class="panel">
             <div class="panel-heading">
               <div>
-                <p class="section-label">Complete Output</p>
-                <h3>Copyable MAS Packet</h3>
+                <p class="section-label">Step 3</p>
+                <h3>Get your adaptation plan</h3>
               </div>
-              <button class="ghost-button" type="button" id="copy-complete-output">Copy Packet</button>
+              <div class="step-3-actions">
+                <span class="save-badge" id="ai-save-status">● Ready</span>
+                <button class="primary-button" type="button" id="generate-full">⚡ Generate my plan</button>
+              </div>
             </div>
-            <textarea id="complete-output" class="complete-output" rows="22" readonly placeholder="After generating assessment and roadmap, this box will contain Step 1, Step 2, and Step 3 together for copying."></textarea>
+            <div class="trainer-grid">
+              <div id="assessment-output" class="generated-output"></div>
+              <div>
+                <textarea id="roadmap-editor" class="roadmap-editor" rows="14" placeholder="Your step-by-step plan will appear here."></textarea>
+                <div class="roadmap-actions">
+                  <button class="ghost-button" type="button" id="save-roadmap-template">💾 Save plan</button>
+                  <button class="ghost-button" type="button" id="copy-complete-output">📋 Copy everything</button>
+                  <button class="ghost-button" type="button" id="clear-session">🗑️ Start over</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel deep-analysis-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">Step 4</p>
+                <h3>Deep analysis (AI-powered)</h3>
+              </div>
+              <div class="deep-actions">
+                <span class="deep-badge" id="deep-badge">AI Analysis ready</span>
+                <button class="primary-button" type="button" id="run-deep-analysis">🔍 Run deep analysis</button>
+              </div>
+            </div>
+            <p class="input-note" style="margin:0 0 16px">The AI looks at your situation from 9 different angles and creates one combined plan.</p>
+            <div id="deep-analysis-output">
+              <div class="empty-state">Save your observations first to unlock deep analysis.</div>
+            </div>
           </section>
         </section>
 
@@ -266,19 +303,46 @@
           <button class="ghost-button" type="button" id="close-background">Close</button>
         </div>
         <div class="modal-content">
-          <p>This app turns MAS into a practical workflow. Mahoraga Adapt System is the metaphor: take the first hit, spin the wheel, build the counter, and move toward embodied competence. Manufacturing Adaptive Programming is the operating method: capture human evidence, let the app structure it, then generate a detailed adaptation roadmap.</p>
+          <p>This tool helps you adapt to anything — a tool, an environment, a skill, or a social situation. It works like a personal coach:</p>
           <ol>
-            <li><strong>Start a session:</strong> define the exact target, domain, goal, baseline skill level, historical patterns, and previous attempts.</li>
-            <li><strong>Save human capture:</strong> observe, evaluate, describe, test, record the result, context, signals, and failure type.</li>
-            <li><strong>Generate assessment:</strong> the local AI-style engine analyzes material/property, durability, vibration/frequency, control variables, risks, and uncertainty.</li>
-            <li><strong>Generate roadmap:</strong> the app writes detailed drills, measurements, refinement rules, transfer checks, embodiment validation, and AAI-ready instructions.</li>
-            <li><strong>Copy or save:</strong> use the complete packet box for AAI, or save it to Template Memory for reuse.</li>
+            <li><strong>Name your target:</strong> What do you want to get better at? Be specific.</li>
+            <li><strong>Write down what you notice:</strong> What do you see, feel, hear? What went wrong? What did you try?</li>
+            <li><strong>Get a plan:</strong> The tool turns your observations into a step-by-step adaptation plan.</li>
+            <li><strong>Follow the plan:</strong> Do the drills, track your results, and repeat.</li>
+            <li><strong>Save or share:</strong> Copy the plan for later, or save it as a reusable template.</li>
           </ol>
-          <p>No external AI or internet call is used. The text is generated locally from the data you type, so better human capture produces better roadmaps.</p>
+          <p>No external AI or internet connection is required. The plan is generated locally from what you type. The more detail you give, the better the plan.</p>
         </div>
       </section>
     </div>
 
+    <div class="modal-backdrop" id="loading-overlay" hidden>
+      <div class="wheel-spin-modal">
+        <div class="wheel-container">
+          <svg class="wheel-svg" viewBox="0 0 120 120" aria-hidden="true">
+            <defs>
+              <linearGradient id="wg1" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#48d6b5"/>
+                <stop offset="100%" stop-color="#83a8ff"/>
+              </linearGradient>
+            </defs>
+            <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(72,214,181,0.15)" stroke-width="3"/>
+            <circle class="wheel-arc" cx="60" cy="60" r="50" fill="none" stroke="url(#wg1)" stroke-width="3"
+              stroke-dasharray="314" stroke-dashoffset="240" stroke-linecap="round"
+              transform="rotate(-90 60 60)"/>
+            <g class="wheel-spokes" transform="translate(60,60)">
+              <line x1="0" y1="-45" x2="0" y2="45" stroke="rgba(72,214,181,0.3)" stroke-width="1"/>
+              <line x1="-45" y1="0" x2="45" y2="0" stroke="rgba(72,214,181,0.3)" stroke-width="1"/>
+              <line x1="-32" y1="-32" x2="32" y2="32" stroke="rgba(72,214,181,0.3)" stroke-width="1"/>
+              <line x1="32" y1="-32" x2="-32" y2="32" stroke="rgba(72,214,181,0.3)" stroke-width="1"/>
+            </g>
+            <text x="60" y="62" text-anchor="middle" fill="#eef4ff" font-size="10" font-weight="800" font-family="sans-serif">SPIN</text>
+          </svg>
+        </div>
+        <p class="wheel-status" id="loading-text">Spinning the wheel...</p>
+        <div class="wheel-pulse"></div>
+      </div>
+    </div>
     <script src="app.js"></script>
   </body>
 </html>

@@ -5,6 +5,146 @@ const STORAGE_KEYS = {
   legacyTemplates: "mas.templates.v1"
 };
 
+const API_BASE = "";
+let apiAvailable = false;
+let geminiAvailable = false;
+let rateLimitInfo = { limit: 20, remaining: 20, hits: 0 };
+let isAiCalling = false;
+
+let _saveTimers = {};
+
+function debounceSave(key, fn, ms) {
+  clearTimeout(_saveTimers[key]);
+  _saveTimers[key] = setTimeout(fn, ms || 600);
+}
+
+function sessionApiId() {
+  return currentSession?.serverId || currentSession?.id || null;
+}
+
+async function apiGet(path) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { signal: AbortSignal.timeout(5000) });
+    return { ok: res.ok, data: res.ok ? await res.json() : await res.json().catch(() => ({ error: res.statusText })), status: res.status };
+  } catch (e) { return { ok: false, data: { error: "Server unreachable" }, status: 0 }; }
+}
+
+async function apiPost(path, body) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(30000)
+    });
+    return { ok: res.ok, data: res.ok ? await res.json() : await res.json().catch(() => ({ error: res.statusText })), status: res.status };
+  } catch (e) { return { ok: false, data: { error: "Server unreachable" }, status: 0 }; }
+}
+
+async function apiPut(path, body) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(5000)
+    });
+    return { ok: res.ok, data: res.ok ? await res.json() : await res.json().catch(() => ({ error: res.statusText })), status: res.status };
+  } catch (e) { return { ok: false, data: { error: "Server unreachable" }, status: 0 }; }
+}
+
+let currentAiModelName = "";
+
+async function checkApiHealth() {
+  const result = await apiGet("/api/health");
+  apiAvailable = result.ok;
+  if (result.ok) {
+    geminiAvailable = !!result.data.deepAnalysisAvailable;
+    apiAvailable = result.ok;
+    currentAiModelName = result.data.aiModel || "";
+  }
+  updateDeepBadge();
+  return result.ok ? result.data : null;
+}
+
+function updateDeepBadge() {
+  const badge = document.querySelector("#deep-badge");
+  if (!badge) return;
+  if (geminiAvailable) {
+    const label = currentAiModelName ? `${currentAiModelName} ready` : "AI Analysis ready";
+    badge.textContent = label;
+    badge.className = "deep-badge online";
+  } else {
+    badge.textContent = "AI offline";
+    badge.className = "deep-badge offline";
+  }
+}
+
+async function pollRateLimit() {
+  const result = await apiGet("/api/rate-limit");
+  if (result.ok) {
+    rateLimitInfo = {
+      limit: result.data.limit,
+      remaining: result.data.remaining,
+      hits: result.data.hits,
+      windowSeconds: result.data.windowSeconds,
+      resetAt: result.data.resetAt
+    };
+  }
+  updateRateLimitUI();
+}
+
+function formatResetTime(resetAt) {
+  if (!resetAt) return "";
+  const diff = new Date(resetAt) - new Date();
+  if (diff <= 0) return "resets now";
+  const mins = Math.ceil(diff / 60000);
+  if (mins >= 60) return `resets in ${Math.floor(mins / 60)}h ${mins % 60}m`;
+  return `resets in ${mins}m`;
+}
+
+function updateRateLimitUI() {
+  const badge = document.querySelector("#rate-limit-badge");
+  const remainingEl = document.querySelector("#rate-limit-remaining");
+  const fillEl = document.querySelector("#rate-limit-fill");
+  const statusEl = document.querySelector("#api-status-indicator");
+  const limitTextEl = document.querySelector("#rate-limit-text");
+  if (!remainingEl || !fillEl || !statusEl) return;
+
+  if (apiAvailable) {
+    statusEl.className = "rate-limit-status online";
+    statusEl.title = "AI server connected";
+    const remaining = rateLimitInfo.remaining ?? 0;
+    const limit = rateLimitInfo.limit || 20;
+    remainingEl.textContent = remaining;
+    const pct = Math.max(0, (remaining / limit) * 100);
+    fillEl.style.width = `${pct}%`;
+    fillEl.className = "rate-limit-fill" + (pct < 20 ? " danger" : pct < 40 ? " warning" : "");
+    if (limitTextEl) {
+      const resetStr = formatResetTime(rateLimitInfo.resetAt);
+      limitTextEl.textContent = `of ${limit} AI calls — ${resetStr}`;
+    }
+  } else {
+    statusEl.className = "rate-limit-status offline";
+    statusEl.title = "AI server offline — running in local mode";
+    remainingEl.textContent = "∞";
+    fillEl.style.width = "100%";
+    fillEl.className = "rate-limit-fill";
+    if (limitTextEl) limitTextEl.textContent = "Local mode (no limit)";
+  }
+}
+
+function showLoading(text) {
+  if (isAiCalling) return;
+  isAiCalling = true;
+  const overlay = document.querySelector("#loading-overlay");
+  const textEl = document.querySelector("#loading-text");
+  if (textEl) textEl.textContent = text || "Spinning the wheel...";
+  if (overlay) overlay.hidden = false;
+}
+
+function hideLoading() {
+  isAiCalling = false;
+  const overlay = document.querySelector("#loading-overlay");
+  if (overlay) overlay.hidden = true;
+}
+
 const sources = [
   {
     title: "Master Codex v8.5",
@@ -325,6 +465,7 @@ function normalizeSession(session) {
     humanCapture: session.humanCapture || legacyCaptureFromTurns(session.turns || []),
     aiAssessment: session.aiAssessment || null,
     roadmap: session.roadmap || "",
+    deepAnalysis: session.deepAnalysis || null,
     turns: Array.isArray(session.turns) ? session.turns : []
   };
 }
@@ -361,7 +502,7 @@ function emptyCapture() {
     testResult: "",
     environment: "",
     measuredSignals: "",
-    failureType: "perception"
+    failureType: ""
   };
 }
 
@@ -389,6 +530,7 @@ function createSession(target, domain, goal) {
     humanCapture: emptyCapture(),
     aiAssessment: null,
     roadmap: "",
+    deepAnalysis: null,
     turns: []
   };
 }
@@ -486,10 +628,12 @@ function formValue(id) {
 
 function renderSession() {
   const summary = document.querySelector("#session-summary");
-  const status = document.querySelector("#capture-status");
+  const status = document.querySelector("#capture-save-status");
   if (!currentSession) {
-    summary.innerHTML = `<div class="empty-state">No active session. Define a target before capturing human operational data.</div>`;
-    status.textContent = "No capture saved";
+    summary.innerHTML = `<div class="empty-state">Define a target above to start.</div>`;
+    if (status) status.textContent = "● No capture";
+    const scoreEl = document.querySelector("#capture-score");
+    if (scoreEl) scoreEl.textContent = "";
     fillSessionForm(null);
     fillCaptureForm(emptyCapture());
     renderAssessment();
@@ -501,7 +645,7 @@ function renderSession() {
   fillSessionForm(currentSession);
   fillCaptureForm(currentSession.humanCapture || emptyCapture());
   const captureScore = captureCompleteness(currentSession.humanCapture);
-  status.textContent = `${captureScore}/7 capture fields saved`;
+  if (status) status.textContent = `${captureScore}/7 capture fields saved`;
   summary.innerHTML = `
     <div class="summary-metric"><span>Target</span><strong>${escapeHtml(currentSession.target)}</strong></div>
     <div class="summary-metric"><span>Domain</span><strong>${escapeHtml(domainLabel(currentSession.domain))}</strong></div>
@@ -512,6 +656,20 @@ function renderSession() {
   renderAssessment();
   renderRoadmap();
   renderCompleteOutput();
+  renderDeepAnalysis(currentSession?.deepAnalysis || null);
+  updateStepProgress();
+  const scoreEl = document.querySelector("#capture-score");
+  if (scoreEl) scoreEl.textContent = `${captureScore}/7 capture fields filled`;
+}
+
+function updateStepProgress() {
+  const dots = document.querySelectorAll(".step-dot");
+  if (!dots.length) return;
+  let step = 1;
+  if (currentSession) step = 2;
+  if (currentSession?.humanCapture && captureCompleteness(currentSession.humanCapture) > 0) step = 3;
+  if (currentSession?.aiAssessment || currentSession?.roadmap) step = 4;
+  dots.forEach((d, i) => d.classList.toggle("active", i < step));
 }
 
 function fillSessionForm(session) {
@@ -531,7 +689,7 @@ function fillCaptureForm(capture) {
   document.querySelector("#test-result").value = capture.testResult || "";
   document.querySelector("#environment").value = capture.environment || "";
   document.querySelector("#measured-signals").value = capture.measuredSignals || "";
-  document.querySelector("#failure-type").value = capture.failureType || "perception";
+  document.querySelector("#failure-type").value = capture.failureType || "";
 }
 
 function captureFromForm() {
@@ -570,13 +728,8 @@ function domainLabel(domain) {
 }
 
 function failureLabel(value) {
-  return {
-    perception: "Perception error",
-    model: "Model error",
-    execution: "Execution error",
-    context: "Context shift error",
-    material: "Material/property constraint"
-  }[value] || "Unclassified";
+  if (!value) return "Not specified";
+  return value;
 }
 
 function analyzeText(...parts) {
@@ -612,13 +765,14 @@ function generateAssessment() {
   const frequency = frequencyAssessment(flags, capture);
   const variables = controlVariables(currentSession.domain, flags);
   const uncertainty = uncertaintyFlags(capture);
+  const selfDiagnosis = capture.failureType || "Not specified";
   const detailedGuidance = detailedAssessmentGuidance(currentSession, capture, {
     material,
     durability,
     frequency,
     variables,
     risks: [
-      failureLabel(capture.failureType),
+      `Self-diagnosis: ${selfDiagnosis}`,
       flags.mentionsHeat ? "Thermal feedback may change behavior or safety margin." : "No explicit thermal risk recorded.",
       capture.environment ? "Context is recorded; validate roadmap outside this context before templating." : "Context is missing; roadmap confidence is limited."
     ],
@@ -631,7 +785,7 @@ function generateAssessment() {
     frequency,
     variables,
     risks: [
-      failureLabel(capture.failureType),
+      `Self-diagnosis: ${selfDiagnosis}`,
       flags.mentionsHeat ? "Thermal feedback may change behavior or safety margin." : "No explicit thermal risk recorded.",
       capture.environment ? "Context is recorded; validate roadmap outside this context before templating." : "Context is missing; roadmap confidence is limited."
     ],
@@ -774,8 +928,8 @@ function generateRoadmapText() {
     `If the target responds like a rigid structure, reduce force and increase angle control. If it responds like a flexible structure, slow down and wait for rebound/delay. If rhythm or vibration appears, make timing the main variable instead of brute force.`,
     "",
     "5. Constraint check",
-    `Current failure class: ${failureLabel(capture.failureType)}. If the same miss repeats twice, change the roadmap variable instead of forcing more effort.`,
-    `Use this rule: perception error means gather better sensory data; model error means change the explanation; execution error means simplify the body action; context error means compare environments; material/property constraint means adapt around the limit.`,
+    `Self-diagnosed problem: ${failureLabel(capture.failureType) || "Not specified yet — observe what keeps going wrong."} If the same miss repeats twice, change your approach instead of forcing more effort.`,
+    `Quick rule: unclear sensing → slow down and look closer. Wrong idea → question your assumption. Body won't cooperate → simplify the movement. Works here but not there → compare the two situations. The thing has limits → work around them instead of through them.`,
     "",
     "6. Refinement loop",
     "Repeat: capture result -> adjust one variable -> measure again -> keep only changes that reduce error or cognitive load.",
@@ -862,36 +1016,26 @@ function failureMapText() {
     capture.measuredSignals
   );
   const known = [
-    `Current selected failure: ${failureLabel(capture.failureType)}`,
+    `Your description of the problem: ${failureLabel(capture.failureType)}`,
     `Primary symptom evidence: ${capture.testResult || capture.evaluation || capture.measuredSignals || "Not recorded"}`,
     `Likely fix direction: ${failureFix(capture.failureType)}`
   ];
-  const anticipated = [
-    "Context transfer failure: works in the original setup but degrades in a new context.",
-    "Speed-pressure coupling: faster execution automatically increases force or error.",
-    "Tool dependency: the template only works with the original object/tool/setup.",
-    "Over-control: conscious effort increases tension and reduces fluidity.",
-    "Fatigue degradation: quality drops after repeated practice without recovery."
-  ];
-  if (flags.mentionsVibration) anticipated.unshift("Rhythm/frequency drift: vibration, sound, or timing changes under speed or fatigue.");
-  if (flags.mentionsFriction) anticipated.unshift("Grip/friction mismatch: contact quality changes when surface, angle, or pressure changes.");
   return [
-    "Known error modes:",
+    "What you've noticed so far:",
     ...known.map((item, index) => `${index + 1}. ${item}`),
     "",
-    "Anticipated future failures to watch:",
-    ...anticipated.map((item, index) => `${index + 1}. ${item}`)
+    "Things to watch for next:",
+    "1. Does it work in one setup but fail in another? That's a context problem.",
+    "2. Does speed make it worse? Try slower first, then build up.",
+    "3. Does it only work with one specific tool or person? That's a dependency.",
+    "4. Does trying hard make it worse? Relax and reduce effort.",
+    "5. Does quality drop after a while? That's fatigue — take breaks."
   ].join("\n");
 }
 
 function failureFix(type) {
-  return {
-    perception: "Improve sensory capture before changing technique.",
-    model: "Revise the causal model and test one variable at a time.",
-    execution: "Reduce difficulty and train the body expression of the model.",
-    context: "Identify which environmental condition changed the result.",
-    material: "Adapt around the physical/property limit instead of forcing through it."
-  }[type] || "Return to capture and isolate the first unstable variable.";
+  if (!type) return "Describe what's going wrong, then try one small change at a time.";
+  return "Keep observing and testing. Try changing one thing at a time to see what helps.";
 }
 
 function successCriteriaText() {
@@ -1013,9 +1157,7 @@ function completeOutputText() {
 }
 
 function renderCompleteOutput() {
-  const output = document.querySelector("#complete-output");
-  if (!output) return;
-  output.value = completeOutputText();
+  // complete-output display was removed; function kept for compatibility
 }
 
 function renderTemplates() {
@@ -1052,6 +1194,47 @@ function renderSources() {
     .join("");
 }
 
+function renderDeepAnalysis(deepData) {
+  const output = document.querySelector("#deep-analysis-output");
+  if (!deepData) {
+    output.innerHTML = `<div class="empty-state">Save human capture and run Deep Analysis to see 9 thinking perspectives and their synthesis.</div>`;
+    return;
+  }
+
+  const { perspectives, synthesis } = deepData;
+
+  const cardsHtml = perspectives.map((p, i) => `
+    <div class="perspective-card ${p.error ? "error" : ""}" data-perspective="${p.id}">
+      <div class="perspective-card-header" role="button" tabindex="0" aria-expanded="false">
+        <span class="perspective-icon">${p.icon}</span>
+        <span class="perspective-name">${escapeHtml(p.label)}<br><span style="color:var(--muted);font-weight:400;font-size:11px">${escapeHtml(p.labelVi)}</span></span>
+        <span class="perspective-toggle">▼</span>
+      </div>
+      <div class="perspective-body">${escapeHtml(p.analysis)}</div>
+    </div>
+  `).join("");
+
+  const synthesisHtml = synthesis ? `
+    <div class="synthesis-section">
+      <div class="synthesis-label">✦ 10th Synthesis — Optimal MAS Path</div>
+      <div class="synthesis-content">${escapeHtml(synthesis)}</div>
+    </div>
+  ` : "";
+
+  output.innerHTML = `
+    <div class="perspective-grid">${cardsHtml}</div>
+    ${synthesisHtml}
+  `;
+
+  output.querySelectorAll(".perspective-card-header").forEach((header) => {
+    header.addEventListener("click", () => {
+      const card = header.closest(".perspective-card");
+      card.classList.toggle("open");
+      header.setAttribute("aria-expanded", card.classList.contains("open"));
+    });
+  });
+}
+
 document.querySelectorAll(".nav-button").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
 });
@@ -1082,8 +1265,7 @@ document.querySelector("#background-modal").addEventListener("click", (event) =>
   }
 });
 
-document.querySelector("#session-form").addEventListener("submit", (event) => {
-  event.preventDefault();
+function saveSessionTarget() {
   const target = formValue("#target-name");
   const domain = document.querySelector("#target-domain").value;
   const goal = formValue("#target-goal");
@@ -1092,67 +1274,158 @@ document.querySelector("#session-form").addEventListener("submit", (event) => {
     historicalPatterns: formValue("#historical-patterns"),
     previousAttempts: formValue("#previous-attempts")
   };
-  if (!target) {
-    alert("Add a target before starting a session.");
-    return;
-  }
+  if (!target) return;
   if (!currentSession) {
     currentSession = createSession(target, domain, goal);
+    currentSession.baseline = baseline;
+    if (apiAvailable) {
+      apiPost("/api/sessions", { target, domain, goal, baseline }).then((r) => {
+        if (r.ok) { currentSession.serverId = r.data.id; currentSession.id = r.data.id; }
+      });
+    }
   } else {
     currentSession.target = target;
     currentSession.domain = domain;
     currentSession.goal = goal;
     currentSession.baseline = baseline;
+    const sId = sessionApiId();
+    if (apiAvailable && sId) apiPut(`/api/sessions/${sId}`, { target, domain, goal, baseline });
   }
-  currentSession.baseline = baseline;
   saveSession();
   renderSession();
+}
+
+const EXAMPLES = {
+  pencil: {
+    target: "pencil pressure control",
+    domain: "tool",
+    goal: "Write smoothly without gripping too hard, so my hand doesn't cramp after 10 minutes",
+    baseline: { skillLevel: "3", historicalPatterns: "When I focus on precision, my grip tightens automatically", previousAttempts: "Tried thicker grip, softer pencil, relaxing hand between words" },
+    capture: {
+      observedProperties: "Hexagonal wood body, hard graphite tip (#2), smooth paper surface, slight resistance when writing",
+      evaluation: "Grip feels unstable — I compensate by squeezing harder. Writing is legible but inconsistent thickness",
+      description: "Standard wooden pencil on copy paper. The harder I concentrate on neatness, the tighter my fingers get",
+      testPerformed: "Wrote a paragraph at normal speed, then a paragraph at half speed focusing on loose grip",
+      testResult: "Half speed gave more consistent line thickness but my thumb joint still ached. Normal speed produced shakier lines",
+      environment: "Desk with good lighting, quiet room, no time pressure",
+      measuredSignals: "Hand cramp onset at ~8 min. Line wobble increases after 5 min. Grip pressure feels 2x normal",
+      failureType: "My body tenses up and grip gets too tight"
+    }
+  },
+  "public-speaking": {
+    target: "public speaking nerves",
+    domain: "social",
+    goal: "Speak clearly and stay calm when presenting to a group of 10+ people",
+    baseline: { skillLevel: "2", historicalPatterns: "Voice shakes when I start, I rush through slides, forget what I planned to say", previousAttempts: "Practiced in mirror, deep breathing before, memorized script" },
+    capture: {
+      observedProperties: "Dry mouth, racing heart, hands tremble slightly, voice sounds higher than normal",
+      evaluation: "The first 2 minutes are the worst. After that I settle somewhat but still rush",
+      description: "Presenting to colleagues in a meeting room. Everyone is friendly but I still feel judged",
+      testPerformed: "Presented a 5-minute update to 3 coworkers instead of the full team",
+      testResult: "Still felt nervous but less than usual. Forgot one point but recovered. Voice shook only at the very start",
+      environment: "Small meeting room, familiar faces, afternoon, sitting down",
+      measuredSignals: "Heart rate spikes at start (estimated 100+ bpm). Speaking pace too fast — finish 30% early. Hands visible shaking on paper",
+      failureType: "I can't sense my own anxiety until I'm already speaking"
+    }
+  }
+};
+
+document.querySelectorAll(".example-chip").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const key = btn.dataset.example;
+    const ex = EXAMPLES[key];
+    if (!ex) return;
+    currentSession = createSession(ex.target, ex.domain, ex.goal);
+    currentSession.baseline = ex.baseline;
+    currentSession.humanCapture = ex.capture;
+    if (apiAvailable) {
+      const result = await apiPost("/api/sessions", { target: ex.target, domain: ex.domain, goal: ex.goal, baseline: ex.baseline, humanCapture: ex.capture });
+      if (result.ok) {
+        currentSession.serverId = result.data.id;
+        currentSession.id = result.data.id;
+      }
+    }
+    saveSession();
+    renderSession();
+  });
 });
 
-document.querySelector("#capture-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (!currentSession) {
-    alert("Start a session before saving human capture.");
-    return;
-  }
+document.querySelector("#session-form").addEventListener("input", () => {
+  debounceSave("session", saveSessionTarget, 400);
+});
+document.querySelector("#session-form").addEventListener("change", () => {
+  debounceSave("session", saveSessionTarget, 100);
+});
+
+function saveCapture() {
+  if (!currentSession) return;
   const capture = captureFromForm();
-  if (!capture.observedProperties && !capture.description && !capture.testResult) {
-    alert("Add at least observed properties, a description, or a test result before saving capture.");
-    return;
-  }
-  currentSession.humanCapture = capture;
+  const hasData = capture.observedProperties || capture.description || capture.testResult || capture.evaluation || capture.testPerformed || capture.environment || capture.measuredSignals;
+  currentSession.humanCapture = hasData ? capture : null;
   currentSession.aiAssessment = null;
   currentSession.roadmap = "";
   saveSession();
+  const sId = sessionApiId();
+  if (apiAvailable && sId && hasData) apiPut(`/api/sessions/${sId}`, { humanCapture: capture });
   renderSession();
+}
+
+document.querySelector("#capture-form").addEventListener("input", () => {
+  debounceSave("capture", saveCapture, 400);
+});
+document.querySelector("#capture-form").addEventListener("change", () => {
+  debounceSave("capture", saveCapture, 100);
 });
 
-document.querySelector("#generate-assessment").addEventListener("click", () => {
+document.querySelector("#generate-full").addEventListener("click", async () => {
   if (!currentSession) {
-    alert("Start a session first.");
+    alert("Define a target first.");
     return;
   }
   if (captureCompleteness(currentSession.humanCapture) === 0) {
-    alert("Save human operational capture before generating assessment.");
+    alert("Add at least some capture data before generating.");
     return;
   }
-  currentSession.aiAssessment = generateAssessment();
-  saveSession();
-  renderAssessment();
-  renderCompleteOutput();
-});
 
-document.querySelector("#generate-roadmap").addEventListener("click", () => {
-  if (!currentSession) {
-    alert("Start a session first.");
-    return;
+  let aiOk = apiAvailable && rateLimitInfo.remaining > 0;
+  const sId = sessionApiId();
+  if (aiOk && !sId) { aiOk = false; }
+
+  if (aiOk) {
+    showLoading("AI analyzing capture & building roadmap...");
+    const assessResult = await apiPost(`/api/sessions/${sId}/assessment`, {});
+    if (assessResult.ok) {
+      currentSession.aiAssessment = assessResult.data.assessment;
+      if (assessResult.data.rateLimit?.remaining !== undefined) {
+        rateLimitInfo.remaining = assessResult.data.rateLimit.remaining;
+        updateRateLimitUI();
+      }
+      const roadmapResult = await apiPost(`/api/sessions/${sId}/roadmap`, {});
+      if (roadmapResult.ok) {
+        currentSession.roadmap = roadmapResult.data.roadmap;
+        if (roadmapResult.data.rateLimit?.remaining !== undefined) {
+          rateLimitInfo.remaining = roadmapResult.data.rateLimit.remaining;
+          updateRateLimitUI();
+        }
+      } else if (roadmapResult.status === 429) {
+        currentSession.roadmap = generateRoadmapText();
+      } else {
+        currentSession.roadmap = generateRoadmapText();
+      }
+    } else if (assessResult.status === 429) {
+      currentSession.aiAssessment = generateAssessment();
+      currentSession.roadmap = generateRoadmapText();
+    } else {
+      aiOk = false;
+    }
+    hideLoading();
   }
-  if (captureCompleteness(currentSession.humanCapture) === 0) {
-    alert("Save human operational capture before generating a roadmap.");
-    return;
+
+  if (!aiOk) {
+    currentSession.aiAssessment = generateAssessment();
+    currentSession.roadmap = generateRoadmapText();
   }
-  currentSession.aiAssessment = currentSession.aiAssessment || generateAssessment();
-  currentSession.roadmap = generateRoadmapText();
+
   saveSession();
   renderAssessment();
   renderRoadmap();
@@ -1164,22 +1437,61 @@ document.querySelector("#roadmap-editor").addEventListener("input", () => {
   currentSession.roadmap = document.querySelector("#roadmap-editor").value;
   saveSession();
   renderCompleteOutput();
+  updateStepProgress();
+});
+
+document.querySelector("#run-deep-analysis").addEventListener("click", async () => {
+  if (!currentSession) {
+    alert("Start a session first.");
+    return;
+  }
+  if (captureCompleteness(currentSession.humanCapture) === 0) {
+    alert("Save human operational capture before running deep analysis.");
+    return;
+  }
+  if (!geminiAvailable) {
+    alert("AI is not configured. Add a valid GEMINI_API_KEY to server/.env");
+    return;
+  }
+
+  const sId = sessionApiId();
+  if (!sId) { alert("Session not synced to server."); return; }
+  showLoading("9 perspectives spinning in parallel...");
+  const result = await apiPost(`/api/sessions/${sId}/deep-analysis`, {});
+  hideLoading();
+
+  if (result.ok) {
+    currentSession.deepAnalysis = { perspectives: result.data.perspectives, synthesis: result.data.synthesis };
+    if (result.data.rateLimit?.remaining !== undefined) {
+      rateLimitInfo.remaining = result.data.rateLimit.remaining;
+      updateRateLimitUI();
+    }
+    saveSession();
+    renderDeepAnalysis(currentSession.deepAnalysis);
+  } else {
+    if (result.status === 429) {
+      alert(result.data.error || "Rate limit reached.");
+    } else if (result.status === 503) {
+      geminiAvailable = false;
+      updateDeepBadge();
+      alert("AI not configured. Add a valid GEMINI_API_KEY to server/.env");
+    } else {
+      alert(result.data.error || "Deep analysis failed. Check server logs.");
+    }
+  }
 });
 
 document.querySelector("#copy-complete-output").addEventListener("click", async () => {
-  const value = document.querySelector("#complete-output").value.trim();
+  const value = completeOutputText();
   if (!value) {
-    alert("Generate or save session content before copying.");
+    alert("Start a session first.");
     return;
   }
   try {
     await navigator.clipboard.writeText(value);
-    alert("Complete MAS packet copied.");
+    alert("Complete packet copied to clipboard.");
   } catch {
-    const output = document.querySelector("#complete-output");
-    output.focus();
-    output.select();
-    alert("Clipboard permission was unavailable. The packet is selected so you can copy it manually.");
+    alert("Could not copy automatically. Select and copy from the plan text area.");
   }
 });
 
@@ -1230,6 +1542,22 @@ document.querySelector("#clear-templates").addEventListener("click", () => {
   localStorage.removeItem(STORAGE_KEYS.legacyTemplates);
   renderTemplates();
 });
+
+async function initApi() {
+  const health = await checkApiHealth();
+  if (health) {
+    await pollRateLimit();
+    updateRateLimitUI();
+  } else {
+    updateRateLimitUI();
+  }
+}
+
+initApi();
+setInterval(async () => {
+  if (apiAvailable) await pollRateLimit();
+  else await checkApiHealth().then(() => { if (apiAvailable) pollRateLimit(); });
+}, 15000);
 
 selectNode(activeNodeId);
 renderSession();

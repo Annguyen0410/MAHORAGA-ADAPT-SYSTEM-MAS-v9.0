@@ -1,0 +1,17 @@
+{
+  "name": "mas-api-server",
+  "version": "8.5.0",
+  "description": "Mahoraga Adapt System API Server - Real AI assessment, rate-limited, RESTful",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0"
+  }
+}

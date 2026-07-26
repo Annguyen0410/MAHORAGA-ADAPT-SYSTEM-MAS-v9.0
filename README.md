@@ -137,7 +137,44 @@ Real-world applications of the MAS framework:
 
 ---
 
-## ️ Usage Example
+## ️ Quick Start
+
+### 1. Set up Environment
+
+```bash
+cd server                # navigate to server folder
+cp .env.example .env     # create config file
+```
+
+Edit `server/.env` and set your `GEMINI_API_KEY`.
+
+### 2. Install & Start
+
+```bash
+cd server
+npm install
+npm start
+```
+
+Open **http://localhost:3001** in your browser.
+
+> The server serves both the API and the frontend at the same URL.  
+> No need to open `index.html` separately — just go to `http://localhost:3001`.
+
+### 3. Verify
+
+The sidebar shows **Gemma AI** status:
+- **Green dot** → AI ready
+- **Red dot** → No API key / local mode
+- **Calls remaining** → Live rate limit
+
+### 4. Rate Limits
+
+- **20 AI calls per hour** per IP (configurable in `.env`)
+- Consumed by **Generate Assessment**, **Generate Roadmap**, **Deep Analysis**
+- Session CRUD and health checks do **not** consume calls
+
+### Usage Example
 
 To initiate an adaptation session, follow the structured prompt format:
 
