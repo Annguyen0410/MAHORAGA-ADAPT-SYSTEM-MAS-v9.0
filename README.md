@@ -1,8 +1,8 @@
 <div align="center">
 
-# ☸️ MAHORAGA ADAPT SYSTEM (MAS) v8.5
+# MAHORAGA ADAPT SYSTEM (MAS) v8.5
 
-**The Ultimate Cognitive Operating System for Human–AI Co-Evolution & Infinite Adaptation**
+**A Cognitive Operating System & Predictive Embodied Framework for Human–AI Co-Evolution**
 
 <br />
 
@@ -14,117 +14,138 @@
 
 <br />
 
-[![Version](https://img.shields.io/badge/Protocol-v8.5.0-blueviolet?style=for-the-badge&logo=google)](https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5)
-[![AI Engine](https://img.shields.io/badge/AI_Engine-Gemini--Flash-cyan?style=for-the-badge&logo=googlecloud)](https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5)
-[![Type](https://img.shields.io/badge/Type-Cognitive_OS-orange?style=for-the-badge)](https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5)
-[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5)
-[![Human-AI](https://img.shields.io/badge/Alignment-Human--AI_Co--Evolution-red?style=for-the-badge)](https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5)
+[![Protocol Version](https://img.shields.io/badge/Protocol-v8.5.0-blueviolet?style=flat-square)](https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5)
+[![AI Engine](https://img.shields.io/badge/AI_Engine-Gemini--Flash-cyan?style=flat-square)](https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5)
+[![Type](https://img.shields.io/badge/Type-Cognitive_OS-orange?style=flat-square)](https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5)
 
 ---
 
 </div>
 
-## 🌟 What is Mahoraga Adapt System (MAS)?
+## Abstract
 
-**MAS (Mahoraga Adapt System)** is a predictive cognitive framework designed to synchronize direct human sensory experience with Google AI inferential engines. Inspired by the Divine General Mahoraga's law of absolute adaptation, MAS turns physical and conceptual friction into structured immunity and skill mastery.
+The **Mahoraga Adapt System (MAS)** is a formal cognitive architecture and predictive embodied framework designed to synchronize direct human sensory experience with artificial intelligence inference engines. Grounded in Predictive Embodied Meta-Learning (PEML) and inspired by the metaphor of absolute recursive adaptation, MAS converts external environmental friction into internal structural capability.
 
-Whenever you encounter a challenge—whether high-speed typing errors, pencil pressure control, complex software architecture, or behavioral habits—MAS breaks down your operational capture into **9 distinct analytical perspectives** and synthesizes **1 optimal adaptation roadmap**.
-
----
-
-## ⚡ Key Features
-
-- ⚙️ **Predictive Embodied Meta-Learning (PEML)**: Minimizes prediction errors between internal cognitive models and physical reality across a 7-layer architecture.
-- ☸️ **The Eight-Handled Wheel Protocol**: A continuous feedback loop:  
-  `Observe` → `Hypothesize` → `Act` → `Measure` → `Update` → `Optimize` → `Assimilate` → `Evolve`.
-- 🔍 **AI-Powered Deep Analysis (9 Perspectives + Synthesis)**: Analyzes operational capture data across 9 angles:
-  1. *Material & Force*
-  2. *Frequency & Rhythm*
-  3. *Error & Failure Modes*
-  4. *Biomechanical / Ergonomic*
-  5. *Cognitive Load & Focus*
-  6. *Environmental Constraints*
-  7. *Habit & Pattern Loops*
-  8. *Risk & Safety Boundaries*
-  9. *Transfer & Generalization*
-  - **10th Synthesis**: Merges all 9 insights into an unyielding, optimal adaptation roadmap.
-- 🛡️ **Anti-Fragile Failure Taxonomy**: Classifies friction into *Perception*, *Model*, *Execution*, and *Context* failures so every error drives rapid evolution.
-- ⏳ **Built-in Rate Limit Backoff & Auto-Retry**: Includes intelligent exponential backoff retry mechanisms to handle free-tier quotas seamlessly.
+Through structured human operational capture, automated property assessment, and parallel multi-perspective analysis, MAS constructs executable 9-step adaptation roadmaps that systematically eliminate friction across physical, cognitive, tools, and social domains.
 
 ---
 
-## 📁 Repository Structure
+## Core System Architecture
 
-```
-MAS - Mahoraga Adapt System/
-├── 📄 index.html             # High-aesthetic dark mode Web UI
-├── 🎨 style.css              # Glassmorphism design system & micro-animations
-├── ⚡ app.js                 # Dynamic UI logic & API integrations
-├── 🖼️ assets/
-│   └── 🎬 mahoraga_wheel.gif # Animated Mahoraga Spin Wheel
-├── 📁 server/
-│   ├── ⚙️ server.js          # Express API server v8.5
-│   ├── 🧠 deepAnalysis.js    # 9-perspective engine with 429 rate limit backoff
-│   ├── 📜 perspectives.js    # System prompts for 9 analytical angles
-│   ├── 🔒 .env.example       # Environment template
-│   └── 💾 sessions.json      # Stored adaptation sessions
-├── 📁 core/                  # Protocol standards & Master Codex
-├── 📁 analysis/              # Technical deep dives & operational mechanisms
-├── 📁 case_studies/          # Real-world adaptation logs (keyboard, pencil, 10-year narrative)
-└── 📁 mythos/                # Metaphorical foundations & naming revelations
-```
+### 1. Predictive Embodied Meta-Learning (PEML)
+PEML utilizes a 7-layer predictive hierarchy to minimize error signals between an internal mental model and environmental reality:
+- Layer 1: Raw Sensory Capture
+- Layer 2: Signal Filtering & Feature Extraction
+- Layer 3: Failure Taxonomy Mapping
+- Layer 4: Control Variable Isolation
+- Layer 5: Hypothesis & Micro-Drill Generation
+- Layer 6: Constraint Verification & Refinement
+- Layer 7: Ontological Assimilation
+
+### 2. The Eight-Handled Wheel Protocol
+The operational execution follows a recursive 8-stage adaptation loop:
+`Observe` -> `Hypothesize` -> `Act` -> `Measure` -> `Update` -> `Optimize` -> `Assimilate` -> `Evolve`
+
+### 3. Anti-Fragile Failure Taxonomy
+Friction and errors are classified into four distinct operational failure modes:
+- **Perception Failure**: Inaccurate or insufficient sensory data collection.
+- **Model Failure**: Flawed internal representation of force, timing, or constraints.
+- **Execution Failure**: Motor control, physical fatigue, or precision degradation.
+- **Context Failure**: Environmental shifts, external noise, or boundary mismatches.
+
+### 4. Parallel Deep Analysis Engine (9 Perspectives + Synthesis)
+When evaluated, the system executes 9 analytical perspectives in parallel:
+1. **Material & Force**: Mechanical properties, elasticity, and load boundaries.
+2. **Frequency & Rhythm**: Cycle timing, vibration, and tempo consistency.
+3. **Error & Failure Modes**: Root cause analysis across failure taxonomy.
+4. **Biomechanical / Ergonomic**: Motor patterns, posture, joint mechanics, and strain.
+5. **Cognitive Load & Focus**: Mental bandwidth, attention allocation, and fatigue thresholds.
+6. **Environmental Constraints**: External conditions, lighting, noise, and setup geometry.
+7. **Habit & Pattern Loops**: Behavioral feedback loops and automatic routines.
+8. **Risk & Safety Boundaries**: Injury prevention, failure containment, and safety margins.
+9. **Transfer & Generalization**: Cross-domain skill mapping and invariant extraction.
+
+**10th Synthesis**: Aggregates all 9 perspective analyses into an optimal, non-redundant adaptation roadmap.
 
 ---
 
-## 🚀 Quick Start Guide
+## Repository Index & Documentation
 
-### 1. Clone & Configure Environment
+### Core Protocols (`/core`)
+- **[Master Codex v8.5](./core/MAS_MASTER_CODEX_v8_5.md)**: Central reference specification defining the Human-AI integration loop.
+- **[Ontological Adaptation Protocol](./core/MAS_v8_5_Ontological_Adaptation.md)**: Technical standard for property extraction and diagnostic capture.
+- **[Genesis and Logic System](./core/MAS_Genesis_and_Logic_System.md)**: Philosophical foundations and atomic logic of adaptation.
+
+### Technical Analysis (`/analysis`)
+- **[Operational Mechanisms](./analysis/MAS_Operational_Mechanisms.md)**: Formal breakdown of the 7-layer predictive architecture.
+- **[Expert Review v8.5](./analysis/MAS_Expert_Review_v8_5.md)**: Comprehensive evaluation, guardrails, and implementation guidelines.
+- **[Deep Analysis Specification](./analysis/MAS_v8_5_Deep_Analysis.md)**: Anti-delusion logic and perspective generation structures.
+
+### Mythos & Symbolic Foundations (`/mythos`)
+- **[Character Introduction](./mythos/Mahoraga_Character_Intro.md)**: Analysis of the Divine General as a functional adaptive archetype.
+- **[Naming Revelation](./mythos/Mahoraga_Naming_Revelation.md)**: Philosophical rationale behind the Mahoraga terminology.
+
+### Case Studies (`/case_studies`)
+- **[Keyboard Actuation Mastery](./case_studies/Keyboard_Actuation_Mastery.md)**: Eradicating typing errors and actuation friction at 90+ WPM.
+- **[Pencil Pressure Control](./case_studies/Pencil_Pressure_Control.md)**: Optimizing force feedback and tension in fine sketching.
+- **[An's Decade of Mahoraga](./case_studies/An_Decade_of_Mahoraga.md)**: A 10-year narrative log of physical and cognitive adaptation.
+
+---
+
+## System Quick Start & Server Setup
+
+### Environment Configuration
+
+1. Navigate to the server directory:
+   ```bash
+   cd server
+   ```
+
+2. Create `.env` from template:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Open `server/.env` and insert your Google AI Studio API key:
+   ```env
+   PORT=3001
+   GEMINI_API_KEY=AIzaSyYourActualKeyHere...
+   GEMINI_MODEL=gemini-flash-latest
+   GEMINI_ASSESSMENT_MODEL=gemini-flash-latest
+   GEMINI_ROADMAP_MODEL=gemini-flash-latest
+   GEMINI_SYNTHESIS_MODEL=gemini-flash-latest
+   ```
+
+### Installation and Execution
 
 ```bash
-git clone https://github.com/Annguyen0410/MAHORAGA-ADAPT-SYSTEM-MAS-v8.5.git
-cd MAHORAGA-ADAPT-SYSTEM-MAS-v8.5/server
-cp .env.example .env
-```
-
-Open `server/.env` and add your Google AI Studio API key:
-
-```env
-PORT=3001
-GEMINI_API_KEY=AIzaSyYourActualKeyHere...
-GEMINI_MODEL=gemini-flash-latest
-```
-
-> **Note**: Get a free API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-
-### 2. Install & Start Server
-
-```bash
+cd server
 npm install
 npm start
 ```
 
-### 3. Launch App
-
-Open your browser to:
-👉 **`http://localhost:3001`**
+Access the application interface in your web browser:
+`http://localhost:3001`
 
 ---
 
-## 🎮 How to Use the Web Application
+## Interactive Web Interface Workflow
 
-1. **Set Session Target**: Enter your target domain, goal, skill level, and historical error patterns.
-2. **Step 1 — Human Operational Capture**: Fill in your sensory observations, test results, and failure modes.
-3. **Step 2 — AI Property Assessment**: Click **Generate Assessment** to isolate control variables and risk factors.
-4. **Step 3 — Adaptive Roadmap**: Click **Generate Roadmap** for a custom 9-step progression loop.
-5. **Step 4 — 🔍 Run Deep Analysis**: Click **Run Deep Analysis** to spin the wheel across 9 parallel analytical perspectives and unlock the synthesized **10th Optimal MAS Path**.
+1. **Session Initialization**: Define the target domain, goal, skill baseline, and historical error patterns.
+2. **Human Operational Capture**: Input direct sensory observations, physical measurements, performed tests, and constraint failures.
+3. **AI Property Assessment**: Execute automated analysis to extract control variables and risk factors.
+4. **Adaptive Roadmap Generation**: Generate a structured 9-step progression protocol (*Baseline Calibration* to *Embodiment Validation*).
+5. **Parallel Deep Analysis**: Execute the 9-perspective engine with automated 429 rate-limit backoff retry to receive the 10th Optimal Synthesis Path.
 
 ---
 
-## 📑 Case Studies Included
+## Technical Specifications & Resilience
 
-- ⌨️ **[Keyboard Actuation Mastery](./case_studies/Keyboard_Actuation_Mastery.md)**: Eradicating typing errors at 90+ WPM.
-- ✏️ **[Pencil Pressure Control](./case_studies/Pencil_Pressure_Control.md)**: Force feedback optimization in sketching.
-- 📖 **[An's Decade of Mahoraga](./case_studies/An_Decade_of_Mahoraga.md)**: A 10-year journey of total assimilation.
+- **AI Provider**: Google Generative AI (`@google/generative-ai`)
+- **Default Model**: `gemini-flash-latest`
+- **Rate Limit Resilience**: Includes automatic exponential backoff retries and sequential throttling to prevent `429 Too Many Requests` errors on Google AI Studio Free Tier API quotas.
+- **Data Persistence**: Local session state managed via `server/sessions.json` and browser `localStorage`.
 
 ---
 
