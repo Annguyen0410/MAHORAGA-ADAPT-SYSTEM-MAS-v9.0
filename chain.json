@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "name": "Project Chain",
+  "chainName": "LiteBrowser · Project Chain",
+  "note": "CHỈ SỬA FILE NÀY để liên kết cả 5 app. 'folder' là tên thư mục local (dùng khi chạy file://). 'remote' là URL sau khi deploy lên Netlify/Render (dùng khi mở qua http/https). chain.js và LiteBrowser đều đọc từ đây.",
+  "apps": [
+    {
+      "id": "linklumina",
+      "name": "LinkLumina",
+      "glyph": "🔖",
+      "subtitle": "Visual bookmark manager — lưu, sắp xếp và khám phá liên kết với nền sống động.",
+      "color": "#e06c5b",
+      "folder": "link",
+      "remote": "https://linklumina.netlify.app"
+    },
+    {
+      "id": "cucquanly",
+      "name": "Cục Quản Lý",
+      "glyph": "📋",
+      "subtitle": "Hub điều phối chính: năng lượng, lưu trữ, visualgraph, thư viện và trích xuất.",
+      "color": "#5bc0de",
+      "folder": "Cục Quản Lý",
+      "remote": "https://cuquanly.netlify.app"
+    },
+    {
+      "id": "mas",
+      "name": "MAS — Mahoraga Adapt System",
+      "glyph": "🔄",
+      "subtitle": "Huấn luyện khả năng thích ứng với bất cứ thứ gì, từng bước một.",
+      "color": "#8f7ae6",
+      "folder": "MAS - Mahoraga Adapt System",
+      "remote": "https://mas-mahoraga.netlify.app"
+    },
+    {
+      "id": "worldleaderboard",
+      "name": "World Leaderboard",
+      "glyph": "🏆",
+      "subtitle": "Tính thứ hạng toàn cầu của bạn theo nhiều chỉ số, với biểu đồ và cột mốc.",
+      "color": "#e6c05b",
+      "folder": "World Leaderboard",
+      "remote": "https://worldleaderboard.netlify.app"
+    },
+    {
+      "id": "hub",
+      "name": "Project Hub",
+      "glyph": "☰",
+      "subtitle": "Trung tâm điều phối toàn chuỗi — một điểm khởi chạy cho cả 5.",
+      "color": "#d8bf95",
+      "folder": "hub",
+      "remote": "https://projectchain.netlify.app"
+    }
+  ]
+}

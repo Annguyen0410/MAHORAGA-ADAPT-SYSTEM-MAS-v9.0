@@ -1600,3 +1600,23 @@ select:focus {
     grid-column: auto;
   }
 }
+
+/* === Render-performance pass === */
+.source-card,
+.perspective-card,
+.template-card,
+.metric-tile {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+

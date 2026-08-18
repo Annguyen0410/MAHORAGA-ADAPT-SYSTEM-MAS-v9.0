@@ -389,6 +389,9 @@ async function initApi() {
 
 initApi();
 setInterval(async () => {
+  // Skip network polling while the tab is hidden so a background MAS tab
+  // never wakes the CPU/network every 15s for nothing.
+  if (document.hidden) return;
   if (apiAvailable) await pollRateLimit();
   else await checkApiHealth().then(() => { if (apiAvailable) pollRateLimit(); });
 }, 15000);
