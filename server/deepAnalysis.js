@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { PERSPECTIVES, SYNTHESIS_SYSTEM_PROMPT } = require("./perspectives");
 const budget = require("./geminiBudget");
+const modelBudget = require("./modelBudget");
 
 function buildUserContent(session) {
   const c = session.humanCapture || {};
@@ -42,10 +43,20 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function callGemini(apiKey, modelName, systemPrompt, userContent, retries = 3, initialDelayMs = 3000) {
+async function callGemini(apiKey, systemPrompt, userContent, preferredModel, retries = 3, initialDelayMs = 3000) {
+  // Reserve quota BEFORE calling: if every model is at its free-tier
+  // RPM/TPM/RPD limit, refuse without hitting the API (never billed).
+  const estTokens = modelBudget.estimateTokens(systemPrompt) + modelBudget.estimateTokens(userContent);
+  const modelId = modelBudget.acquire([preferredModel], estTokens);
+  if (!modelId) {
+    const err = new Error("All Gemini models are at their free-tier quota (RPM/TPM/RPD). No AI call was made — try again later.");
+    err.quotaExhausted = true;
+    throw err;
+  }
+
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: modelName || "gemini-flash-latest",
+    model: modelId,
     systemInstruction: systemPrompt
   });
 
@@ -53,9 +64,11 @@ async function callGemini(apiKey, modelName, systemPrompt, userContent, retries 
     try {
       const result = await model.generateContent(userContent);
       budget.record(1);
+      modelBudget.recordTokens(modelId, result.response.usageMetadata?.totalTokenCount || estTokens);
       return result.response.text();
     } catch (err) {
       const is429 = err.message.includes("429") || err.message.includes("Quota exceeded") || err.message.includes("RESOURCE_EXHAUSTED");
+      if (is429) modelBudget.markBlocked(modelId);
       if (is429 && attempt < retries) {
         let waitMs = initialDelayMs * Math.pow(2, attempt) + Math.floor(Math.random() * 800);
         const match = err.message.match(/retry in ([\d.]+)s/i);
@@ -126,8 +139,8 @@ function stripErrorFlag(p) {
 async function runDeepAnalysis(session, options = {}) {
   const {
     apiKey,
-    modelName = "gemini-flash-latest",
-    synthesisModel = "gemini-flash-latest",
+    modelName = null, // preferred model; modelBudget falls back through its priority list
+    synthesisModel = null,
     mode = "auto", // "auto" | "batch" | "full"
     cache = null
   } = options;
@@ -155,7 +168,7 @@ async function runDeepAnalysis(session, options = {}) {
         continue;
       }
       try {
-        const text = await callGemini(apiKey, modelName, p.systemPrompt, userContent);
+        const text = await callGemini(apiKey, p.systemPrompt, userContent, modelName);
         perspectives.push({ id: p.id, label: p.label, labelVi: p.labelVi, icon: p.icon, analysis: text });
       } catch (err) {
         perspectives.push({ id: p.id, label: p.label, labelVi: p.labelVi, icon: p.icon, analysis: `ERROR: ${err.message}`, error: true });
@@ -168,7 +181,7 @@ async function runDeepAnalysis(session, options = {}) {
     // Batch mode: all 9 personalities in one call (+ optional repair + synthesis).
     modeUsed = "batch";
     try {
-      const batchedText = await callGemini(apiKey, modelName, buildBatchPrompt(), userContent);
+      const batchedText = await callGemini(apiKey, buildBatchPrompt(), userContent, modelName);
       perspectives = parseBatchedResponse(batchedText);
 
       // Repair pass: if any section was missed, ask for ONLY the missing ones in one call.
@@ -179,7 +192,7 @@ async function runDeepAnalysis(session, options = {}) {
             const def = PERSPECTIVES.find((x) => x.id === p.id);
             return `### ${p.id.toUpperCase()} — ${def.label}\n${def.systemPrompt}`;
           }).join("\n\n");
-        const repairText = await callGemini(apiKey, modelName, repairPrompt, userContent);
+        const repairText = await callGemini(apiKey, repairPrompt, userContent, modelName);
         const repaired = parseBatchedResponse(repairText);
         for (const r of repaired) {
           const idx = perspectives.findIndex((p) => p.id === r.id);
@@ -202,9 +215,9 @@ async function runDeepAnalysis(session, options = {}) {
   try {
     synthesis = await callGemini(
       apiKey,
-      synthesisModel,
       SYNTHESIS_SYSTEM_PROMPT,
-      `Here are ${perspectives.length} perspective analyses from 9 distinct agents. Synthesize them into one optimal MAS adaptation roadmap.\n\n${synthesisInput}`
+      `Here are ${perspectives.length} perspective analyses from 9 distinct agents. Synthesize them into one optimal MAS adaptation roadmap.\n\n${synthesisInput}`,
+      synthesisModel
     );
   } catch (err) {
     synthesis = `Synthesis failed: ${err.message}`;

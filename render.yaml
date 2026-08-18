@@ -1,0 +1,32 @@
+# Render Blueprint for MAS v9 (Mahoraga Adapt System)
+# Host type: Web Service (Node) — NOT a static site, because MAS has a
+# real Express + Gemini backend (server/server.js) that also serves the UI.
+#
+# Deploy: Render dashboard → New + → Blueprint → select this repo
+# (or "New + → Web Service" and copy these exact fields).
+services:
+  - type: web
+    name: mas-mahoraga
+    runtime: node
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && node server.js
+    healthCheckPath: /api/health
+    envVars:
+      # CRITICAL: server.js binds 127.0.0.1 by default (for local safety).
+      # Render must be able to reach the app, so force bind to all interfaces.
+      - key: HOST
+        value: 0.0.0.0
+      # Your Gemini key — set it in Render dashboard → Environment
+      # (never commit it). With sync: false the field starts empty on purpose.
+      - key: GEMINI_API_KEY
+        sync: false
+      # Pinned model with the most free quota (500 RPD). Never use the
+      # `-latest` alias — it silently points to the newest flash model
+      # (e.g. 3.6-flash) whose free quota is tiny and easily burned.
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      # Optional: point session storage to a mounted Persistent Disk later,
+      # e.g. value: /var/data/sessions.json  (disk mounted at /var/data)
+      - key: DATA_FILE
+        sync: false

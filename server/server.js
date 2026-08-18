@@ -7,13 +7,14 @@ const fs = require("fs");
 const path = require("path");
 const { runDeepAnalysis } = require("./deepAnalysis");
 const budget = require("./geminiBudget");
+const modelBudget = require("./modelBudget");
 const { cleanSessionInput } = require("./validate");
 
 const PORT = process.env.PORT || 3001;
 // Default to loopback only: the API carries personal data and a paid AI
 // budget, so it must not be reachable from the LAN. Override with HOST=0.0.0.0.
 const HOST = process.env.HOST || "127.0.0.1";
-const DATA_FILE = path.join(__dirname, "sessions.json");
+const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "sessions.json");
 const AI_WINDOW_MS = parseInt(process.env.AI_RATE_LIMIT_WINDOW_MS || "3600000");
 const AI_MAX_CALLS = parseInt(process.env.AI_RATE_LIMIT_MAX || "20");
 
@@ -111,15 +112,31 @@ const aiLimiter = rateLimit({
   }
 });
 
-async function callGoogleAI(systemPrompt, userContent, modelName) {
-  const genAI = getGenAI();
-  const model = genAI.getGenerativeModel({
-    model: modelName || process.env.GEMINI_MODEL || "gemini-flash-latest",
-    systemInstruction: systemPrompt
-  });
-  const result = await model.generateContent(userContent);
-  budget.record(1);
-  return result.response.text();
+// One Gemini call, guarded by the per-model quota (RPM/TPM/RPD).
+// If the preferred model is exhausted, the priority list in modelBudget
+// is tried; if EVERY model is exhausted we throw without calling the API
+// (quotaExhausted) so the user is never billed for an over-quota request.
+async function callGoogleAI(systemPrompt, userContent, preferredModel) {
+  const genAI = getGenAI(); // throws early if the key is missing — before reserving quota
+  const estTokens = modelBudget.estimateTokens(systemPrompt) + modelBudget.estimateTokens(userContent);
+  const modelId = modelBudget.acquire([preferredModel || process.env.GEMINI_MODEL], estTokens);
+  if (!modelId) {
+    const err = new Error("All Gemini models are at their free-tier quota (RPM/TPM/RPD). No AI call was made — try again later.");
+    err.quotaExhausted = true;
+    throw err;
+  }
+  try {
+    const model = genAI.getGenerativeModel({ model: modelId, systemInstruction: systemPrompt });
+    const result = await model.generateContent(userContent);
+    budget.record(1);
+    modelBudget.recordTokens(modelId, result.response.usageMetadata?.totalTokenCount || estTokens);
+    return result.response.text();
+  } catch (err) {
+    if (/429|RESOURCE_EXHAUSTED|Quota exceeded/i.test(String(err.message))) {
+      modelBudget.markBlocked(modelId);
+    }
+    throw err;
+  }
 }
 
 app.get("/api/health", (req, res) => {
@@ -129,7 +146,7 @@ app.get("/api/health", (req, res) => {
     status: "ok",
     version: "9.0.0",
     aiConfigured: keyOk,
-    aiModel: process.env.GEMINI_MODEL || "gemini-flash-latest",
+    aiModel: process.env.GEMINI_MODEL || modelBudget.PRIORITY[0] || "gemini-3.5-flash-lite",
     provider: "google/gemini",
     deepAnalysisAvailable: keyOk,
     uptime: process.uptime()
@@ -147,6 +164,12 @@ app.get("/api/rate-limit", (req, res) => {
     remaining: s.remaining,
     resetAt: s.resetAt
   });
+});
+
+// Per-model free-tier quota status (RPM / TPM / RPD) — what modelBudget
+// enforces before every Gemini call, and which models still have room.
+app.get("/api/models", (req, res) => {
+  res.json(modelBudget.status());
 });
 
 app.get("/api/sessions", (req, res) => {
@@ -232,7 +255,7 @@ Rules:
 
     const userContent = `Target: ${session.target}\nDomain: ${session.domain}\nGoal: ${session.goal}\n\nCapture Data:\nProperties: ${c.observedProperties || "(none)"}\nEvaluation: ${c.evaluation || "(none)"}\nDescription: ${c.description || "(none)"}\nTest: ${c.testPerformed || "(none)"}\nResult: ${c.testResult || "(none)"}\nContext: ${c.environment || "(none)"}\nSignals: ${c.measuredSignals || "(none)"}\nFailure Type: ${c.failureType || "(none)"}`;
 
-    const raw = await callGoogleAI(systemPrompt, userContent, process.env.GEMINI_ASSESSMENT_MODEL || process.env.GEMINI_MODEL || "gemini-flash-latest");
+    const raw = await callGoogleAI(systemPrompt, userContent, process.env.GEMINI_ASSESSMENT_MODEL || process.env.GEMINI_MODEL);
     const cleaned = raw.replace(/```json|```/g, "").trim();
     const jsonStart = cleaned.indexOf("{");
     const jsonEnd = cleaned.lastIndexOf("}") + 1;
@@ -244,6 +267,9 @@ Rules:
       rateLimit: budget.status()
     });
   } catch (err) {
+    if (err.quotaExhausted) {
+      return res.status(429).json({ error: err.message, budget: modelBudget.status() });
+    }
     if (err.message.includes("GEMINI_API_KEY not configured")) {
       return res.status(503).json({ error: err.message, fallbackAvailable: true });
     }
@@ -283,7 +309,7 @@ Suggested NEXT SPIN from the engine: ${nextStep}
 
 Generate a 9-step roadmap adapted to this phase: 1) Baseline calibration, 2) First drill, 3) Measurement target, 4) Property-aware adjustment, 5) Constraint check, 6) Refinement loop, 7) Transfer test, 8) Template candidate, 9) Embodiment validation.`;
 
-    const roadmap = await callGoogleAI(systemPrompt, userContent, process.env.GEMINI_ROADMAP_MODEL || process.env.GEMINI_MODEL || "gemini-flash-latest");
+    const roadmap = await callGoogleAI(systemPrompt, userContent, process.env.GEMINI_ROADMAP_MODEL || process.env.GEMINI_MODEL);
     session.roadmap = roadmap;
     saveSessions();
     res.json({
@@ -291,6 +317,9 @@ Generate a 9-step roadmap adapted to this phase: 1) Baseline calibration, 2) Fir
       rateLimit: budget.status()
     });
   } catch (err) {
+    if (err.quotaExhausted) {
+      return res.status(429).json({ error: err.message, budget: modelBudget.status() });
+    }
     if (err.message.includes("GEMINI_API_KEY not configured")) {
       return res.status(503).json({ error: err.message, fallbackAvailable: true });
     }
@@ -320,8 +349,8 @@ app.post("/api/sessions/:id/deep-analysis", deepLimiter, async (req, res) => {
 
     const result = await runDeepAnalysis(session, {
       apiKey: process.env.GEMINI_API_KEY,
-      modelName: process.env.GEMINI_MODEL || "gemini-flash-latest",
-      synthesisModel: process.env.GEMINI_SYNTHESIS_MODEL || process.env.GEMINI_MODEL || "gemini-flash-latest",
+      modelName: process.env.GEMINI_MODEL,
+      synthesisModel: process.env.GEMINI_SYNTHESIS_MODEL || process.env.GEMINI_MODEL,
       mode,
       cache: session.deepAnalysisCache || (session.deepAnalysisCache = {})
     });
@@ -339,6 +368,9 @@ app.post("/api/sessions/:id/deep-analysis", deepLimiter, async (req, res) => {
       rateLimit: budget.status()
     });
   } catch (err) {
+    if (err.quotaExhausted) {
+      return res.status(429).json({ error: err.message, budget: modelBudget.status() });
+    }
     res.status(502).json({ error: `Deep analysis failed: ${err.message}` });
   }
 });

@@ -1262,6 +1262,14 @@ select:focus {
   background: linear-gradient(90deg, var(--danger), #ef4444);
 }
 
+.model-budget-text {
+  margin-top: 8px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+  word-break: break-word;
+}
+
 .wheel-spin-modal {
   display: grid;
   place-items: center;

@@ -83,7 +83,28 @@ function updateRateLimitUI() {
     fillEl.className = "rate-limit-fill";
     if (limitTextEl) limitTextEl.textContent = "Local mode (no limit)";
   }
+  updateModelBudgetUI();
   updateDeepCost();
+}
+
+// Compact per-model quota line (e.g. "3.5-flash-lite 3/500/day · 3.1-flash-lite 0/500/day").
+function updateModelBudgetUI() {
+  const el = document.querySelector("#model-budget-text");
+  if (!el) return;
+  if (!apiAvailable || !modelBudgetInfo || !Array.isArray(modelBudgetInfo.models)) {
+    el.textContent = "";
+    return;
+  }
+  const parts = modelBudgetInfo.models
+    .filter((m) => m.limit && m.used)
+    .slice(0, 3)
+    .map((m) => {
+      const name = m.id.replace(/^gemini-/, "");
+      const flag = m.used.dayCalls >= m.limit.rpd ? " ⛔" : m.blocked ? " ⏸" : "";
+      return `${name} ${m.used.dayCalls}/${m.limit.rpd}/day${flag}`;
+    });
+  el.textContent = parts.length ? `Model budget: ${parts.join(" · ")}` : "";
+  el.title = JSON.stringify(modelBudgetInfo, null, 2);
 }
 
 function showLoading(text) {

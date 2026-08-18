@@ -67,4 +67,14 @@ async function pollRateLimit() {
     };
   }
   updateRateLimitUI();
+  fetchModelBudget();
+}
+
+// Per-model free-tier quota (RPM/TPM/RPD) enforced by the server.
+let modelBudgetInfo = null;
+
+async function fetchModelBudget() {
+  const result = await apiGet("/api/models");
+  if (result.ok) modelBudgetInfo = result.data;
+  updateModelBudgetUI();
 }
