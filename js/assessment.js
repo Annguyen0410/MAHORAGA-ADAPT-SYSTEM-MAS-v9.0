@@ -18,6 +18,26 @@ function analyzeText(...parts) {
   };
 }
 
+// Guard against malformed AI responses. Gemini is asked for a strict JSON
+// shape, but a missing/null field must never crash the renderer — every
+// consumer below assumes these arrays exist.
+function normalizeAssessment(a) {
+  if (!a || typeof a !== "object") {
+    return { material: "under-specified", durability: "unknown", frequency: "unknown", variables: [], risks: [], uncertainty: [], detailedGuidance: "" };
+  }
+  const str = (v, fallback) => (typeof v === "string" ? v : fallback);
+  const arr = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+  return {
+    material: str(a.material, "under-specified"),
+    durability: str(a.durability, "unknown"),
+    frequency: str(a.frequency, "unknown"),
+    variables: arr(a.variables),
+    risks: arr(a.risks),
+    uncertainty: arr(a.uncertainty),
+    detailedGuidance: str(a.detailedGuidance, "")
+  };
+}
+
 function generateAssessment() {
   if (!currentSession) return null;
   const capture = currentSession.humanCapture || emptyCapture();
@@ -139,8 +159,8 @@ function renderAssessment() {
     output.innerHTML = `<div class="empty-state">Generate assessment after saving human capture. This is a local MAS-based assessment, not an external AI call.</div>`;
     return;
   }
-  const assessment = currentSession.aiAssessment;
-  const keyVariable = (assessment.variables || [])[0] || "n/a";
+  const assessment = normalizeAssessment(currentSession.aiAssessment);
+  const keyVariable = assessment.variables[0] || "n/a";
   output.innerHTML = `
     <details class="assessment-details">
       <summary>
@@ -162,21 +182,22 @@ function renderAssessment() {
 
 function assessmentText(assessment) {
   if (!assessment) return "No AI-style assessment generated yet.";
+  const a = normalizeAssessment(assessment);
   return [
-    `Material / structure: ${assessment.material}`,
-    `Durability: ${assessment.durability}`,
-    `Vibration / frequency: ${assessment.frequency}`,
-    `Control variables: ${assessment.variables.join(", ")}`,
-    `Risks: ${assessment.risks.join(" ")}`,
-    `Uncertainty flags: ${assessment.uncertainty.join(" ")}`,
+    `Material / structure: ${a.material}`,
+    `Durability: ${a.durability}`,
+    `Vibration / frequency: ${a.frequency}`,
+    `Control variables: ${a.variables.join(", ")}`,
+    `Risks: ${a.risks.join(" ")}`,
+    `Uncertainty flags: ${a.uncertainty.join(" ")}`,
     "",
-    assessment.detailedGuidance || "Detailed guidance not generated yet."
+    a.detailedGuidance || "Detailed guidance not generated yet."
   ].join("\n");
 }
 
 function generateRoadmapText() {
   if (!currentSession) return "";
-  const assessment = currentSession.aiAssessment || generateAssessment();
+  const assessment = normalizeAssessment(currentSession.aiAssessment || generateAssessment());
   const capture = currentSession.humanCapture || emptyCapture();
   const variables = assessment.variables.slice(0, 4).join(", ");
   const firstVariable = assessment.variables[0] || "attention target";
@@ -237,9 +258,10 @@ function generateRoadmapText() {
 }
 
 function inferTemplateCandidate(session, assessment) {
+  const a = normalizeAssessment(assessment);
   const capture = session.humanCapture || emptyCapture();
   const coreSignal = capture.measuredSignals || capture.testResult || capture.evaluation || "the clearest measured signal";
-  return `When adapting to ${session.target}, begin with ${assessment.variables[0] || "the strongest control variable"} and verify against ${coreSignal}.`;
+  return `When adapting to ${session.target}, begin with ${a.variables[0] || "the strongest control variable"} and verify against ${coreSignal}.`;
 }
 
 function renderRoadmap() {

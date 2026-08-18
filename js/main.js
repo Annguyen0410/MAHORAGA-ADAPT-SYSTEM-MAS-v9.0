@@ -206,7 +206,7 @@ document.querySelector("#generate-full").addEventListener("click", async () => {
     showLoading("AI analyzing capture & building roadmap...");
     const assessResult = await apiPost(`/api/sessions/${sId}/assessment`, {});
     if (assessResult.ok) {
-      currentSession.aiAssessment = assessResult.data.assessment;
+      currentSession.aiAssessment = normalizeAssessment(assessResult.data.assessment);
       if (assessResult.data.rateLimit?.remaining !== undefined) {
         rateLimitInfo.remaining = assessResult.data.rateLimit.remaining;
         updateRateLimitUI();
@@ -333,7 +333,7 @@ document.querySelector("#save-roadmap-template").addEventListener("click", () =>
   }
   currentSession.roadmap = roadmap;
   saveSession();
-  const assessment = currentSession.aiAssessment || generateAssessment();
+  const assessment = normalizeAssessment(currentSession.aiAssessment || generateAssessment());
   const packet = completeOutputText();
   const adaptState = computeAdaptation(currentSession.target);
   const status = adaptState.phase === "immune"

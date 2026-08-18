@@ -23,7 +23,18 @@ const deepLimiter = rateLimit({
   windowMs: AI_WINDOW_MS,
   max: parseInt(process.env.AI_REQUEST_LIMIT_MAX || "120", 10),
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      error: "Deep analysis rate limit exceeded",
+      rateLimit: {
+        limit: parseInt(process.env.AI_REQUEST_LIMIT_MAX || "120", 10),
+        remaining: 0,
+        resetAt: new Date(req.rateLimit.resetTime).toISOString(),
+        retryAfterSeconds: Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000)
+      }
+    });
+  }
 });
 
 function getGenAI() {
