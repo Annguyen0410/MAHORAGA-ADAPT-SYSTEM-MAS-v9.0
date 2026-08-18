@@ -44,44 +44,55 @@ function delay(ms) {
 }
 
 async function callGemini(apiKey, systemPrompt, userContent, preferredModel, retries = 3, initialDelayMs = 3000) {
-  // Reserve quota BEFORE calling: if every model is at its free-tier
-  // RPM/TPM/RPD limit, refuse without hitting the API (never billed).
-  const estTokens = modelBudget.estimateTokens(systemPrompt) + modelBudget.estimateTokens(userContent);
-  const modelId = modelBudget.acquire([preferredModel], estTokens);
-  if (!modelId) {
-    const err = new Error("All Gemini models are at their free-tier quota (RPM/TPM/RPD). No AI call was made — try again later.");
-    err.quotaExhausted = true;
-    throw err;
-  }
-
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: modelId,
-    systemInstruction: systemPrompt
-  });
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const result = await model.generateContent(userContent);
-      budget.record(1);
-      modelBudget.recordTokens(modelId, result.response.usageMetadata?.totalTokenCount || estTokens);
-      return result.response.text();
-    } catch (err) {
-      const is429 = err.message.includes("429") || err.message.includes("Quota exceeded") || err.message.includes("RESOURCE_EXHAUSTED");
-      if (is429) modelBudget.markBlocked(modelId);
-      if (is429 && attempt < retries) {
-        let waitMs = initialDelayMs * Math.pow(2, attempt) + Math.floor(Math.random() * 800);
-        const match = err.message.match(/retry in ([\d.]+)s/i);
-        if (match && match[1]) {
-          waitMs = Math.max(waitMs, Math.ceil(parseFloat(match[1]) * 1000) + 1000);
-        }
-        console.log(`[DeepAnalysis] Rate limited (429). Retrying attempt ${attempt + 1}/${retries} after ${Math.round(waitMs / 1000)}s...`);
-        await delay(waitMs);
-        continue;
-      }
+  // Try up to a few models: quota-exhausted ones are skipped by the guard,
+  // and a model that errors out (bad ID / not supported) is marked blocked
+  // and we fall through to the next one instead of failing the request.
+  for (let tryModel = 0; tryModel < 4; tryModel++) {
+    // Reserve quota BEFORE calling: if every model is at its free-tier
+    // RPM/TPM/RPD limit, refuse without hitting the API (never billed).
+    const estTokens = modelBudget.estimateTokens(systemPrompt) + modelBudget.estimateTokens(userContent);
+    const modelId = modelBudget.acquire([preferredModel], estTokens);
+    if (!modelId) {
+      const err = new Error("All Gemini models are at their free-tier quota (RPM/TPM/RPD). No AI call was made — try again later.");
+      err.quotaExhausted = true;
       throw err;
     }
+
+    const model = genAI.getGenerativeModel({
+      model: modelId,
+      systemInstruction: systemPrompt
+    });
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const result = await model.generateContent(userContent);
+        budget.record(1);
+        modelBudget.recordTokens(modelId, result.response.usageMetadata?.totalTokenCount || estTokens);
+        return result.response.text();
+      } catch (err) {
+        const msg = String(err.message);
+        const is429 = msg.includes("429") || msg.includes("Quota exceeded") || msg.includes("RESOURCE_EXHAUSTED");
+        const isModelError = /model.*(not found|not supported|doesn't exist|does not exist)|invalid.*model/i.test(msg);
+        if (is429 || isModelError) modelBudget.markBlocked(modelId);
+        if (isModelError) break; // bad model: try the next one
+        if (is429 && attempt < retries) {
+          let waitMs = initialDelayMs * Math.pow(2, attempt) + Math.floor(Math.random() * 800);
+          const match = msg.match(/retry in ([\d.]+)s/i);
+          if (match && match[1]) {
+            waitMs = Math.max(waitMs, Math.ceil(parseFloat(match[1]) * 1000) + 1000);
+          }
+          console.log(`[DeepAnalysis] Rate limited (429). Retrying attempt ${attempt + 1}/${retries} after ${Math.round(waitMs / 1000)}s...`);
+          await delay(waitMs);
+          continue;
+        }
+        throw err;
+      }
+    }
   }
+  const err = new Error("No Gemini model could complete the request.");
+  err.quotaExhausted = true;
+  throw err;
 }
 
 // Build a single prompt that runs all 9 agent personalities in ONE call.

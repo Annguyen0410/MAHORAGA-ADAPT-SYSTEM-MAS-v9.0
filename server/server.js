@@ -118,25 +118,39 @@ const aiLimiter = rateLimit({
 // (quotaExhausted) so the user is never billed for an over-quota request.
 async function callGoogleAI(systemPrompt, userContent, preferredModel) {
   const genAI = getGenAI(); // throws early if the key is missing — before reserving quota
-  const estTokens = modelBudget.estimateTokens(systemPrompt) + modelBudget.estimateTokens(userContent);
-  const modelId = modelBudget.acquire([preferredModel || process.env.GEMINI_MODEL], estTokens);
-  if (!modelId) {
-    const err = new Error("All Gemini models are at their free-tier quota (RPM/TPM/RPD). No AI call was made — try again later.");
-    err.quotaExhausted = true;
-    throw err;
-  }
-  try {
-    const model = genAI.getGenerativeModel({ model: modelId, systemInstruction: systemPrompt });
-    const result = await model.generateContent(userContent);
-    budget.record(1);
-    modelBudget.recordTokens(modelId, result.response.usageMetadata?.totalTokenCount || estTokens);
-    return result.response.text();
-  } catch (err) {
-    if (/429|RESOURCE_EXHAUSTED|Quota exceeded/i.test(String(err.message))) {
-      modelBudget.markBlocked(modelId);
+  // Try up to a few models: quota-exhausted ones are skipped by the guard,
+  // and a model that errors out (bad ID / not supported) is marked blocked
+  // and we fall through to the next one instead of failing the request.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const estTokens = modelBudget.estimateTokens(systemPrompt) + modelBudget.estimateTokens(userContent);
+    const modelId = modelBudget.acquire([preferredModel || process.env.GEMINI_MODEL], estTokens);
+    if (!modelId) {
+      const err = new Error("All Gemini models are at their free-tier quota (RPM/TPM/RPD). No AI call was made — try again later.");
+      err.quotaExhausted = true;
+      throw err;
     }
-    throw err;
+    try {
+      const model = genAI.getGenerativeModel({ model: modelId, systemInstruction: systemPrompt });
+      const result = await model.generateContent(userContent);
+      budget.record(1);
+      modelBudget.recordTokens(modelId, result.response.usageMetadata?.totalTokenCount || estTokens);
+      return result.response.text();
+    } catch (err) {
+      const msg = String(err.message);
+      if (/429|RESOURCE_EXHAUSTED|Quota exceeded/i.test(msg)) {
+        modelBudget.markBlocked(modelId);
+        throw err; // quota: surface the 429, don't burn other models
+      }
+      if (/model.*(not found|not supported|doesn't exist|does not exist)|invalid.*model/i.test(msg)) {
+        modelBudget.markBlocked(modelId);
+        continue; // bad model: self-heal by trying the next one
+      }
+      throw err;
+    }
   }
+  const err = new Error("No Gemini model could complete the request.");
+  err.quotaExhausted = true;
+  throw err;
 }
 
 app.get("/api/health", (req, res) => {

@@ -20,29 +20,40 @@
 const WINDOW_MS = 60_000; // 60s rolling window for RPM / TPM
 
 function defaultTable() {
+  // Mirrors the free-tier dashboard of the MAS Google key (used/limit).
+  // Gemma 4 31B/26B carry a HUGE daily pool (14.4k RPD) but a small 16k TPM,
+  // so they are great as fallbacks for short calls; the guard auto-skips
+  // them when a call would blow the per-minute token budget.
   return {
     "gemini-3.6-flash":      { rpm: 5,   tpm: 250000, rpd: 20 },
     "gemini-3.5-flash":      { rpm: 5,   tpm: 250000, rpd: 20 },
     "gemini-3.5-flash-lite": { rpm: 15,  tpm: 250000, rpd: 500 },
     "gemini-3.1-flash-lite": { rpm: 15,  tpm: 250000, rpd: 500 },
     "gemini-3.7-flash":      { rpm: 5,   tpm: 250000, rpd: 20 },
+    "gemini-3-flash":        { rpm: 5,   tpm: 250000, rpd: 20 },
     "gemini-2.5-flash":      { rpm: 5,   tpm: 250000, rpd: 20 },
-    "gemini-2.5-flash-lite": { rpm: 10,  tpm: 250000, rpd: 20 }
+    "gemini-2.5-flash-lite": { rpm: 10,  tpm: 250000, rpd: 20 },
+    "gemma-4-31b":           { rpm: 30,  tpm: 16000,  rpd: 14400 },
+    "gemma-4-26b":           { rpm: 30,  tpm: 16000,  rpd: 14400 }
   };
 }
 
 function defaultPriority() {
-  // Lite models first: they carry the biggest free daily quota (500 RPD)
-  // and cost nothing extra. 3.6-flash is deliberately NOT here — its
-  // free quota is already exhausted (it was the `gemini-flash-latest`
-  // alias target).
+  // Fallback chain across ALL models that carry free-tier quota, ordered by
+  // daily pool size (biggest first). Every entry is quota-guarded, so if a
+  // model is already at its limit (e.g. 3.6-flash burned 22/20 today) the
+  // guard skips it automatically until the daily reset — nothing to manage.
   return [
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
+    "gemma-4-31b",
+    "gemma-4-26b",
     "gemini-2.5-flash-lite",
     "gemini-3.5-flash",
+    "gemini-3-flash",
     "gemini-2.5-flash",
-    "gemini-3.7-flash"
+    "gemini-3.7-flash",
+    "gemini-3.6-flash"
   ];
 }
 
