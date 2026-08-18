@@ -11,9 +11,13 @@ const modelBudget = require("./modelBudget");
 const { cleanSessionInput } = require("./validate");
 
 const PORT = process.env.PORT || 3001;
-// Default to loopback only: the API carries personal data and a paid AI
-// budget, so it must not be reachable from the LAN. Override with HOST=0.0.0.0.
-const HOST = process.env.HOST || "127.0.0.1";
+// Render always injects PORT, so a PORT-bearing environment (any deploy)
+// binds all interfaces automatically. Local dev keeps the loopback-only
+// default for safety. The .split() tolerates sloppy values like
+// "0.0.0.0, 127.0.0.1" (first entry wins) instead of crashing the boot.
+const HOST = (process.env.HOST || (process.env.PORT ? "0.0.0.0" : "127.0.0.1"))
+  .split(/[,\s]+/)[0]
+  .trim();
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "sessions.json");
 const AI_WINDOW_MS = parseInt(process.env.AI_RATE_LIMIT_WINDOW_MS || "3600000");
 const AI_MAX_CALLS = parseInt(process.env.AI_RATE_LIMIT_MAX || "20");
