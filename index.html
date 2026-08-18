@@ -40,6 +40,16 @@
           </div>
         </div>
 
+        <div class="backup-block">
+          <div class="backup-title">Data backup</div>
+          <div class="backup-actions">
+            <button class="ghost-button" type="button" id="export-data">⬇ Export</button>
+            <button class="ghost-button" type="button" id="import-data">⬆ Import</button>
+            <input type="file" id="import-file" accept="application/json,.json" hidden>
+          </div>
+          <span class="backup-hint">Save or restore your session, templates and evolution history.</span>
+        </div>
+
         <div class="system-note">
           <strong>How it works</strong>
           <span>1. Describe what you want to adapt to → 2. Write down what you notice → 3. Get a step-by-step plan to improve → 4. Run the plan, track results, repeat.</span>
@@ -105,13 +115,13 @@
           <div class="guide-banner">
             <div class="guide-title">📋 How this works</div>
             <div class="guide-steps">
-              <span><strong>1.</strong> Name what you want to adapt to</span>
+              <span><strong>1.</strong> Describe what you want + what you notice</span>
               <span>→</span>
-              <span><strong>2.</strong> Write what you observe</span>
+              <span><strong>2.</strong> Get your plan</span>
               <span>→</span>
-              <span><strong>3.</strong> Click one button → get a plan</span>
-              <span>→</span>
-              <span><strong>4.</strong> Run the plan, track results</span>
+              <span><strong>3.</strong> Run it, track results, evolve</span>
+              <span>·</span>
+              <span>Step 4 is an advanced AI deep dive</span>
             </div>
           </div>
 
@@ -122,16 +132,17 @@
             <button class="chip example-chip" type="button" data-example="public-speaking">🎤 Public speaking nerves</button>
           </div>
 
-          <div class="step-progress" id="step-progress">
-            <span class="step-dot active" data-step="1">1. What</span>
+          <div class="step-progress" id="step-progress" aria-label="Trainer steps">
+            <button class="step-dot active" type="button" data-step="1" aria-current="step">1 · Describe</button>
             <span class="step-line"></span>
-            <span class="step-dot" data-step="2">2. Observe</span>
+            <button class="step-dot" type="button" data-step="2" disabled>2 · Plan</button>
             <span class="step-line"></span>
-            <span class="step-dot" data-step="3">3. Plan</span>
+            <button class="step-dot" type="button" data-step="3" disabled>3 · Evolve</button>
             <span class="step-line"></span>
-            <span class="step-dot" data-step="4">4. Deep dive</span>
+            <button class="step-dot" type="button" data-step="4">4 · Deep dive <span class="advanced-tag">advanced</span></button>
           </div>
 
+          <section class="wizard-step active" id="wizard-step-1" data-step="1">
           <div class="trainer-grid">
             <section class="panel">
               <div class="panel-heading">
@@ -228,10 +239,16 @@
             </section>
           </div>
 
+          <div class="step-actions">
+            <button class="primary-button" type="button" data-next-step="2">Next: Get your plan →</button>
+          </div>
+          </section>
+
+          <section class="wizard-step" id="wizard-step-2" data-step="2">
           <section class="panel">
             <div class="panel-heading">
               <div>
-                <p class="section-label">Step 3</p>
+                <p class="section-label">Step 2</p>
                 <h3>Get your adaptation plan</h3>
               </div>
               <div class="step-3-actions">
@@ -250,12 +267,71 @@
                 </div>
               </div>
             </div>
+
+            <div class="step-actions">
+              <button class="ghost-button" type="button" data-prev-step="1">← Back</button>
+              <button class="primary-button" type="button" data-next-step="3">Next: Track & evolve →</button>
+            </div>
+          </section>
           </section>
 
+          <section class="wizard-step" id="wizard-step-3" data-step="3">
+          <section class="panel adaptation-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">Step 3</p>
+                <h3>The wheel spins with your data</h3>
+              </div>
+              <span class="phase-badge" id="phase-badge">⚡ First Hit</span>
+            </div>
+            <p class="input-note" style="margin:0 0 16px">Every time you run the plan, log your measured result. The engine reads the trend, updates your adaptation phase, and tells you the exact next move — like Mahoraga's wheel turning until the target stops being a threat.</p>
+            <div id="adaptation-empty" class="empty-state">Define a target to start the wheel.</div>
+            <div class="adaptation-layout" id="adaptation-layout">
+              <div class="adaptation-left">
+                <div class="adaptation-metrics" id="adaptation-metrics"></div>
+                <div id="progress-sparkline"></div>
+                <div class="next-step" id="next-step"></div>
+              </div>
+              <form id="checkin-form" class="checkin-form" autocomplete="off">
+                <div class="compact-row">
+                  <label class="c-label">Quality 1-10
+                    <input id="ci-quality" type="number" min="0" max="10" step="1" placeholder="5">
+                  </label>
+                  <label class="c-label">Effort 1-10 (lower = easier)
+                    <input id="ci-effort" type="number" min="0" max="10" step="1" placeholder="5">
+                  </label>
+                </div>
+                <div class="compact-row">
+                  <label class="c-label">Stability 1-10
+                    <input id="ci-stability" type="number" min="0" max="10" step="1" placeholder="5">
+                  </label>
+                  <label class="c-label">Discomfort 0-10
+                    <input id="ci-discomfort" type="number" min="0" max="10" step="1" placeholder="2">
+                  </label>
+                </div>
+                <label class="c-label">What did you try / what changed?
+                  <textarea id="ci-note" rows="2" placeholder="e.g. loosened grip, slowed down, changed surface"></textarea>
+                </label>
+                <label class="c-label checkbox-row">
+                  <input type="checkbox" id="ci-context"> This was in a different context (transfer test)
+                </label>
+                <button class="primary-button" type="button" id="log-checkin">🔄 Spin the wheel</button>
+              </form>
+            </div>
+            <div id="checkin-list" class="checkin-list"></div>
+
+            <div class="step-actions">
+              <button class="ghost-button" type="button" data-prev-step="2">← Back</button>
+              <button class="primary-button" type="button" data-next-step="4">Next: Deep dive →</button>
+            </div>
+          </section>
+          </section>
+
+          <section class="wizard-step" id="wizard-step-4" data-step="4">
           <section class="panel deep-analysis-panel">
             <div class="panel-heading">
               <div>
-                <p class="section-label">Step 4</p>
+                <p class="section-label">Step 4 · Advanced</p>
                 <h3>Deep analysis (AI-powered)</h3>
               </div>
               <div class="deep-actions">
@@ -263,10 +339,18 @@
                 <button class="primary-button" type="button" id="run-deep-analysis">🔍 Run deep analysis</button>
               </div>
             </div>
-            <p class="input-note" style="margin:0 0 16px">The AI looks at your situation from 9 different angles and creates one combined plan.</p>
+            <p class="input-note" style="margin:0 0 12px">9 AI agents, each with its own lens and personality, analyze the same situation — then one synthesis merges them into a single evolution roadmap.</p>
+            <div class="deep-mode-bar">
+              <span class="deep-mode-label">Agent mode:</span>
+              <button class="chip deep-mode-chip active" type="button" data-deep-mode="auto">Auto (server decides)</button>
+              <button class="chip deep-mode-chip" type="button" data-deep-mode="batch">⚡ Fast · ~2 calls</button>
+              <button class="chip deep-mode-chip" type="button" data-deep-mode="full">🔬 Full · 9 agents · ~10 calls</button>
+              <span class="deep-cost" id="deep-cost"></span>
+            </div>
             <div id="deep-analysis-output">
               <div class="empty-state">Save your observations first to unlock deep analysis.</div>
             </div>
+          </section>
           </section>
         </section>
 
@@ -303,15 +387,14 @@
           <button class="ghost-button" type="button" id="close-background">Close</button>
         </div>
         <div class="modal-content">
-          <p>This tool helps you adapt to anything — a tool, an environment, a skill, or a social situation. It works like a personal coach:</p>
+          <p>This tool helps you adapt to anything — a tool, an environment, a skill, or a social situation. It works like a personal coach in three simple steps:</p>
           <ol>
-            <li><strong>Name your target:</strong> What do you want to get better at? Be specific.</li>
-            <li><strong>Write down what you notice:</strong> What do you see, feel, hear? What went wrong? What did you try?</li>
-            <li><strong>Get a plan:</strong> The tool turns your observations into a step-by-step adaptation plan.</li>
-            <li><strong>Follow the plan:</strong> Do the drills, track your results, and repeat.</li>
-            <li><strong>Save or share:</strong> Copy the plan for later, or save it as a reusable template.</li>
+            <li><strong>Describe:</strong> Name your target and write down what you notice — what you see, feel, hear, what keeps going wrong, and what you tried.</li>
+            <li><strong>Plan:</strong> One click turns your observations into a step-by-step adaptation roadmap.</li>
+            <li><strong>Evolve:</strong> After each practice run, log your measured result. The system tracks your trend, updates your adaptation phase (from First Hit to Immunity), and tells you the exact next move.</li>
+            <li><strong>Deep dive (advanced):</strong> Optionally run 9 AI agents — each with a different thinking personality — and merge them into one synthesis.</li>
           </ol>
-          <p>No external AI or internet connection is required. The plan is generated locally from what you type. The more detail you give, the better the plan.</p>
+          <p>Steps 1-3 run locally, no external AI required. Step 4 uses Google Gemini when the server has an API key. Save a plan to Template Memory to reuse it later.</p>
         </div>
       </section>
     </div>
@@ -343,6 +426,17 @@
         <div class="wheel-pulse"></div>
       </div>
     </div>
-    <script src="app.js"></script>
+    <!-- Classic scripts, shared global scope. Load order matters. -->
+    <script src="js/utils.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/graph.js"></script>
+    <script src="js/adaptation.js"></script>
+    <script src="js/assessment.js"></script>
+    <script src="js/session.js"></script>
+    <script src="js/templates.js"></script>
+    <script src="js/backup.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/main.js"></script>
   </body>
 </html>

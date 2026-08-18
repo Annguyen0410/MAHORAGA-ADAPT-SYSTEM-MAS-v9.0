@@ -6,11 +6,25 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require("fs");
 const path = require("path");
 const { runDeepAnalysis } = require("./deepAnalysis");
+const budget = require("./geminiBudget");
+const { cleanSessionInput } = require("./validate");
 
 const PORT = process.env.PORT || 3001;
+// Default to loopback only: the API carries personal data and a paid AI
+// budget, so it must not be reachable from the LAN. Override with HOST=0.0.0.0.
+const HOST = process.env.HOST || "127.0.0.1";
 const DATA_FILE = path.join(__dirname, "sessions.json");
 const AI_WINDOW_MS = parseInt(process.env.AI_RATE_LIMIT_WINDOW_MS || "3600000");
 const AI_MAX_CALLS = parseInt(process.env.AI_RATE_LIMIT_MAX || "20");
+
+// Deep-analysis requests are gated by the REAL Gemini budget, not this limiter.
+// Cache hits and batch mode should never be blocked by request counting.
+const deepLimiter = rateLimit({
+  windowMs: AI_WINDOW_MS,
+  max: parseInt(process.env.AI_REQUEST_LIMIT_MAX || "120", 10),
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 function getGenAI() {
   const key = process.env.GEMINI_API_KEY;
@@ -19,11 +33,45 @@ function getGenAI() {
 }
 
 const app = express();
-app.use(cors());
+
+// CORS: allow only the app itself (same origin), loopback origins, and
+// file:// pages (origin "null"). Arbitrary websites can neither read nor
+// preflight-mutate this local API.
+const ALLOWED_ORIGINS = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || origin === "null" || ALLOWED_ORIGINS.test(origin)) return cb(null, true);
+    return cb(null, false);
+  }
+}));
+
+// Security headers. The CSP keeps scripts/styles to self (inline style
+// attributes are required by the UI; no inline scripts or eval exist).
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'"
+  );
+  if (req.path.startsWith("/api/")) res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
 app.use(express.json({ limit: "2mb" }));
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-app.use(express.static(PROJECT_ROOT));
+// Serve ONLY the public frontend assets. server/, node_modules/, tests/ and
+// package files must never be reachable over HTTP.
+const INDEX_FILE = path.join(PROJECT_ROOT, "index.html");
+app.get(["/", "/index.html"], (req, res) => res.sendFile(INDEX_FILE));
+app.use("/style.css", express.static(path.join(PROJECT_ROOT, "style.css")));
+app.use("/js", express.static(path.join(PROJECT_ROOT, "js"), { dotfiles: "ignore" }));
+app.use("/assets", express.static(path.join(PROJECT_ROOT, "assets"), { dotfiles: "ignore" }));
+for (const dir of ["core", "analysis", "mythos", "case_studies"]) {
+  app.use(`/${dir}`, express.static(path.join(PROJECT_ROOT, dir), { dotfiles: "ignore" }));
+}
 
 let sessions = {};
 if (fs.existsSync(DATA_FILE)) {
@@ -59,6 +107,7 @@ async function callGoogleAI(systemPrompt, userContent, modelName) {
     systemInstruction: systemPrompt
   });
   const result = await model.generateContent(userContent);
+  budget.record(1);
   return result.response.text();
 }
 
@@ -67,7 +116,7 @@ app.get("/api/health", (req, res) => {
   const keyOk = !!(key && key.length > 20 && !key.includes("YOUR_GEMINI_API_KEY"));
   res.json({
     status: "ok",
-    version: "8.5.0",
+    version: "9.0.0",
     aiConfigured: keyOk,
     aiModel: process.env.GEMINI_MODEL || "gemini-flash-latest",
     provider: "google/gemini",
@@ -77,14 +126,15 @@ app.get("/api/health", (req, res) => {
 });
 
 app.get("/api/rate-limit", (req, res) => {
+  const s = budget.status();
   res.json({
-    limit: AI_MAX_CALLS,
-    windowMs: AI_WINDOW_MS,
-    windowSeconds: Math.floor(AI_WINDOW_MS / 1000),
-    description: `${AI_MAX_CALLS} AI calls per ${Math.floor(AI_WINDOW_MS / 60000)} minutes`,
-    hits: req.rateLimit?.current || 0,
-    remaining: Math.max(0, AI_MAX_CALLS - (req.rateLimit?.current || 0)),
-    resetAt: req.rateLimit?.resetTime ? new Date(req.rateLimit.resetTime).toISOString() : null
+    limit: s.limit,
+    windowMs: s.windowMs,
+    windowSeconds: s.windowSeconds,
+    description: `${s.limit} real AI calls per ${Math.floor(s.windowMs / 60000)} minutes`,
+    hits: s.hits,
+    remaining: s.remaining,
+    resetAt: s.resetAt
   });
 });
 
@@ -93,8 +143,9 @@ app.get("/api/sessions", (req, res) => {
 });
 
 app.post("/api/sessions", (req, res) => {
-  const { target, domain, goal, baseline } = req.body;
-  if (!target) return res.status(400).json({ error: "Target is required" });
+  const input = cleanSessionInput(req.body);
+  if (!input.target) return res.status(400).json({ error: "Target is required" });
+  const { target, domain, goal, baseline, humanCapture } = input;
   const id = `${Date.now()}-${target.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   const session = {
     id, target, domain: domain || "object", goal: goal || "",
@@ -104,7 +155,7 @@ app.post("/api/sessions", (req, res) => {
       previousAttempts: baseline?.previousAttempts || ""
     },
     createdAt: new Date().toISOString(),
-    humanCapture: {
+    humanCapture: humanCapture || {
       observedProperties: "", evaluation: "", description: "",
       testPerformed: "", testResult: "", environment: "",
       measuredSignals: "", failureType: "perception"
@@ -125,7 +176,12 @@ app.get("/api/sessions/:id", (req, res) => {
 app.put("/api/sessions/:id", (req, res) => {
   const session = sessions[req.params.id];
   if (!session) return res.status(404).json({ error: "Session not found" });
-  Object.assign(session, req.body);
+  // Whitelist: clients may only touch these fields; anything else (ids,
+  // caches, internal state) is rejected instead of blindly assigned.
+  const input = cleanSessionInput(req.body);
+  for (const field of ["target", "domain", "goal", "baseline", "humanCapture"]) {
+    if (input[field] !== undefined) session[field] = input[field];
+  }
   saveSessions();
   res.json(session);
 });
@@ -174,7 +230,7 @@ Rules:
     saveSessions();
     res.json({
       assessment,
-      rateLimit: { remaining: Math.max(0, AI_MAX_CALLS - (req.rateLimit?.current || 0)) }
+      rateLimit: budget.status()
     });
   } catch (err) {
     if (err.message.includes("GEMINI_API_KEY not configured")) {
@@ -192,7 +248,13 @@ app.post("/api/sessions/:id/roadmap", aiLimiter, async (req, res) => {
     const assessment = session.aiAssessment || { material: "unknown", durability: "unknown", frequency: "unknown", variables: ["attention"], risks: [], uncertainty: ["Limited data"] };
     const c = session.humanCapture;
 
-    const systemPrompt = "You are the Roadmap Generator for the Mahoraga Adapt System (MAS). Generate a practical 9-step adaptation roadmap based on the user's target, capture, and AI assessment. Use the Mahoraga metaphor (First Hit → Wheel Spin → Immunity) as the narrative frame. Be specific, actionable, and safety-aware. Return ONLY the roadmap text — no JSON, no markdown formatting.";
+    const adaptation = req.body.adaptation || null;
+    const adaptLine = adaptation
+      ? `Phase=${adaptation.phase || "first-hit"}, Trend=${adaptation.trend || "unknown"}, SpinCount=${adaptation.spinCount || 0}, TransferPassed=${adaptation.transferPassed || 0}`
+      : "Phase=first-hit, Trend=unknown, SpinCount=0";
+    const nextStep = adaptation?.nextStep || "Run a baseline test and log the first check-in.";
+
+    const systemPrompt = "You are the Roadmap Generator for the Mahoraga Adapt System (MAS). Generate a practical 9-step adaptation roadmap based on the user's target, capture, AI assessment, and their CURRENT ADAPTIVE STATE. Use the Mahoraga metaphor (First Hit → Wheel Spin → Immunity) as the narrative frame. The roadmap must OPEN with a line `[ADAPTIVE STATE] <phase> — <trend> (spin <count>)` and a line `NEXT SPIN: <the exact next action for the user's current phase>`. Then adapt the 9 steps to the phase: a user who is refining needs a variable-change step first; a user who is stuck needs a baseline-return step; a user transferring needs a context-change drill. Be specific, actionable, and safety-aware. Return ONLY the roadmap text — no JSON, no markdown formatting.";
 
     const userContent = `Target: ${session.target}
 Domain: ${session.domain}
@@ -205,14 +267,17 @@ Capture: Properties=${c.observedProperties || "(none)"}, Evaluation=${c.evaluati
 
 Assessment: Material=${assessment.material}, Durability=${assessment.durability}, Frequency=${assessment.frequency}, Variables=${assessment.variables?.join(", ") || "unknown"}, Risks=${assessment.risks?.join("; ") || "unknown"}
 
-Generate a 9-step roadmap: 1) Baseline calibration, 2) First drill, 3) Measurement target, 4) Property-aware adjustment, 5) Constraint check, 6) Refinement loop, 7) Transfer test, 8) Template candidate, 9) Embodiment validation.`;
+ADAPTIVE STATE: ${adaptLine}
+Suggested NEXT SPIN from the engine: ${nextStep}
+
+Generate a 9-step roadmap adapted to this phase: 1) Baseline calibration, 2) First drill, 3) Measurement target, 4) Property-aware adjustment, 5) Constraint check, 6) Refinement loop, 7) Transfer test, 8) Template candidate, 9) Embodiment validation.`;
 
     const roadmap = await callGoogleAI(systemPrompt, userContent, process.env.GEMINI_ROADMAP_MODEL || process.env.GEMINI_MODEL || "gemini-flash-latest");
     session.roadmap = roadmap;
     saveSessions();
     res.json({
       roadmap,
-      rateLimit: { remaining: Math.max(0, AI_MAX_CALLS - (req.rateLimit?.current || 0)) }
+      rateLimit: budget.status()
     });
   } catch (err) {
     if (err.message.includes("GEMINI_API_KEY not configured")) {
@@ -222,7 +287,7 @@ Generate a 9-step roadmap: 1) Baseline calibration, 2) First drill, 3) Measureme
   }
 });
 
-app.post("/api/sessions/:id/deep-analysis", aiLimiter, async (req, res) => {
+app.post("/api/sessions/:id/deep-analysis", deepLimiter, async (req, res) => {
   const session = sessions[req.params.id];
   if (!session) return res.status(404).json({ error: "Session not found" });
 
@@ -232,25 +297,59 @@ app.post("/api/sessions/:id/deep-analysis", aiLimiter, async (req, res) => {
   }
 
   try {
+    const remaining = budget.status().remaining;
+    let mode = req.body.mode || "auto";
+    if (mode === "auto") {
+      // Full independent run costs ~10 calls; batch costs ~2-3.
+      mode = remaining >= 12 ? "full" : "batch";
+    }
+    if (mode === "full" && remaining < 12) {
+      mode = "batch"; // degrade gracefully instead of failing
+    }
+
     const result = await runDeepAnalysis(session, {
       apiKey: process.env.GEMINI_API_KEY,
       modelName: process.env.GEMINI_MODEL || "gemini-flash-latest",
-      synthesisModel: process.env.GEMINI_SYNTHESIS_MODEL || process.env.GEMINI_MODEL || "gemini-flash-latest"
+      synthesisModel: process.env.GEMINI_SYNTHESIS_MODEL || process.env.GEMINI_MODEL || "gemini-flash-latest",
+      mode,
+      cache: session.deepAnalysisCache || (session.deepAnalysisCache = {})
     });
-    session.deepAnalysis = result;
+
+    session.deepAnalysis = {
+      perspectives: result.perspectives,
+      synthesis: result.synthesis,
+      modeUsed: result.modeUsed,
+      cached: result.cached,
+      hash: result.hash
+    };
     saveSessions();
     res.json({
       ...result,
-      rateLimit: { remaining: Math.max(0, AI_MAX_CALLS - (req.rateLimit?.current || 0)) }
+      rateLimit: budget.status()
     });
   } catch (err) {
     res.status(502).json({ error: `Deep analysis failed: ${err.message}` });
   }
 });
 
-app.listen(PORT, () => {
+// JSON body errors must not leak stack traces or absolute paths to clients.
+// body-parser normally renders an HTML error page with the full stack.
+app.use((err, req, res, next) => {
+  if (err.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "Invalid JSON body" });
+  }
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({ error: "Request body too large" });
+  }
+  if (err.type === "encoding.unsupported") {
+    return res.status(415).json({ error: "Unsupported content encoding" });
+  }
+  res.status(500).json({ error: "Internal server error" });
+});
+
+app.listen(PORT, HOST, () => {
   const keyOk = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.length > 20);
-  console.log(`\n  MAS API Server v8.5`);
+  console.log(`\n  MAS API Server v9.0`);
   console.log(`  Server:   http://localhost:${PORT}`);
   console.log(`  AI:       ${process.env.GEMINI_MODEL || "gemini-2.0-flash"}`);
   console.log(`  Limit:    ${AI_MAX_CALLS} calls per ${AI_WINDOW_MS / 60000}min`);

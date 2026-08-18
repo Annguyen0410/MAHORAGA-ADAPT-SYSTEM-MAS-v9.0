@@ -1,6 +1,6 @@
 {
   "name": "mas-api-server",
-  "version": "8.5.0",
+  "version": "9.0.0",
   "description": "Mahoraga Adapt System API Server - Real AI assessment, rate-limited, RESTful",
   "main": "server.js",
   "scripts": {

@@ -1,0 +1,11 @@
+{
+  "name": "mahoraga-adapt-system",
+  "version": "9.0.0",
+  "description": "Mahoraga Adapt System (MAS) v9 — a cognitive operating system and predictive embodied framework for human-AI co-evolution.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/run.js",
+    "start": "cd server && npm start"
+  }
+}
