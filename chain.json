@@ -2,7 +2,7 @@
   "version": 1,
   "name": "Project Chain",
   "chainName": "LiteBrowser · Project Chain",
-  "note": "CHỈ SỬA FILE NÀY để liên kết cả 5 app. 'folder' là tên thư mục local (dùng khi chạy file://). 'remote' là URL sau khi deploy lên Netlify/Render (dùng khi mở qua http/https). chain.js và LiteBrowser đều đọc từ đây.",
+  "note": "CHỈ SỬA FILE NÀY để liên kết cả 7 app. 'folder' là tên thư mục local (dùng khi chạy file://). 'remote' là URL sau khi deploy lên Netlify/Render (dùng khi mở qua http/https). chain.js, LiteBrowser, MeiRemote đều đọc từ đây. Bói Toán Web nằm ngoài Code folder (D:\\Bói Toán Web) nên bản chain.js trong thư mục đó dùng local base riêng ('../Code folder').",
   "apps": [
     {
       "id": "linklumina",
@@ -11,7 +11,7 @@
       "subtitle": "Visual bookmark manager — lưu, sắp xếp và khám phá liên kết với nền sống động.",
       "color": "#e06c5b",
       "folder": "link",
-      "remote": "https://linklumina.netlify.app"
+      "remote": "https://graceful-kangaroo-4ebbee.netlify.app"
     },
     {
       "id": "cucquanly",
@@ -20,7 +20,7 @@
       "subtitle": "Hub điều phối chính: năng lượng, lưu trữ, visualgraph, thư viện và trích xuất.",
       "color": "#5bc0de",
       "folder": "Cục Quản Lý",
-      "remote": "https://cuquanly.netlify.app"
+      "remote": "https://starlit-lily-f90e23.netlify.app"
     },
     {
       "id": "mas",
@@ -29,7 +29,7 @@
       "subtitle": "Huấn luyện khả năng thích ứng với bất cứ thứ gì, từng bước một.",
       "color": "#8f7ae6",
       "folder": "MAS - Mahoraga Adapt System",
-      "remote": "https://mas-mahoraga.netlify.app"
+      "remote": "https://mahoraga-adapt-system-mas-v9-0.onrender.com"
     },
     {
       "id": "worldleaderboard",
@@ -41,13 +41,31 @@
       "remote": "https://worldleaderboard.netlify.app"
     },
     {
+      "id": "bimat",
+      "name": "Bí Mật — PersonalFrequency",
+      "glyph": "🔮",
+      "subtitle": "Tần số cá nhân và những bí mật — khám phá tiềm năng qua con số và thông điệp riêng.",
+      "color": "#b06bd1",
+      "folder": "bí mật",
+      "remote": "https://personalfrequencys.netlify.app"
+    },
+    {
+      "id": "boitoan",
+      "name": "Bói Toán Web",
+      "glyph": "🎴",
+      "subtitle": "Gieo quẻ và giải đáp — nhập câu hỏi cùng điều kiện, nhận lời giải đáp ngay trên web.",
+      "color": "#e0a45b",
+      "folder": "../../Bói Toán Web",
+      "remote": "https://boitoanzaigame.netlify.app"
+    },
+    {
       "id": "hub",
       "name": "Project Hub",
       "glyph": "☰",
-      "subtitle": "Trung tâm điều phối toàn chuỗi — một điểm khởi chạy cho cả 5.",
+      "subtitle": "Trung tâm điều phối toàn chuỗi — một điểm khởi chạy cho cả 7.",
       "color": "#d8bf95",
       "folder": "hub",
-      "remote": "https://projectchain.netlify.app"
+      "remote": ""
     }
   ]
 }

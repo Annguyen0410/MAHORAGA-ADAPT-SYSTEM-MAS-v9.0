@@ -401,3 +401,23 @@ renderSession();
 renderTemplates();
 renderSources();
 renderAdaptationPanel();
+
+// ------------------------------------------------------------
+// Deep link từ MeiRemote / Project Chain: ?target=&domain=&goal=
+// Bê nguyên "điều kiện" từ web xuống — tạo sẵn session và mở đúng
+// màn hình Roadmap Builder để người dùng tiếp tục ngay (không làm
+// thay đổi luồng hiện tại khi thiếu tham số).
+// ------------------------------------------------------------
+(function () {
+  try {
+    var q = new URLSearchParams(location.search);
+    var target = (q.get("target") || "").trim();
+    if (!target) return;
+    currentSession = createSession(target, (q.get("domain") || "").trim() || "object", (q.get("goal") || "").trim());
+    saveSession();
+    fillSessionForm(currentSession);
+    renderSession();
+    setView("trainer");
+    goToWizardStep(1);
+  } catch (e) { /* page bình thường nếu lỗi */ }
+})();

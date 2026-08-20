@@ -1,5 +1,5 @@
 /* =========================================================================
- * chain.js — Project Chain (bản chạy chung cho cả 5 app + hub)
+ * chain.js — Project Chain (bản chạy chung cho cả 7 app + hub)
  *
  * Một file duy nhất giúp các app nhận diện lẫn nhau:
  *   - Chạy local  (file://)  -> dùng đường dẫn tương đối ../<folder>/index.html
@@ -17,15 +17,21 @@
     "name": "Project Chain",
     "chainName": "LiteBrowser · Project Chain",
     "apps": [
-      { "id": "linklumina", "name": "LinkLumina", "glyph": "🔖", "subtitle": "Visual bookmark manager — lưu, sắp xếp và khám phá liên kết với nền sống động.", "color": "#e06c5b", "folder": "link", "remote": "https://linklumina.netlify.app" },
-      { "id": "cucquanly", "name": "Cục Quản Lý", "glyph": "📋", "subtitle": "Hub điều phối chính: năng lượng, lưu trữ, visualgraph, thư viện và trích xuất.", "color": "#5bc0de", "folder": "Cục Quản Lý", "remote": "https://cuquanly.netlify.app" },
-      { "id": "mas", "name": "MAS — Mahoraga Adapt System", "glyph": "🔄", "subtitle": "Huấn luyện khả năng thích ứng với bất cứ thứ gì, từng bước một.", "color": "#8f7ae6", "folder": "MAS - Mahoraga Adapt System", "remote": "https://mas-mahoraga.netlify.app" },
+      { "id": "linklumina", "name": "LinkLumina", "glyph": "🔖", "subtitle": "Visual bookmark manager — lưu, sắp xếp và khám phá liên kết với nền sống động.", "color": "#e06c5b", "folder": "link", "remote": "https://graceful-kangaroo-4ebbee.netlify.app" },
+      { "id": "cucquanly", "name": "Cục Quản Lý", "glyph": "📋", "subtitle": "Hub điều phối chính: năng lượng, lưu trữ, visualgraph, thư viện và trích xuất.", "color": "#5bc0de", "folder": "Cục Quản Lý", "remote": "https://starlit-lily-f90e23.netlify.app" },
+      { "id": "mas", "name": "MAS — Mahoraga Adapt System", "glyph": "🔄", "subtitle": "Huấn luyện khả năng thích ứng với bất cứ thứ gì, từng bước một.", "color": "#8f7ae6", "folder": "MAS - Mahoraga Adapt System", "remote": "https://mahoraga-adapt-system-mas-v9-0.onrender.com" },
       { "id": "worldleaderboard", "name": "World Leaderboard", "glyph": "🏆", "subtitle": "Tính thứ hạng toàn cầu của bạn theo nhiều chỉ số, với biểu đồ và cột mốc.", "color": "#e6c05b", "folder": "World Leaderboard", "remote": "https://worldleaderboard.netlify.app" },
-      { "id": "hub", "name": "Project Hub", "glyph": "☰", "subtitle": "Trung tâm điều phối toàn chuỗi — một điểm khởi chạy cho cả 5.", "color": "#d8bf95", "folder": "hub", "remote": "https://projectchain.netlify.app" }
+      { "id": "bimat", "name": "Bí Mật — PersonalFrequency", "glyph": "🔮", "subtitle": "Tần số cá nhân và những bí mật — khám phá tiềm năng qua con số và thông điệp riêng.", "color": "#b06bd1", "folder": "bí mật", "remote": "https://personalfrequencys.netlify.app" },
+      { "id": "boitoan", "name": "Bói Toán Web", "glyph": "🎴", "subtitle": "Gieo quẻ và giải đáp — nhập câu hỏi cùng điều kiện, nhận lời giải đáp ngay trên web.", "color": "#e0a45b", "folder": "../../Bói Toán Web", "remote": "https://boitoanzaigame.netlify.app" },
+      { "id": "hub", "name": "Project Hub", "glyph": "☰", "subtitle": "Trung tâm điều phối toàn chuỗi — một điểm khởi chạy cho cả 7.", "color": "#d8bf95", "folder": "hub", "remote": "" }
     ]
   };
 
   var isLocal = /^file:/i.test(location.protocol);
+  // Root của thư mục chung chứa các app (thường là "../" vì các app nằm cạnh nhau
+  // trong cùng một thư mục cha). Riêng Bói Toán Web nằm NGOÀI Code folder nên bản
+  // chain.js trong thư mục đó ghi đè dòng này thành "../Code folder/".
+  var localBase = "../";
   var manifest = EMBEDDED;
 
   function resolveUrl(app) {
@@ -33,7 +39,7 @@
     if (!isLocal && app.remote) {
       return app.remote.replace(/\/+$/, "");
     }
-    return "../" + app.folder + "/index.html";
+    return localBase + app.folder + "/index.html";
   }
 
   function buildChain(data) {
@@ -50,7 +56,7 @@
           color: app.color || "#d8bf95",
           folder: app.folder || app.id,
           remote: app.remote || "",
-          local: "../" + (app.folder || app.id) + "/index.html",
+          local: localBase + (app.folder || app.id) + "/index.html",
           url: resolveUrl(app)
         };
       })

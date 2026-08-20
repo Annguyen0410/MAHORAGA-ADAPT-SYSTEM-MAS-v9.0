@@ -5,7 +5,16 @@
 // session -> templates -> ui -> main (see index.html).
 // ============================================================
 
-const API_BASE = "";
+// API base resolution:
+//   1. ?api=<url> query param (MeiRemote deep-link override)
+//   2. localStorage 'mas_api_base' (manual override)
+//   3. same-origin when served by the Node backend (http/https — Render,
+//      localhost …)
+//   4. fallback to the deployed Render service when opened from file:// or a
+//      static host, so MAS always talks to a real backend ("chạy bên render").
+const _apiQ = (() => { try { return new URLSearchParams(location.search).get("api"); } catch (e) { return null; } })();
+const _apiL = (() => { try { return localStorage.getItem("mas_api_base"); } catch (e) { return null; } })();
+let API_BASE = (_apiQ || _apiL || (/^https?:/i.test(location.protocol) ? "" : "https://mahoraga-adapt-system-mas-v9-0.onrender.com")).replace(/\/+$/, "");
 let apiAvailable = false;
 let geminiAvailable = false;
 let rateLimitInfo = { limit: 20, remaining: 20, hits: 0 };
