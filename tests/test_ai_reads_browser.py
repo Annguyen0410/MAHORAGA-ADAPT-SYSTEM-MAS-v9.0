@@ -209,6 +209,25 @@ class TestBrowserContextToggle(_AICase):
         self.assertEqual(context, "")
         self.assertIn("private page excluded", self.window.lbl_context_scope.text())
 
+    def test_incognito_excludes_private_page_but_keeps_opted_in_research(self):
+        from litebrowser.services import personal_service, tab_sets
+
+        note = personal_service.create_note(self.base, "Private-safe notes", "Workspace research stays available.")
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Research desk", [], notes=[note["id"]])
+        tab_sets.set_active_research_workspace(self.base, workspace["id"])
+        self.window.chk_research_context.setChecked(True)
+        self.shell.browser_page._browser = _FakeBrowser(
+            text="SECRET PRIVATE PAGE TEXT", url="https://private.example/secret", private=True
+        )
+
+        ask = self._ask("Summarize the research")
+
+        _question, label, context = ask.call_args[0]
+        self.assertEqual(label, "Research: Research desk (private page excluded)")
+        self.assertIn("Workspace research stays available.", context)
+        self.assertNotIn("SECRET PRIVATE PAGE TEXT", context)
+        self.assertNotIn("private.example", context)
+
     def test_the_page_is_read_through_javascript(self):
         self._ask()
         self.assertTrue(self.browser._page.scripts)
