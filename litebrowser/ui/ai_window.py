@@ -784,11 +784,24 @@ class AIWindow(QMainWindow):
             if not workspace:
                 return "", False
             title = str(workspace.get("title") or "")
-            return title, tab_sets.add_research_reference(
+            linked = tab_sets.add_research_reference(
                 self.base_dir, workspace["id"], entity_type, entity_id
             )
+            if linked:
+                self._refresh_host_shell()
+            return title, linked
         except (OSError, ValueError, RuntimeError):
             return "", False
+
+    def _refresh_host_shell(self):
+        """Refresh shell summaries after an AI result is linked to a desk."""
+        current = self.parentWidget()
+        while current is not None:
+            refresh = getattr(current, "refresh_shell", None)
+            if callable(refresh):
+                refresh()
+                return
+            current = current.parentWidget()
 
     def get_current_ai_state(self):
         return [

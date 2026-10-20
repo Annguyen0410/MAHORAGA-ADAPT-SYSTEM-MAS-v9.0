@@ -90,6 +90,7 @@ class _HostShell(QWidget):
     def __init__(self, browser):
         super().__init__()
         self.browser_page = _FakeBrowserPage(browser)
+        self.refresh_shell = mock.Mock()
 
 
 class _AICase(unittest.TestCase):
@@ -186,6 +187,17 @@ class TestBrowserContextToggle(_AICase):
         self.assertEqual(self.window._link_to_active_research("note", "new-note"), ("Full desk", False))
         tab_sets.set_active_research_workspace(self.base, "")
         self.assertEqual(self.window._link_to_active_research("note", "new-note"), ("", False))
+
+    def test_successful_ai_link_refreshes_the_hosting_home_desk(self):
+        from litebrowser.services import tab_sets
+
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Live desk", [])
+        tab_sets.set_active_research_workspace(self.base, workspace["id"])
+
+        linked_to, linked = self.window._link_to_active_research("note", "saved-note")
+
+        self.assertEqual((linked_to, linked), ("Live desk", True))
+        self.shell.refresh_shell.assert_called_once_with()
 
     def test_incognito_page_text_is_never_attached(self):
         self.shell.browser_page._browser = _FakeBrowser(private=True)
