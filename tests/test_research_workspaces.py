@@ -35,6 +35,19 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         self.assertEqual(workspace["kind"], "collection")
         self.assertEqual(workspace["tabs"], [])
 
+    def test_non_finite_collection_timestamps_do_not_crash_load(self):
+        path = os.path.join(self.base, tab_sets.TAB_SETS_FILENAME)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(
+                '{"version":4,"sets":[{"id":"clock","kind":"workspace",'
+                '"title":"Bad clock","created_at":Infinity,"updated_at":-Infinity,"tabs":[]}]}'
+            )
+
+        workspace = tab_sets.get_tab_set(self.base, "clock")
+
+        self.assertEqual(workspace["created_at"], 0)
+        self.assertEqual(workspace["updated_at"], 0)
+
     def test_version_two_collections_migrate_without_losing_tabs(self):
         path = os.path.join(self.base, tab_sets.TAB_SETS_FILENAME)
         with open(path, "w", encoding="utf-8") as handle:

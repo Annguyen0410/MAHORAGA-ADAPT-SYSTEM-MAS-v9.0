@@ -81,11 +81,11 @@ def _normalize_set(tab_set: Any) -> dict[str, Any] | None:
     title = _clean_text(tab_set.get("title")) or "Untitled collection"
     try:
         created_at = int(tab_set.get("created_at", 0) or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         created_at = 0
     try:
         updated_at = int(tab_set.get("updated_at", created_at) or created_at)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         updated_at = created_at
     tags = tab_set.get("tags", [])
     if not isinstance(tags, list):
