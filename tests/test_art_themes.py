@@ -58,6 +58,20 @@ class ArtThemeTests(unittest.TestCase):
                     ratio = theme_data.contrast_ratio(palette["TEXT"], palette[surface])
                     self.assertGreaterEqual(ratio, 4.5)
 
+    def test_muted_text_remains_legible_on_reading_surfaces(self):
+        families = {
+            "aurora-glass", "sakura-twilight", "cyberpunk-neon", "midnight-amoled",
+            "arctic-aurora", "forest-sanctuary", "ocean-depths", "retro-terminal",
+            "paper-studio", "monochrome-pro", "sunset-dusk", "dreamscape",
+            "solarized-focus", "high-contrast", "glasshouse",
+        }
+        for family in families:
+            palette = theme_data._palette(family)
+            for surface in ("MAIN_BG", "CARD_BG", "INPUT_BG"):
+                with self.subTest(theme=family, surface=surface):
+                    ratio = theme_data.contrast_ratio(palette["TEXT_MUTED"], palette[surface])
+                    self.assertGreaterEqual(ratio, 4.5)
+
 
 if __name__ == "__main__":
     unittest.main()
