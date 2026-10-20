@@ -332,6 +332,8 @@ def _safe_vault_filename(name: str) -> str:
 
 def _upload_dir(base_dir: str, relative_target: str) -> str | None:
     """Resolve an upload target under SafeVault/files; reject traversal."""
+    if not isinstance(relative_target, str):
+        return None
     files_root = safe_child_path(base_dir, "SafeVault/files")
     if not files_root:
         return None
@@ -551,7 +553,11 @@ def dispatch_ingest(profile_dir: str, envelope: dict[str, Any]) -> dict[str, Any
             path = _unique_path(draw_dir, f"{safe_title}-{int(time.time())}.png")
             with open(path, "wb") as f:
                 f.write(image_bytes)
-            rel_path = os.path.relpath(path, prefs.vault_path(profile_dir)).replace("\\", "/")
+            # safe_child_path resolves and normalizes the profile root. Derive
+            # the known in-vault location from its validated components instead
+            # of mixing that canonical path with the caller's possibly aliased
+            # Windows profile path (for example, a short 8.3 TEMP path).
+            rel_path = f"files/Drawings/{os.path.basename(path)}"
             body_s = p.get("body")
             body_s = body_s if isinstance(body_s, str) else ("" if body_s is None else str(body_s))
             note_body = (body_s + _tags_suffix(p.get("tags"))).strip()
@@ -878,7 +884,12 @@ def _handle_upload(profile_dir: str, content_type: str, body: bytes) -> dict:
     path = _unique_path(target_dir, safe_name)
     with open(path, "wb") as f:
         f.write(file_bytes)
-    rel_path = os.path.relpath(path, prefs.vault_path(profile_dir)).replace("\\", "/")
+    relative_target = fields.get("relative_target") or ""
+    normalized_target = relative_target.strip().replace("\\", "/").strip("/")
+    target_segments = [part for part in normalized_target.split("/") if part and part != "."]
+    if not target_segments:
+        target_segments = ["Inbox"]
+    rel_path = "/".join(("files", *target_segments, safe_name))
     history_service.log_event(
         profile_dir,
         "mobile-upload",
@@ -894,7 +905,7 @@ def _handle_upload(profile_dir: str, content_type: str, body: bytes) -> dict:
             "path": rel_path,
             "filename": safe_name,
             "size": len(file_bytes),
-            "relative_target": os.path.relpath(target_dir, os.path.join(prefs.vault_path(profile_dir), "files")).replace("\\", "/"),
+            "relative_target": "/".join(target_segments),
         },
         "error": None,
     }

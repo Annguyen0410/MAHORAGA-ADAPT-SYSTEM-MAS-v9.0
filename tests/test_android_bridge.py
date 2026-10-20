@@ -84,6 +84,8 @@ class TestDispatchIngest(unittest.TestCase):
         )
         self.assertTrue(out["ok"])
         self.assertEqual(out["action"], "create_drawing")
+        self.assertTrue(out["result"]["image_path"].startswith("files/Drawings/"))
+        self.assertNotIn("..", out["result"]["image_path"].split("/"))
         self.assertIn("Drawings", out["result"]["image_path"])
         saved = os.path.join(prefs.vault_path(self.base), out["result"]["image_path"])
         self.assertTrue(os.path.isfile(saved))
@@ -393,6 +395,8 @@ class TestAndroidBridgeHTTP(unittest.TestCase):
         saved = os.path.join(prefs.vault_path(self.base), j["result"]["path"])
         self.assertTrue(os.path.isfile(saved))
         self.assertIn("Photos", j["result"]["path"])
+        self.assertEqual(j["result"]["path"].split("/")[:2], ["files", "Photos"])
+        self.assertEqual(j["result"]["relative_target"], "Photos")
         with open(saved, "rb") as f:
             self.assertEqual(f.read(), png)
 
