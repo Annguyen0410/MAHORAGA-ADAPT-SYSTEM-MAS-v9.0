@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "LinkLumina - Quick Save",
+  "version": "1.0.0",
+  "description": "Save the current page or any URL to LinkLumina with one click.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "contextMenus",
+    "tabs",
+    "webNavigation",
+    "alarms",
+    "downloads"
+  ],
+  "action": {
+    "default_popup": "extension/popup.html",
+    "default_title": "Save to LinkLumina"
+  },
+  "options_page": "extension/options.html",
+  "background": {
+    "service_worker": "extension/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://graceful-kangaroo-4ebbee.netlify.app/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "file:///*"
+      ],
+      "js": ["extension/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "https://graceful-kangaroo-4ebbee.netlify.app/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "file:///*"
+  ]
+}

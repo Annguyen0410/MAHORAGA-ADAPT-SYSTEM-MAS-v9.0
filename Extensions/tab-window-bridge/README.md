@@ -38,12 +38,11 @@ another machine)
 > selection**. Chrome re-asks for permissions when you reload an unpacked
 > folder — reload the folder once and accept.
 
-> ⚠️ **Lỗi "Cannot load extension with file or directory name _legacy"** xảy ra khi bạn
-> load nhầm thư mục **gốc của Mei** (`new browser\new browser`) — thư mục đó chứa
-> `_legacy` (tên bắt đầu bằng `_` bị trình duyệt cấm) và không có `manifest.json`,
-> nên Chrome/Edge báo **Could not load manifest**.
-> Đúng thư mục cần load là `Extensions\tab-window-bridge` (bên trong đã có sẵn
-> `manifest.json` và không có tên nào bắt đầu bằng `_`).
+> ⚠️ **"Cannot load extension with file or directory name _legacy"** means
+> you selected the **Mei repository root** rather than the extension folder.
+> That folder contains `_legacy` (leading underscores are forbidden by the
+> browser) and has no extension manifest. Select `Extensions\tab-window-bridge`,
+> which contains `manifest.json`, instead.
 
 ## Pair with Mei (once)
 
@@ -51,14 +50,14 @@ another machine)
    (port `18444` by default) → **Save mobile bridge settings**.
 2. Click **Copy pairing code** — the code looks like
    `MEI1|192.168.1.7|18444|a1b2c3…` (the same code the QR shows for Mei Remote).
-3. Paste it into the extension's **① Nối với Mei** box and press **Nối**.
+3. Paste it into the extension's **① Connect to Mei** box and press **Connect**.
 
 The extension keeps only two things: the token, and whether it should talk to
 `127.0.0.1`. The pairing code carries the LAN address so a phone can reach the
 desktop; the extension runs on that same machine, so it rewrites the address to
 `127.0.0.1` and never needs the bridge opened to the network.
 
-If Mei is not running you get a sentence, not a mystery: *"Chưa gọi được Mei ở
+If Mei is not running you get a sentence, not a mystery: *"Could not reach Mei at
 http://127.0.0.1:18444 …"* — open Mei, Settings → Mobile bridge, and try again.
 
 ## Export flow (two screens → two Mei workspaces)

@@ -77,6 +77,16 @@ class TestStartupProxyFlag(unittest.TestCase):
             json.dump({"enabled": True, "type": "http", "host": "proxy.local", "port": 0}, f)
         self.assertEqual(self._flag(), "")
 
+    def test_pac_configuration_does_not_require_a_manual_host(self):
+        with open(prefs.proxy_config_path(self.profile_dir), "w", encoding="utf-8") as f:
+            json.dump({"enabled": True, "pac_url": "https://proxy.example/settings.pac"}, f)
+        self.assertEqual(self._flag(), "--proxy-pac-url=https://proxy.example/settings.pac")
+
+    def test_unsafe_pac_scheme_is_ignored(self):
+        with open(prefs.proxy_config_path(self.profile_dir), "w", encoding="utf-8") as f:
+            json.dump({"enabled": True, "pac_url": "javascript:alert(1)"}, f)
+        self.assertEqual(self._flag(), "")
+
     def test_malformed_json_does_not_crash(self):
         path = prefs.proxy_config_path(self.profile_dir)
         with open(path, "w", encoding="utf-8") as f:

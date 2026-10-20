@@ -146,7 +146,7 @@ The search box at the top is the command center of the whole app:
 
 **Feature finder behaviour**
 
-- Any **letter or word** filters the registry: titles, categories and keywords are all searched (`b` → Browser, Bí Mật, Bói Toán, Boards…; `boi` narrows to Bói Toán).
+- Any **letter or word** filters the registry: titles, categories and keywords are all searched (`b` → Browser, Boards, Bookmarks…; `fortune` narrows to Fortune & Reflection).
 - A single letter that matches nothing shows the **whole registry**, so the list is never empty — keep typing to zoom in.
 - `↑` / `↓` move through results, `Esc` closes, **Enter or click** jumps to the feature.
 - **Password-protected areas** (AI, Personal) prompt for the passcode first, then open automatically.

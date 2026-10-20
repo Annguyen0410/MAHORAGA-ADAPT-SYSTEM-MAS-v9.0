@@ -7,19 +7,45 @@ Two free formats from one dialog:
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import os
 import re
 import time
 import zipfile
+from contextlib import contextmanager
+from urllib.parse import quote, unquote, urlsplit
 
-from litebrowser.core import prefs
+from litebrowser.core import prefs, storage_utils
 from litebrowser.services import personal_service
 
 
 def _safe_name(title: str) -> str:
     raw = re.sub(r'[\\/:*?"<>|]', "-", (title or "").strip())[:60]
+    raw = raw.strip(" .")
+    if raw.split(".")[0].upper() in {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]}:
+        raw = "_" + raw
     return raw or "note"
+
+
+@contextmanager
+def _atomic_zip(out_path):
+    parent = os.path.dirname(os.path.abspath(out_path))
+    fd, temporary = storage_utils.tempfile_mkstemp_same_dir(parent, os.path.basename(out_path))
+    os.close(fd)
+    try:
+        with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as archive:
+            yield archive
+        with open(temporary, "r+b") as handle:
+            os.fsync(handle.fileno())
+        storage_utils._atomic_replace(temporary, out_path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _note_digest(note):
+    return hashlib.sha256(str(note.get("id", "")).encode("utf-8")).hexdigest()[:16]
 
 
 def _render_html_page(title: str, content: str, theme_tokens: dict) -> str:
@@ -32,7 +58,21 @@ def _render_html_page(title: str, content: str, theme_tokens: dict) -> str:
         text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
         text = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", text)
         text = re.sub(r"\[\[([^\]]+)\]\]", r'<span class="wl">\1</span>', text)
-        text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+        def link(match):
+            label, escaped_url = match.groups()
+            url = html.unescape(escaped_url).strip()
+            try:
+                parsed = urlsplit(url)
+            except ValueError:
+                return label
+            safe = parsed.scheme.lower() in ("http", "https", "mailto") or (
+                not parsed.scheme and not parsed.netloc and url[:1] not in ("/", chr(92))
+                and ".." not in re.split(r"[\\/]", unquote(url))
+            )
+            if not safe or any(ord(char) < 32 for char in url):
+                return label
+            return f'<a href="{html.escape(url, quote=True)}" rel="noopener noreferrer">{label}</a>'
+        text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", link, text)
         return text
 
     body_lines = []
@@ -101,28 +141,22 @@ def export_notes_html(base_dir: str, out_path: str) -> int:
     notes = personal_service.list_notes(base_dir)
     if not notes:
         return 0
-    root = os.path.join(os.path.dirname(out_path), "mei_site")
-    os.makedirs(os.path.join(root, "notes"), exist_ok=True)
+    # Write only current notes directly into a new archive; no stale site tree.
     pages = []
-    for note in notes:
-        slug = _safe_name(note["title"]) + "-" + note["id"][-6:] + ".html"
-        body = _render_html_page(note["title"], note["content"], tokens)
-        with open(os.path.join(root, "notes", slug), "w", encoding="utf-8") as fh:
-            fh.write(body)
-        pages.append((note["title"], note.get("category", "General"), "notes/" + slug))
-    # Build the whole index body first so the list lands INSIDE the document
-    # (appending after _render_html_page put it past </html>).
-    index_body = f"# Mei Notes\n\n{len(pages)} notes\n\n## All notes\n\n" + "\n".join(
-        f"- [{title}]({rel}) · {cat}" for title, cat, rel in pages
-    )
-    with open(os.path.join(root, "index.html"), "w", encoding="utf-8") as fh:
-        fh.write(_render_html_page("Mei Notes", index_body, tokens))
-    # zip it
-    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for dirpath, _dirs, files in os.walk(root):
-            for name in files:
-                full = os.path.join(dirpath, name)
-                zf.write(full, os.path.relpath(full, root))
+    with _atomic_zip(out_path) as archive:
+        for note in notes:
+            slug = _safe_name(note["title"]) + "-" + _note_digest(note) + ".html"
+            relative = "notes/" + slug
+            archive.writestr(relative, _render_html_page(note["title"], note["content"], tokens))
+            pages.append((note["title"], note.get("category", "General"), relative))
+        # Build the index with escaped HTML labels rather than interpreting
+        # user-controlled titles as Markdown syntax.
+        index = _render_html_page("Mei Notes", f"# Mei Notes\n\n{len(pages)} notes\n\n## All notes", tokens)
+        listing = "<ul>" + "".join(
+            f'<li><a href="{quote(relative, safe="/")}">{html.escape(title)}</a> · {html.escape(category)}</li>'
+            for title, category, relative in pages
+        ) + "</ul>"
+        archive.writestr("index.html", index.replace("<footer>", listing + "<footer>", 1))
     return len(pages)
 
 
@@ -130,14 +164,14 @@ def export_notes_md_zip(base_dir: str, out_path: str) -> int:
     """Markdown bundle preserving categories as folders."""
     notes = personal_service.list_notes(base_dir)
     used = set()
-    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    with _atomic_zip(out_path) as zf:
         index = ["# Mei notes index", ""]
         for note in notes:
-            rel = os.path.join(note.get("category", "General").replace("/", "-"), _safe_name(note["title"]) + ".md")
+            rel = os.path.join(_safe_name(note.get("category", "General")), _safe_name(note["title"]) + ".md")
             rel = rel.replace("\\", "/")
-            if rel in used:
-                rel = rel[:-3] + f"-{note['id'][-4:]}.md"
-            used.add(rel)
+            if rel.casefold() in used:
+                rel = rel[:-3] + "-" + _note_digest(note) + ".md"
+            used.add(rel.casefold())
             zf.writestr(rel, note["content"])
             index.append(f"- [{note['title']}]({rel}) · {note.get('category', 'General')}")
         zf.writestr("index.md", "\n".join(index) + "\n")

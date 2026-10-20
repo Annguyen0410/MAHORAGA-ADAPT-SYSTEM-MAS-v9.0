@@ -43,6 +43,7 @@ from PyQt5.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -286,7 +287,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         self._refresh_workspace_combo()
         self.workspace_combo.currentIndexChanged.connect(self._on_workspace_changed)
         self.sidebar_layout.addWidget(self.workspace_combo)
-        self.sidebar_panel_buttons = QHBoxLayout()
+        self.sidebar_panel_buttons = QGridLayout()
         self.sidebar_panel_buttons.setSpacing(4)
         self.sidebar_panel_buttons.setAlignment(Qt.AlignCenter)
         self.btn_panel_tabs = QToolButton()
@@ -322,13 +323,9 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         self.sidebar_panel_group.addButton(self.btn_panel_history)
         self.sidebar_panel_group.addButton(self.btn_panel_downloads)
         self.sidebar_panel_group.addButton(self.btn_panel_reading)
-        self.sidebar_panel_buttons.addStretch(1)
-        self.sidebar_panel_buttons.addWidget(self.btn_panel_tabs)
-        self.sidebar_panel_buttons.addWidget(self.btn_panel_bookmarks)
-        self.sidebar_panel_buttons.addWidget(self.btn_panel_history)
-        self.sidebar_panel_buttons.addWidget(self.btn_panel_downloads)
-        self.sidebar_panel_buttons.addWidget(self.btn_panel_reading)
-        self.sidebar_panel_buttons.addStretch(1)
+        for index, button in enumerate((self.btn_panel_tabs, self.btn_panel_bookmarks, self.btn_panel_history, self.btn_panel_downloads, self.btn_panel_reading)):
+            button.setAccessibleName(button.toolTip())
+            self.sidebar_panel_buttons.addWidget(button, 0, index)
         self.sidebar_layout.addLayout(self.sidebar_panel_buttons)
         self.sidebar_stack = QStackedWidget()
         self.sidebar_stack.setObjectName("SidebarStack")
@@ -341,7 +338,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         # The full filter syntax used to be the placeholder, which the narrow
         # sidebar clipped mid-word ("group:…"). Keep the box quiet and teach the
         # syntax on hover instead.
-        self.tab_filter.setPlaceholderText("Search tabs  ·  is:  site:  group:")
+        self.tab_filter.setPlaceholderText("Search tabs…")
         self.tab_filter.setToolTip(
             "Filter the tab list\n"
             "    is:sleeping   is:pinned   is:live\n"
@@ -450,20 +447,20 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         self.options_menu = self._build_options_menu()
         self.btn_options.setMenu(self.options_menu)
         self._master_password = None
+        self.btn_new_tab.setAccessibleName("New tab")
+        self.btn_options.setAccessibleName("Browser control menu")
         self.sidebar_footer = QWidget()
         self.sidebar_footer.setObjectName("SidebarFooter")
         self.sidebar_footer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        sidebar_footer_layout = QHBoxLayout(self.sidebar_footer)
+        sidebar_footer_layout = QVBoxLayout(self.sidebar_footer)
         sidebar_footer_layout.setContentsMargins(0, 4, 0, 0)
         sidebar_footer_layout.setSpacing(6)
         # Same width for both actions: two buttons of different lengths centred in
         # a column read as an accident, an even pair reads as a toolbar.
         self.btn_new_tab.setMinimumWidth(98)
         self.btn_options.setMinimumWidth(98)
-        sidebar_footer_layout.addStretch(1)
-        sidebar_footer_layout.addWidget(self.btn_new_tab, 0, Qt.AlignHCenter)
-        sidebar_footer_layout.addWidget(self.btn_options, 0, Qt.AlignHCenter)
-        sidebar_footer_layout.addStretch(1)
+        sidebar_footer_layout.addWidget(self.btn_new_tab)
+        sidebar_footer_layout.addWidget(self.btn_options)
         self.sidebar_layout.addWidget(self.sidebar_footer)
         self.main_splitter.addWidget(self.sidebarWidget)
 
@@ -662,7 +659,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         initial_sidebar = self._sidebar_expanded_nominal_width()
         self.main_splitter.setSizes([initial_sidebar, max(420, (1216 if self.embedded else 1228) - initial_sidebar)])
         # Dragging the divider is the natural way users expect to bring the
-        # collapsed sidebar back ("kéo ra"); wire it up so a collapsed rail
+        # collapsed sidebar back; wire it up so a collapsed rail
         # can always be widened back by hand, not only via the tiny toggle.
         self.main_splitter.splitterMoved.connect(self._on_main_splitter_moved)
         # Give the divider a real grab-area (the app-wide QSS handle is only
@@ -766,6 +763,12 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
                 try:
                     session_state = prefs.session_state_load(self.base_dir)
                     tabs = session_state.get("tabs", [])
+                    if self._window_slot_hint in ("primary", "secondary"):
+                        legacy_ws = "ws2" if self._window_slot_hint == "secondary" else "ws1"
+                        tabs = [tab for tab in tabs if isinstance(tab, dict) and (
+                            tab.get("window_slot") == self._window_slot_hint if tab.get("window_slot") else
+                            tab.get("workspace_id", "ws1") == legacy_ws
+                        )]
                     if not tabs:
                         # No saved tabs (mode still "restore"): fall back to the
                         # configured startup page. v6.4 tested mode == "newtab"
@@ -800,6 +803,10 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         if getattr(self, "_zen_mode", False):
             self.toggle_zen_mode()
             return
+        browser = self.current_browser()
+        if browser is not None and browser.property("mei_loading"):
+            browser.stop()
+            return
         bar = getattr(self, "_find_bar", None)
         if bar is not None and bar.isVisible():
             self._close_find_bar()
@@ -815,13 +822,26 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
                 payload = self._tab_state_payload(i, browser, current)
                 if payload:
                     tabs.append(payload)
-            if not tabs:
-                return
-            state = prefs.session_state_load(self.base_dir)
-            state["tabs"] = tabs
-            prefs.session_state_save(self.base_dir, state)
+            prefs.session_state_save(self.base_dir, {"tabs": tabs}, window_slot=self._session_slot())
         except Exception:
             pass
+
+    def _session_slot(self):
+        return self._window_slot_hint if self._window_slot_hint in ("primary", "secondary") else None
+
+    def persist_state(self):
+        prefs.session_state_save(self.base_dir, {"tabs": self.get_current_tab_state()}, window_slot=self._session_slot())
+        self._auto_save_tab_set()
+        return True
+
+    def shutdown(self):
+        if self._closing:
+            return
+        self._closing = True
+        for timer in self.findChildren(QTimer):
+            timer.stop()
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        QApplication.instance().removeEventFilter(self)
 
     def set_workspace_id(self, workspace_id, persist=False):
         if not workspace_id:
@@ -907,6 +927,16 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
 
         if hasattr(self, "topbar_layout"):
             self.topbar_layout.setSpacing(2 if xtiny else 3 if tight else 4)
+        panel_columns = 3 if getattr(self, "sidebarWidget", self).width() < 190 else 5
+        for index, attr in enumerate(("btn_panel_tabs", "btn_panel_bookmarks", "btn_panel_history", "btn_panel_downloads", "btn_panel_reading")):
+            button = getattr(self, attr, None)
+            if button is not None:
+                button.setProperty("compactIcon", True)
+                button.setMinimumSize(32, 32)
+                button.setMaximumWidth(16777215)
+                button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                if hasattr(self, "sidebar_panel_buttons"):
+                    self.sidebar_panel_buttons.addWidget(button, index // panel_columns, index % panel_columns)
 
         for button in (
             getattr(self, "btn_back", None),
@@ -919,8 +949,12 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
             if button:
                 button.setMinimumWidth(24 if xtiny else 26 if tiny else 28)
                 button.setMaximumWidth(34 if xtiny else 40 if tiny else 46 if tight else 52)
-                button.setMinimumHeight(20 if xtiny else 24 if tiny else 26)
-                button.setMaximumHeight(24 if xtiny else 28 if tiny else 30)
+                button.setMinimumHeight(32)
+                button.setMaximumHeight(36)
+                button.setProperty("compactIcon", True)
+                if button is getattr(self, "btn_vpn_hub", None):
+                    button.setMinimumWidth(48)
+                    button.setMaximumWidth(60)
 
         if hasattr(self, "search_engine"):
             self.search_engine.setVisible(not tiny)
@@ -1792,7 +1826,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
             QMessageBox.information(
                 self,
                 "Adblock",
-                "Đã cập nhật bộ lọc quảng cáo." if ok else "Chưa có danh sách đăng ký hoặc cập nhật thất bại.",
+                "Ad-blocking filters updated." if ok else "No filter subscriptions, or the update failed.",
             )
 
         future = self._executor.submit(_run)
@@ -1890,7 +1924,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         layout.addWidget(ram_graph, 1)
         lbl_tabs = QLabel("")
         lbl_ram = QLabel("")
-        lbl_heap = QLabel("JS heap tab hiện tại: đang đo…")
+        lbl_heap = QLabel("Current tab JS heap: measuring…")
         layout.addWidget(lbl_ram)
         layout.addWidget(lbl_tabs)
         layout.addWidget(lbl_heap)
@@ -1949,24 +1983,24 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
             try:
                 val = float(value)
                 if val >= 0:
-                    lbl_heap.setText(f"JS heap tab hiện tại: {val:.1f} MB")
+                    lbl_heap.setText(f"Current tab JS heap: {val:.1f} MB")
                 else:
-                    lbl_heap.setText("JS heap tab hiện tại: không khả dụng")
+                    lbl_heap.setText("Current tab JS heap: unavailable")
             except Exception:
-                lbl_heap.setText("JS heap tab hiện tại: không khả dụng")
+                lbl_heap.setText("Current tab JS heap: unavailable")
 
         def refresh():
             rss = _process_rss_mb()
             live, sleeping = self._live_sleeping_counts()
             if rss is not None:
                 lbl_ram.setText(
-                    f"RAM tiến trình: {rss} MB (Memory Saver kích hoạt > {MEMORY_SAVER_RSS_THRESHOLD_MB} MB)"
+                    f"Process RAM: {rss} MB (Memory Saver activates above {MEMORY_SAVER_RSS_THRESHOLD_MB} MB)"
                 )
                 ram_graph.add(rss)
             else:
-                lbl_ram.setText("RAM tiến trình: không đọc được trên hệ điều hành này")
+                lbl_ram.setText("Process RAM: unavailable on this operating system")
             lbl_tabs.setText(f"Tab: {live} live · {sleeping} sleeping")
-            lbl_heap.setText("JS heap tab hiện tại: đang đo…")
+            lbl_heap.setText("Current tab JS heap: measuring…")
             current = self.current_browser()
             if current is not None:
                 current.page().runJavaScript(
@@ -1979,9 +2013,9 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         graph_timer.timeout.connect(refresh)
         graph_timer.start(1000)
         row = QHBoxLayout()
-        btn_refresh = QPushButton("Đo lại")
+        btn_refresh = QPushButton("Measure again")
         btn_refresh.clicked.connect(refresh)
-        btn_freeze = QPushButton("Freeze toàn bộ tab nền")
+        btn_freeze = QPushButton("Freeze all background tabs")
         btn_freeze.clicked.connect(lambda: (self.tab_manager.optimize_memory(notify=False), refresh()))
         row.addWidget(btn_refresh)
         row.addWidget(btn_freeze)
@@ -2198,28 +2232,25 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
             os.environ["MEI_SMART_RESTART"] = "1"
             if reason:
                 os.environ["MEI_RESTART_REASON"] = reason
-            state = prefs.session_state_load(self.base_dir)
-            current = self.current_browser()
-            tabs = []
-            for i, browser in enumerate(self.browsers):
-                payload = self._tab_state_payload(i, browser, current)
-                if payload:
-                    tabs.append(payload)
-            state["tabs"] = tabs
-            prefs.session_state_save(self.base_dir, state)
-        except Exception:
-            pass
+            # Persist every shell, including a note edited in the other
+            # window. Do not hand off the profile while old writers are alive.
+            for window in QApplication.topLevelWidgets():
+                if hasattr(window, "persist_state") and not window.persist_state():
+                    os.environ.pop("MEI_SMART_RESTART", None)
+                    os.environ.pop("MEI_RESTART_REASON", None)
+                    return
+        except OSError:
+            os.environ.pop("MEI_SMART_RESTART", None)
+            os.environ.pop("MEI_RESTART_REASON", None)
+            QMessageBox.warning(self, "Restart", "Your data could not be saved. Restart was canceled.")
+            return
         try:
             if getattr(sys, "frozen", False):
                 args = [sys.executable]
             else:
-                args = [sys.executable, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "browser.py")]
-            # Release the cross-process profile claim BEFORE spawning: the new
-            # instance can start while this one is still tearing down, and the
-            # lifetime lock would otherwise reject it as "profile in use".
-            from litebrowser.core import profile_lock
-
-            profile_lock.release_process_lock(self.base_dir)
+                args = [sys.executable, os.path.join(app_paths.project_root(), "browser.py")]
+            # The replacement waits for our lifetime lock at startup. Releasing
+            # it here allowed two WebEngines/writers into the profile at once.
             # Inherit the environment so MEI_SMART_RESTART / MEI_RESTART_REASON
             # reach the new instance (Popen copies os.environ by default).
             subprocess.Popen(args, close_fds=True)
@@ -2371,6 +2402,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         if browser != self.current_browser():
             return
         url_str = q.toString()
+        self.sync_navigation(browser)
         self.url_bar.setText(url_str)
         self.url_bar.setCursorPosition(0)
         if hasattr(self, "lbl_site_state"):
@@ -2462,6 +2494,12 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         self._user_extension_scripts_cache = None
 
     def on_load_finished(self, ok, browser):
+        browser.setProperty("mei_loading", False)
+        self.sync_navigation(browser)
+        if browser is self.current_browser():
+            self.load_progress.hide()
+            if not ok and browser.url().scheme() in ("http", "https"):
+                self._flash_status("Page did not finish loading · reload to retry")
         if not ok:
             return
         host = (browser.url().host() or "").lower()
@@ -2720,8 +2758,18 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
 
         self._release_sidebar_width_lock(rail)
 
+        duration_ms = prefs.motion_duration_ms(getattr(self, "base_dir", None), "workspace")
+        if duration_ms == 0:
+            sw = max(0, self.main_splitter.width())
+            if sw > 0:
+                self.main_splitter.setSizes([end_w, max(280, sw - end_w)])
+            self._sidebar_anim = None
+            self._release_sidebar_width_lock(rail)
+            self._apply_responsive_layout()
+            return
+
         self._sidebar_anim = QVariantAnimation(self)
-        self._sidebar_anim.setDuration(240)
+        self._sidebar_anim.setDuration(duration_ms)
         self._sidebar_anim.setEasingCurve(QEasingCurve.OutCubic)
         self._sidebar_anim.setStartValue(float(start_w))
         self._sidebar_anim.setEndValue(float(end_w))
@@ -3369,6 +3417,8 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         dialogs.show_history_dialog(self)
 
     def remember_closed_tab(self, metadata):
+        if bool((metadata or {}).get("incognito")):
+            return
         state = prefs.session_state_load(self.base_dir)
         recently_closed = state.get("recently_closed", [])
         entry = {
@@ -3739,6 +3789,15 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
     def _tab_state_payload(self, index, browser, active_browser):
         item = self.tab_list.item(index)
         meta = dict(item.data(TAB_META_ROLE) or {}) if item else {}
+        if bool(meta.get("incognito")):
+            return None
+        if browser is not None:
+            try:
+                if browser.property("is_incognito") or browser.page().profile().isOffTheRecord():
+                    return None
+            except Exception:
+                # Never persist a page when its private state cannot be verified.
+                return None
         url = meta.get("url", "")
         if browser is not None:
             try:
@@ -3777,7 +3836,6 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         if self._closing:
             event.accept()
             return
-        self._closing = True
         try:
             tabs = []
             current = self.current_browser()
@@ -3785,9 +3843,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
                 payload = self._tab_state_payload(i, browser, current)
                 if payload:
                     tabs.append(payload)
-            state = prefs.session_state_load(self.base_dir)
-            state["tabs"] = tabs
-            prefs.session_state_save(self.base_dir, state)
+            prefs.session_state_save(self.base_dir, {"tabs": tabs}, window_slot=self._session_slot())
             # "Reopen Closed Window" must not offer the session that is live at
             # app exit (v6.4 recorded it on every quit). Only remember the
             # window when another shell window is still open, i.e. the user
@@ -3803,12 +3859,20 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         except Exception:
             pass
         finally:
+            self.shutdown()
             event.accept()
 
     def get_current_tab_state(self):
         tabs = []
         current = self.current_browser()
         for i, b in enumerate(self.browsers):
+            # Incognito pages must never leak into persistent saved collections.
+            try:
+                if b is not None and b.page().profile().isOffTheRecord():
+                    continue
+            except Exception:
+                # If privacy state cannot be proven, exclude the tab.
+                continue
             payload = self._tab_state_payload(i, b, current)
             if payload:
                 tabs.append(payload)
@@ -3858,25 +3922,41 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         except Exception as e:
             QMessageBox.warning(self, "Tab set", "Could not save tab set:\n%s" % (str(e),))
 
-    def restore_tab_set(self, set_id):
+    def restore_tab_set(self, set_id, mode="merge"):
         """Open a saved tab collection. Tabs reopen in a hibernated state so
-        restoring a large research session stays cheap until you select a tab."""
+        restoring a large research session stays cheap until you select a tab.
+        Replace only closes this browser workspace after an explicit UI choice."""
         data = tab_sets.get_tab_set(self.base_dir, set_id)
         if not data:
             QMessageBox.warning(self, "Tab set", "Tab set not found.")
             return
+        if data.get("kind") == "workspace":
+            tab_sets.set_active_research_workspace(self.base_dir, data["id"])
         tabs = [tab for tab in data.get("tabs", []) if tab.get("url")]
         if not tabs:
             QMessageBox.information(self, "Tab set", "This tab set is empty.")
             return
+        if mode == "replace":
+            ws_role = Qt.UserRole + workspace_manager.WORKSPACE_ROLE
+            rows = [
+                i for i in range(self.tab_list.count())
+                if self.tab_list.item(i) and self.tab_list.item(i).data(ws_role) == self.current_workspace_id
+            ]
+            for index in reversed(rows):
+                item = self.tab_list.item(index)
+                if item and item.data(TAB_PINNED_ROLE):
+                    self.tab_manager.set_tab_pinned(index, False)
+                self.tab_manager.close_tab(index)
         self.tab_manager.begin_batch()
         try:
             for tab in tabs:
+                session_data = dict(tab)
+                session_data["workspace_id"] = self.current_workspace_id
                 self.tab_manager.add_tab(
                     QUrl(tab.get("url")),
                     tab.get("title") or "Tab",
                     is_active=bool(tab.get("active")),
-                    session_data=tab,
+                    session_data=session_data,
                 )
         finally:
             self.tab_manager.end_batch()

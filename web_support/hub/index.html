@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="chain-app" content="hub">
+<title>Project Chain — Mei</title>
+<style>
+  :root {
+    --bg: #0c0a09;
+    --panel: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.10);
+    --text: #f3ede4;
+    --muted: #a79c8c;
+    --accent: #c0392b;
+    --gold: #d8bf95;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(circle at 12% 0%, rgba(192,57,43,0.18), transparent 40%),
+      radial-gradient(circle at 90% 10%, rgba(216,191,149,0.12), transparent 45%),
+      linear-gradient(160deg, #141010, var(--bg) 60%);
+    padding: 40px 18px 60px;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 30px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--gold); font-weight: 700; margin: 0 0 10px;
+  }
+  h1 { font-size: 34px; margin: 0 0 10px; letter-spacing: -.02em; }
+  header p { color: var(--muted); font-size: 15px; margin: 0; line-height: 1.6; }
+  .mode {
+    display: inline-flex; align-items: center; gap: 7px;
+    margin-top: 14px; padding: 6px 14px; border-radius: 999px;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+    font-size: 12px; color: var(--muted);
+  }
+  .mode .dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 8px #4ade80; }
+  .mode.cloud .dot { background: #60a5fa; box-shadow: 0 0 8px #60a5fa; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    display: flex; flex-direction: column; gap: 10px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 18px; text-decoration: none; color: var(--text);
+    transition: transform .16s ease, border-color .16s ease, background .16s ease;
+  }
+  .card:not(.self):not(.meta):hover { transform: translateY(-3px); border-color: var(--gold); background: rgba(255,255,255,0.07); }
+  .card-main { display: flex; flex: 1; flex-direction: column; gap: 10px; color: inherit; text-decoration: none; }
+  .card-main:focus-visible { outline: 2px solid var(--gold); outline-offset: 5px; border-radius: 4px; }
+  .card-head { display: flex; align-items: center; gap: 10px; }
+  .glyph { font-size: 26px; line-height: 1; }
+  .name { font-weight: 800; font-size: 16px; }
+  .sub { color: var(--muted); font-size: 13px; line-height: 1.5; flex: 1; }
+  .open {
+    font-size: 12px; font-weight: 700; color: var(--gold);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .alt-links {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-top: 2px;
+    font-size: 11px; color: var(--muted);
+  }
+  .alt-links a { color: var(--muted); text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,.25); }
+  .alt-links a:hover { color: var(--text); }
+  .card.self { border-style: dashed; border-color: var(--gold); cursor: default; }
+  .card.self .name { color: var(--gold); }
+  .card.meta { border-style: dashed; }
+  .card.meta .name { color: var(--gold); }
+  .tag {
+    font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.08); border: 1px solid var(--border); color: var(--muted);
+  }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 34px; line-height: 1.7; }
+  code {
+    padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border); font-size: 12px;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <p class="eyebrow" id="chainEyebrow">Mei · Project Chain</p>
+      <h1>Your connected app desk</h1>
+      <p>One launch center for bookmarks, management, adaptation, rankings, personal frequency and reflection.</p>
+      <div class="mode" id="modeBadge"><span class="dot"></span><span id="modeText">Loading app chain…</span></div>
+    </header>
+
+    <div class="grid" id="chainGrid">
+      <div class="card">Loading apps…</div>
+    </div>
+
+    <footer id="hubFooter">
+      Available local apps run from files; missing local apps use their online versions.<br>
+      Press <code>Ctrl+T</code> for a new tab, or type <code>/hub</code> in Mei’s omnibar.
+    </footer>
+  </div>
+
+  <script src="chain.js"></script>
+  <script>
+  (function () {
+    "use strict";
+
+    function esc(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    function render() {
+      var chain = window.CHAIN;
+      if (!chain || !chain.apps) return;
+
+      document.getElementById("chainEyebrow").textContent = chain.name + " · " + chain.apps.length + " apps";
+
+      var badge = document.getElementById("modeBadge");
+      var modeText = document.getElementById("modeText");
+      if (chain.mode === "remote") {
+        badge.classList.add("cloud");
+        modeText.textContent = "Online mode — using deployed app URLs";
+      } else {
+        badge.classList.remove("cloud");
+        modeText.textContent = "Local mode — bundled files with online fallbacks";
+      }
+
+      var html = "";
+      chain.apps.forEach(function (app) {
+        var isSelf = app.id === "hub";
+        var tag = isSelf ? '<span class="tag">You are here</span>' : "";
+        var openLabel = isSelf ? "This is your Hub" : ("Open " + app.name + " →");
+        var alt = "";
+        if (isSelf) {
+          alt = "";
+        } else {
+          var pieces = [];
+          if (app.remote) pieces.push('<a href="' + esc(app.remote) + '" target="_blank" rel="noopener">☁ online version</a>');
+          if (chain.mode === "remote") pieces.push('<a href="' + esc(app.local) + '">📁 local version</a>');
+          if (pieces.length) alt = '<div class="alt-links">' + pieces.join(" · ") + "</div>";
+        }
+        if (isSelf) {
+          html += '<div class="card self">'
+            + '<div class="card-head"><span class="glyph">' + esc(app.glyph) + '</span><span class="name">' + esc(app.name) + '</span>' + tag + '</div>'
+            + '<span class="sub">' + esc(app.subtitle) + '</span>'
+            + '<span class="open">' + esc(openLabel) + '</span>'
+            + '</div>';
+        } else {
+          html += '<div class="card"><a class="card-main" href="' + esc(app.url) + '" title="' + esc(app.name) + '">'
+            + '<div class="card-head"><span class="glyph">' + esc(app.glyph) + '</span><span class="name">' + esc(app.name) + '</span></div>'
+            + '<span class="sub">' + esc(app.subtitle) + '</span>'
+            + '<span class="open">' + esc(openLabel) + '</span>'
+            + '</a>'
+            + alt
+            + '</div>';
+        }
+      });
+
+      // Mei is the host browser, not a chained web app.
+      html += '<div class="card meta">'
+        + '<div class="card-head"><span class="glyph">☕</span><span class="name">Mei</span></div>'
+        + '<span class="sub">Host browser — open apps from the omnibar: <code>/hub</code> · <code>/linklumina</code> · <code>/cql</code> · <code>/mas</code> · <code>/leaderboard</code></span>'
+        + '<span class="open">Open from Mei</span>'
+        + '</div>';
+
+      document.getElementById("chainGrid").innerHTML = html;
+
+      var foot = document.getElementById("hubFooter");
+      foot.innerHTML = 'App URLs come from the packaged <code>litebrowser/data/chain.json</code> manifest; public web copies are generated from it.<br>'
+        + (chain.mode === "remote"
+            ? 'Online mode uses the generated manifest for deployed app links.'
+            : 'Local mode opens installed apps from files and uses online fallbacks when needed.');
+    }
+
+    if (window.CHAIN) render();
+    document.addEventListener("chain:ready", render);
+  })();
+  </script>
+</body>
+</html>

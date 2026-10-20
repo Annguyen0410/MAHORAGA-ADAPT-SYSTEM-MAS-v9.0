@@ -182,7 +182,7 @@ async function downloadPayload() {
   let payload = await loadCurrentWindowBatch();
   if (!payload) payload = await captureCurrentWindow();
   showPayload(payload);
-  downloadBlob(JSON.stringify(payload, null, 2), `litebrowser-window-${payload.window_id}.json`, "application/json");
+  await downloadBlob(JSON.stringify(payload, null, 2), `litebrowser-window-${payload.window_id}.json`, "application/json");
   setStatus(`Downloaded window ${payload.window_id}.`);
 }
 
@@ -196,7 +196,7 @@ async function captureAllAndShow() {
 async function downloadAllJson() {
   const workspace = await captureAllWindows();
   showPayload(workspace);
-  downloadBlob(JSON.stringify(workspace, null, 2), "mei-workspace-all-windows.json", "application/json");
+  await downloadBlob(JSON.stringify(workspace, null, 2), "mei-workspace-all-windows.json", "application/json");
   setStatus(`Downloaded JSON with ${workspace.window_count} windows.`);
 }
 
@@ -274,7 +274,7 @@ async function saveBridgeSettings(settings) {
 async function currentWebTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !/^https?:/i.test(tab.url || "")) {
-    throw new Error("Tab hiện tại không phải trang web (http/https) nên không gửi được.");
+    throw new Error("The current tab is not an HTTP/HTTPS page and cannot be sent.");
   }
   return tab;
 }
@@ -288,7 +288,7 @@ async function connectBridge(options = {}) {
   if (raw) {
     const parsed = MeiBridge.parsePairingCode(raw);
     if (!parsed) {
-      throw new Error("Mã ghép nối phải có dạng MEI1|host|port|token (copy từ Mei → Settings → Mobile bridge).");
+      throw new Error("Use a pairing code in the form MEI1|host|port|token (copy it from Mei → Settings → Mobile bridge).");
     }
     // The code carries the LAN address so a phone can reach the desktop; this
     // extension runs on that same machine, so it takes the shortest road and
@@ -299,17 +299,17 @@ async function connectBridge(options = {}) {
   }
   if (!settings.token) {
     if (options.quiet) {
-      setBridgeStatus("Chưa nối Mei — dán mã ghép nối để bắt đầu.");
+      setBridgeStatus("Not connected to Mei — paste a pairing code to begin.");
       return null;
     }
-    throw new Error("Dán mã ghép nối từ Mei → Settings → Mobile bridge (nút “Copy pairing code”).");
+    throw new Error("Paste the pairing code from Mei → Settings → Mobile bridge (“Copy pairing code”).");
   }
   const reply = await MeiBridge.ping(settings);
   if (!reply.ok) {
-    setBridgeStatus((raw ? "Đã lưu mã, nhưng " : "") + reply.message, true);
+    setBridgeStatus((raw ? "Code saved, but " : "") + reply.message, true);
     return null;
   }
-  setBridgeStatus("Đã nối " + MeiBridge.capabilitiesLine(reply.body));
+  setBridgeStatus("Connected to " + MeiBridge.capabilitiesLine(reply.body));
   return settings;
 }
 
@@ -324,13 +324,16 @@ async function readSelection(tabId) {
     return first && typeof first.result === "string" ? first.result : "";
   } catch (error) {
     console.warn("Could not read the page selection.", error);
-    throw new Error("Không đọc được đoạn bôi đen trên trang này — tải lại trang rồi bấm lại.");
+    throw new Error("Could not read the selection on this page — reload it and try again.");
   }
 }
 
 async function sendTabToMei() {
   const settings = await connectBridge({});
-  if (!settings) return;
+  if (!settings) {
+    setSendStatus("Not sent — check the Mei connection above.", true);
+    return;
+  }
   const tab = await currentWebTab();
   const reply = await MeiBridge.post(settings, "save_page", MeiBridge.tabPayload(tab));
   setSendStatus(reply.message, !reply.ok);
@@ -338,11 +341,14 @@ async function sendTabToMei() {
 
 async function sendSelectionToMei() {
   const settings = await connectBridge({});
-  if (!settings) return;
+  if (!settings) {
+    setSendStatus("Not sent — check the Mei connection above.", true);
+    return;
+  }
   const tab = await currentWebTab();
   const text = (await readSelection(tab.id)).trim();
   if (!text) {
-    throw new Error("Chưa thấy đoạn bôi đen nào — bôi đen trong trang rồi bấm lại.");
+    throw new Error("No text selected — highlight text on the page and try again.");
   }
   const payload = MeiBridge.selectionPayload({
     text,
@@ -353,6 +359,12 @@ async function sendSelectionToMei() {
   });
   const reply = await MeiBridge.post(settings, "save_selection", payload);
   setSendStatus(reply.message, !reply.ok);
+}
+
+function setSendBusy(busy) {
+  ["connectBtn", "sendTabBtn", "sendSelectionBtn"].forEach(id => {
+    document.getElementById(id).disabled = busy;
+  });
 }
 
 /* --- wire-up -------------------------------------------------------------- */
@@ -424,31 +436,37 @@ document.getElementById("refreshBtn").addEventListener("click", async () => {
 
 document.getElementById("connectBtn").addEventListener("click", async () => {
   try {
-    setBridgeStatus("Đang nối…");
+    setBridgeStatus("Connecting…");
     await connectBridge({});
   } catch (error) {
     console.error(error);
-    setBridgeStatus(error.message || "Không nối được Mei.", true);
+    setBridgeStatus(error.message || "Could not connect to Mei.", true);
   }
 });
 
 document.getElementById("sendTabBtn").addEventListener("click", async () => {
+  setSendBusy(true);
   try {
-    setSendStatus("Đang gửi…");
+    setSendStatus("Sending…");
     await sendTabToMei();
   } catch (error) {
     console.error(error);
-    setSendStatus(error.message || "Gửi tab thất bại.", true);
+    setSendStatus(error.message || "Could not send the tab.", true);
+  } finally {
+    setSendBusy(false);
   }
 });
 
 document.getElementById("sendSelectionBtn").addEventListener("click", async () => {
+  setSendBusy(true);
   try {
-    setSendStatus("Đang gửi…");
+    setSendStatus("Sending…");
     await sendSelectionToMei();
   } catch (error) {
     console.error(error);
-    setSendStatus(error.message || "Gửi đoạn bôi đen thất bại.", true);
+    setSendStatus(error.message || "Could not send the selection.", true);
+  } finally {
+    setSendBusy(false);
   }
 });
 
@@ -461,5 +479,5 @@ refreshStoredBatch().catch(error => {
  * so the pairing is checked quietly instead of waiting for a click. */
 connectBridge({ quiet: true }).catch(error => {
   console.error(error);
-  setBridgeStatus("Không đọc được cấu hình ghép nối.", true);
+  setBridgeStatus("Could not read the pairing settings.", true);
 });

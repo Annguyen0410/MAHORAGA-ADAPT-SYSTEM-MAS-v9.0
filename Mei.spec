@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('icon.png', '.'), ('litebrowser\\data\\chain.json', 'litebrowser\\data'), ('web_support\\boitoan', 'web_support\\boitoan')]
+datas = [('icon.png', '.'), ('litebrowser\\data\\chain.json', 'litebrowser\\data'), ('litebrowser\\data\\plugins', 'litebrowser\\data\\plugins'), ('web_support\\boitoan', 'web_support\\boitoan')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('cryptography')

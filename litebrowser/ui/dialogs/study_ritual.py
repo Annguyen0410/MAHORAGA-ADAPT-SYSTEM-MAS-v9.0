@@ -1,6 +1,6 @@
 """The study-session dialog: pick a cup, see the pace, name what you will finish.
 
-One question, one action. The menu is the timer — choosing "Cà phê sữa" chooses
+One question, one action. The menu is the timer — choosing "Milk coffee" chooses
 45 minutes — and the line about what you will finish rides into the session
 label, so the journal explains itself a week later. Everything it does lives in
 :mod:`litebrowser.services.study_ritual`; this file is only the door.

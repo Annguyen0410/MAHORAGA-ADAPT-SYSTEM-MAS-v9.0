@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fortune &amp; Reflection · Mei Project Chain</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #160b25; color: #f8eaff; }
+    main { width: min(620px, calc(100% - 32px)); padding: 32px; border: 1px solid #7446a2; border-radius: 22px; background: #24113a; box-shadow: 0 20px 60px #0008; text-align: center; }
+    h1 { margin-top: 0; color: #f0b8ff; }
+    p { color: #d8c5e7; line-height: 1.6; }
+    a { color: #ffd66b; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 24px; }
+    .actions a { padding: 10px 14px; border-radius: 999px; background: #452265; text-decoration: none; }
+    .actions a.primary { background: #9c27b0; color: white; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 24px; }
+    nav a { font-size: 12px; }
+  </style>
+  <script src="../chain.js"></script>
+</head>
+<body>
+  <main>
+    <h1>🎴 Fortune &amp; Reflection</h1>
+    <p>This local launcher keeps the app connected when Mei is packaged. The button below opens the official online version.</p>
+    <div class="actions">
+      <a class="primary" href="https://boitoanzaigame.netlify.app" rel="noopener">Open Fortune &amp; Reflection online</a>
+      <a data-chain-link="hub" href="../hub/index.html">Project Hub</a>
+    </div>
+    <nav aria-label="Project Chain">
+      <a data-chain-link="linklumina" href="../link/index.html">LinkLumina</a>
+      <a data-chain-link="cucquanly" href="../Cục Quản Lý/index.html">Management Hub</a>
+      <a data-chain-link="mas" href="../MAS - Mahoraga Adapt System/index.html">MAS</a>
+      <a data-chain-link="worldleaderboard" href="../World Leaderboard/index.html">World Leaderboard</a>
+      <a data-chain-link="bimat" href="../bí mật/index.html">PersonalFrequency</a>
+    </nav>
+  </main>
+</body>
+</html>

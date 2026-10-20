@@ -40,6 +40,10 @@ VERSION_KEY = "version"
 LEGACY_VERSION = 1
 
 
+class StoreWriteError(OSError):
+    """A store cannot be safely rewritten by this build."""
+
+
 @dataclass(frozen=True)
 class StoreSpec:
     name: str
@@ -60,7 +64,7 @@ def stored_version(raw: Any) -> int:
         return LEGACY_VERSION
     try:
         return int(raw.get(VERSION_KEY, LEGACY_VERSION) or LEGACY_VERSION)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return LEGACY_VERSION
 
 
@@ -111,8 +115,19 @@ def read_store(base_dir: str, spec: StoreSpec) -> Any:
 
 def write_store(base_dir: str, spec: StoreSpec, data: Any) -> dict:
     """Stamp the version and write a store atomically under the profile lock."""
+    path = store_path(base_dir, spec)
     payload = dict(data) if isinstance(data, dict) else {}
-    payload[VERSION_KEY] = spec.version
     with profile_locked(base_dir):
-        write_json(store_path(base_dir, spec), payload)
+        if os.path.isfile(path):
+            existing = read_json(path, None)
+            if existing is None:
+                raise StoreWriteError(f"Cannot overwrite unreadable store: {spec.name}")
+            if stored_version(existing) > spec.version:
+                raise StoreWriteError(
+                    f"{spec.name} belongs to a newer Mei build; upgrade before editing it"
+                )
+        if stored_version(payload) > spec.version:
+            raise StoreWriteError(f"Unsupported {spec.name} schema version")
+        payload[VERSION_KEY] = spec.version
+        write_json(path, payload)
     return payload

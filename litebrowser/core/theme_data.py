@@ -558,6 +558,42 @@ PALETTES = {
     },
 }
 
+
+def _art_palette(bg, alt, side, card, border, text, muted, accent, accent_hi, soft, hover, selected,
+                input_bg=None, danger="#d45b55", success="#56845f"):
+    """Build a complete opaque palette from a small, art-directed color set."""
+    input_bg = input_bg or card
+    return {
+        "MAIN_BG": bg, "MAIN_BG_ALT": alt, "SIDEBAR_BG": side,
+        "SIDEBAR_BORDER": border, "CARD_BG": card, "INPUT_BG": input_bg,
+        "INPUT_BORDER": border, "INPUT_FOCUS": accent_hi,
+        "TEXT": text, "TEXT_MUTED": muted, "ACCENT": accent,
+        "ACCENT_HOVER": accent_hi, "ACCENT_SOFT": soft,
+        "ITEM_HOVER": hover, "ITEM_SELECTED": selected,
+        "ITEM_SELECTED_BORDER": accent, "BUTTON_BG": alt,
+        "BUTTON_HOVER": hover, "BUTTON_TEXT": text,
+        "MENU_BG": card, "MENU_ITEM_SEL": selected,
+        "BORDER_SOFT": border, "DANGER": danger, "SUCCESS": success,
+    }
+
+
+# Art-directed families extend the same token contract as the café palettes.
+# They stay fully opaque so the look remains readable on every Qt platform.
+PALETTES.update({
+    "aurora-glass": _art_palette("#101722", "#172332", "#121D2A", "#1A2837", "#304354", "#F2F6FC", "#A9BACB", "#66D6D1", "#91E8E0", "#1B4549", "#203B4A", "#284A57"),
+    "sakura-twilight": _art_palette("#211923", "#30202D", "#291D2A", "#352332", "#593C50", "#FFF2F5", "#D7AEBF", "#F08CAF", "#FFA9C3", "#563047", "#442C3D", "#54334A"),
+    "cyberpunk-neon": _art_palette("#11121A", "#1B1B29", "#151521", "#20202E", "#3D3B54", "#F4F2FF", "#B5B1C9", "#48E7F2", "#8BF2FA", "#173C46", "#2A2540", "#35304E"),
+    "midnight-amoled": _art_palette("#050607", "#0C0E10", "#080A0C", "#101214", "#292D31", "#F4F6F8", "#A8B0B8", "#7BC8FF", "#A1D8FF", "#172B39", "#18232D", "#213442"),
+    "arctic-aurora": _art_palette("#EFF6F8", "#E2EEF1", "#E8F2F4", "#FAFDFD", "#C6DADD", "#18343B", "#536E75", "#167F8C", "#0D6876", "#D7ECEE", "#DCECEE", "#CAE4E7"),
+    "retro-terminal": _art_palette("#101710", "#18221A", "#131D15", "#1A261B", "#344A35", "#D6F4D0", "#9EBC98", "#75E36C", "#A1F395", "#233D25", "#263A27", "#2E482F"),
+    "paper-studio": _art_palette("#F4F0E7", "#EAE4D8", "#EEE9DE", "#FBF9F3", "#D2C8B7", "#292822", "#6F6B60", "#765C3B", "#5E472D", "#E8DFD0", "#EDE6DA", "#E1D5C3"),
+    "monochrome-pro": _art_palette("#F0F1F2", "#E4E6E8", "#E9EAEC", "#FAFAFB", "#C9CDD1", "#22262A", "#626970", "#3E566B", "#293F52", "#DCE2E6", "#E3E7EA", "#D1DAE0"),
+    "dreamscape": _art_palette("#F2F0FA", "#E8E5F5", "#ECEAF7", "#FBFAFF", "#D3CEE9", "#29243C", "#706A89", "#6B62B8", "#554CA2", "#E5E1F6", "#E9E5F8", "#DCD7F1"),
+    "solarized-focus": _art_palette("#F3F0E2", "#EAE6D6", "#EEEBDE", "#F8F5E9", "#D6D0BD", "#36464A", "#667577", "#287A78", "#1D6665", "#DDE8DF", "#E5E9DC", "#D4E1D5"),
+    "high-contrast": _art_palette("#FFFFFF", "#EEEEEE", "#F4F4F4", "#FFFFFF", "#555555", "#101010", "#454545", "#003FCC", "#002E99", "#DCE6FF", "#E4E9F4", "#C8D7FF", danger="#A40000", success="#006A20"),
+    "glasshouse": _art_palette("#EAF3EF", "#DDEBE5", "#E3EEE8", "#F6FBF8", "#BFD4C8", "#19362B", "#5C7568", "#397B5C", "#286746", "#D8E9DE", "#DDECE2", "#CDE2D3"),
+})
+
 # Theme shown when a profile has never picked one (and for unknown names).
 DEFAULT_THEME = "minimal"
 
@@ -584,6 +620,18 @@ THEME_LABELS = {
     "lavender-night": "Lavender Dusk · lilac glow",
     "blueberry-night": "Blueberry Night · iris mood",
     "mocha-mint": "Mint Mocha · chocolate & mint",
+    "aurora-glass": "Aurora Glass · luminous teal & indigo",
+    "sakura-twilight": "Sakura Twilight · plum & blossom",
+    "cyberpunk-neon": "Cyberpunk Neon · cyan & magenta",
+    "midnight-amoled": "Midnight AMOLED · deep black",
+    "arctic-aurora": "Arctic Aurora · ice & teal",
+    "retro-terminal": "Retro Terminal · phosphor green",
+    "paper-studio": "Paper Studio · warm ink & paper",
+    "monochrome-pro": "Monochrome Pro · focused grayscale",
+    "dreamscape": "Dreamscape · lavender & periwinkle",
+    "solarized-focus": "Solarized Focus · low-glare reading",
+    "high-contrast": "High Contrast · clear states",
+    "glasshouse": "Glasshouse · botanical porcelain",
 }
 
 
@@ -625,6 +673,11 @@ ACCENTS = {
     "rose":      ("#DD6292", "#F083B0", "#3D1F30", "#E8739F"),  # strawberry glaze
     "matcha":    ("#6E9440", "#8CBB54", "#223316", "#7EA64B"),  # whisked matcha
     "slate":     ("#94A1B2", "#B0BDCE", "#272E37", "#A4B1C2"),  # quiet stone
+    "sage":      ("#789d87", "#a1bba9", "#243a30", "#89af98"),
+    "terracotta": ("#bb7563", "#d49a85", "#412923", "#c98472"),
+    "iris":      ("#777fc3", "#a0a5da", "#282a46", "#8d95ce"),
+    "petrol":    ("#378e9b", "#63adb8", "#17343c", "#4aa0ad"),
+    "plum":      ("#ac739b", "#cb9cbd", "#392434", "#bd87ac"),
 }
 _ACCENT_KEYS = ("ACCENT", "ACCENT_HOVER", "ACCENT_SOFT", "INPUT_FOCUS")
 
@@ -634,8 +687,49 @@ def accent_keys():
     return _ACCENT_KEYS
 
 
+def valid_accent(accent) -> bool:
+    import re
+    return isinstance(accent, str) and (accent in ACCENTS or bool(re.fullmatch(r"#[0-9a-fA-F]{6}", accent)))
+
+
+def theme_variant(mode: str, dark: bool) -> str:
+    pairs = (("minimal", "minimal-night"), ("latte", "cafe-night"), ("rose-day", "midnight-ember"),
+             ("dawn", "cafe-night"), ("matcha-day", "forest-night"), ("sand-day", "ocean-night"),
+             ("lavender-day", "lavender-night"), ("cocoa-day", "mocha-mint"), ("rain-day", "rain-night"),
+             ("sunrise-day", "midnight-ember"), ("autumn-day", "cafe-night"), ("lavender-day", "blueberry-night"))
+    for day, night in pairs:
+        if mode in (day, night):
+            return night if dark else day
+    # Single-family themes keep their own art direction when automatic day/night
+    # switching is enabled; they do not unexpectedly fall back to café palettes.
+    return mode if mode in PALETTES else ("minimal-night" if dark else DEFAULT_THEME)
+
+
+def contrast_ratio(first: str, second: str) -> float:
+    def luminance(color):
+        channels = [int(color.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4 for value in channels]
+        return sum(channel * weight for channel, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+    a, b = sorted((luminance(first), luminance(second)))
+    return (b + 0.05) / (a + 0.05)
+
+
+def _readable_color(color, background, minimum=4.5):
+    if contrast_ratio(color, background) >= minimum:
+        return color
+    target = "#171a1c" if _is_light_color(background) else "#ffffff"
+    for step in range(21):
+        candidate = _blend_hex(target, color, step / 20)
+        if contrast_ratio(candidate, background) >= minimum:
+            return candidate
+    return target
+
+
 def _accent_override(accent: str | None) -> dict:
-    preset = ACCENTS.get(accent or "") if accent else None
+    if valid_accent(accent) and accent.startswith("#"):
+        preset = (accent, _blend_hex("#ffffff", accent, 0.2), _blend_hex(accent, "#171a1c", 0.25), accent)
+    else:
+        preset = ACCENTS.get(accent or "") if accent else None
     if not preset:
         return {}
     # A short preset list is tolerated: the pairs past its end are simply dropped.
@@ -677,6 +771,15 @@ def _palette(mode: str, accent: str | None = None):
     # accent surface for every light theme instead.
     if override and _is_light_color(palette["MAIN_BG"]):
         palette["ACCENT_SOFT"] = _blend_hex(palette["ACCENT"], palette["MAIN_BG"], 0.20)
+    palette["TEXT_ON_ACCENT"] = "#171a1c" if contrast_ratio("#171a1c", palette["ACCENT"]) >= contrast_ratio("#ffffff", palette["ACCENT"]) else "#ffffff"
+    # Filled-button hover is distinct from accent-colored text on a surface.
+    palette["ACCENT_FILL_HOVER"] = _readable_color(palette["ACCENT_HOVER"], palette["TEXT_ON_ACCENT"])
+    palette["TEXT_ON_DANGER"] = "#171a1c" if contrast_ratio("#171a1c", palette["DANGER"]) >= contrast_ratio("#ffffff", palette["DANGER"]) else "#ffffff"
+    for background in ("MAIN_BG", "CARD_BG", "MAIN_BG_ALT", "ACCENT_SOFT"):
+        palette["ACCENT_HOVER"] = _readable_color(palette["ACCENT_HOVER"], palette[background])
+    for background in ("MAIN_BG", "CARD_BG", "MAIN_BG_ALT"):
+        palette["TEXT_MUTED"] = _readable_color(palette["TEXT_MUTED"], palette[background])
+    palette["TEXT_DIM"] = _blend_hex(palette["TEXT"], palette["MAIN_BG"], 0.55)
     return palette
 
 

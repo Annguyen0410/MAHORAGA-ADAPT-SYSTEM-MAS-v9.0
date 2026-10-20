@@ -31,7 +31,7 @@ class MeiTray(QSystemTrayIcon):
         act_vpn.triggered.connect(self._vpn_status)
         menu.addSeparator()
         act_quit = menu.addAction("✕ Quit Mei")
-        act_quit.triggered.connect(lambda: self.shell.close())
+        act_quit.triggered.connect(self.shell.quit_application)
         self.setContextMenu(menu)
         self.activated.connect(self._on_activated)
         # Many Linux setups still render showMessage fine; on systems without
@@ -40,13 +40,7 @@ class MeiTray(QSystemTrayIcon):
 
     # -- actions -------------------------------------------------------
     def _quick_note(self):
-        shell = self.shell
-        shell.switch_workspace("personal")
-        page = shell.personal_page
-        if hasattr(page, "_switch_page"):
-            page._switch_page("notes")
-        if hasattr(page, "note_editor"):
-            page.note_editor.setFocus()
+        self.shell._open_quick_note_overlay()
 
     def _quick_pour(self):
         from litebrowser.services import focus_service

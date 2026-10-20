@@ -11,6 +11,9 @@ machines can stay in step without any cloud.
 from __future__ import annotations
 
 import json
+import math
+import urllib.error
+from datetime import datetime
 import time
 import urllib.request
 from collections.abc import Callable
@@ -18,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from litebrowser.core import prefs
+from litebrowser.core.profile_lock import profile_transaction
 from litebrowser.services import (
     flashcard_service,
     life_service,
@@ -52,7 +56,10 @@ def _rows_entity(key: str, counter: str, load, save) -> SyncEntity:
 
     def merge(base_dir: str, incoming) -> int:
         rows = _dict_rows(incoming)
-        save(base_dir, _upsert(load(base_dir), rows))
+        existing = load(base_dir)
+        merged = _upsert(existing, rows)
+        if merged != existing:
+            save(base_dir, merged)
         return len(rows)
 
     return SyncEntity(key, counter, build, merge)
@@ -75,7 +82,15 @@ def _merge_notes(base_dir: str, incoming) -> int:
             continue
         existing = local_notes_by_key.get((title, category))
         if existing:
-            personal_service.update_note(base_dir, existing["id"], content, category)
+            if existing.get("content", "") == content:
+                continue
+            # Preserve both edited texts; mtime alone cannot prove that one
+            # device's note is the ancestor of the other device's note.
+            conflict_title = f"{title} (other device)"
+            conflict = local_notes_by_key.get((conflict_title, category))
+            if not conflict or conflict.get("content") != content:
+                created = personal_service.create_note(base_dir, conflict_title, content, category)
+                local_notes_by_key[(conflict_title, category)] = created
         else:
             created = personal_service.create_note(base_dir, title, content, category)
             if created:
@@ -118,7 +133,7 @@ def _merge_history(base_dir: str, incoming) -> int:
             continue
         try:
             remote_history.append((int(item[0] or 0), str(item[1] or "")))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
     if not remote_history:
         return 0
@@ -134,6 +149,8 @@ def _merge_history(base_dir: str, incoming) -> int:
 def _build_notes(base_dir: str):
     return [
         {
+            "id": n.get("id", ""),
+            "updated_at": n.get("updated_at", ""),
             "title": n.get("title", ""),
             "category": n.get("category", "General"),
             "content": n.get("content", ""),
@@ -158,7 +175,8 @@ def _merge_plan(base_dir: str, incoming) -> int:
     semester = incoming.get("semester")
     if isinstance(semester, dict) and any(_text(value) for value in semester.values()):
         plan["semester"] = semester
-    personal_plan.save_plan(base_dir, plan)
+    if plan != personal_plan.load_plan(base_dir):
+        personal_plan.save_plan(base_dir, plan)
     return applied
 
 
@@ -184,6 +202,7 @@ SYNC_ENTITIES: tuple[SyncEntity, ...] = (
 )
 
 
+@profile_transaction
 def _bundle(base_dir: str) -> dict:
     payload = {
         "app": "litebrowser",
@@ -215,12 +234,37 @@ def _text(value, default: str = "") -> str:
 def _upsert(existing, incoming, key="id"):
     existing_rows = _dict_rows(existing)
     incoming_rows = _dict_rows(incoming)
-    seen = {item.get(key) for item in incoming_rows if item.get(key)}
-    merged = [item for item in existing_rows if item.get(key) not in seen]
-    merged.extend(incoming_rows)
-    return merged
+    by_id = {}
+    unkeyed = []
+    for item in existing_rows:
+        row_id = item.get(key)
+        if isinstance(row_id, str) and row_id:
+            by_id[row_id] = item
+        else:
+            unkeyed.append(item)
+    for item in incoming_rows:
+        row_id = item.get(key)
+        if not isinstance(row_id, str) or not row_id:
+            continue
+        current = by_id.get(row_id)
+        if current is None or _timestamp(item) >= _timestamp(current):
+            by_id[row_id] = item
+    return [*unkeyed, *by_id.values()]
 
 
+def _timestamp(row):
+    value = row.get("updated_at") or row.get("created_at") or 0
+    try:
+        result = float(value)
+        return result if math.isfinite(result) else 0
+    except (TypeError, ValueError, OverflowError):
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+        except (ValueError, OSError, OverflowError):
+            return 0
+
+
+@profile_transaction
 def _apply_bundle(base_dir: str, bundle: dict) -> dict:
     """Merge a remote snapshot into the local profile (last-writer-wins per item).
 
@@ -232,8 +276,15 @@ def _apply_bundle(base_dir: str, bundle: dict) -> dict:
     if not isinstance(bundle, dict):
         return applied
     for entity in SYNC_ENTITIES:
-        applied[entity.counter] = entity.merge(base_dir, bundle.get(entity.key))
+        if entity.key in bundle:
+            applied[entity.counter] = entity.merge(base_dir, bundle[entity.key])
     return applied
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # A sync endpoint must not forward a profile/token to another host.
+        return None
 
 
 def _request(url: str, token: str, method: str = "GET", payload=None) -> tuple[bool, object, str]:
@@ -248,8 +299,11 @@ def _request(url: str, token: str, method: str = "GET", payload=None) -> tuple[b
             data = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            body = resp.read().decode("utf-8", errors="ignore")
+        with urllib.request.build_opener(_NoRedirect()).open(req, timeout=15) as resp:
+            raw = resp.read(64 * 1024 * 1024 + 1)
+            if len(raw) > 64 * 1024 * 1024:
+                return False, None, "Sync snapshot is too large"
+            body = raw.decode("utf-8")
             parsed = None
             if body.strip():
                 try:
@@ -257,7 +311,9 @@ def _request(url: str, token: str, method: str = "GET", payload=None) -> tuple[b
                 except ValueError:
                     parsed = body
             return True, parsed, ""
-    except (OSError, ValueError) as exc:
+    except urllib.error.HTTPError as exc:
+        return False, None, "No snapshot yet" if exc.code == 404 else str(exc)
+    except (OSError, ValueError, UnicodeError) as exc:
         return False, None, str(exc)
 
 
@@ -279,7 +335,7 @@ def pull(base_dir: str, endpoint: str, token: str) -> tuple[bool, str]:
     ok, resp, err = _request(endpoint + "/api/sync/latest", token)
     if not ok:
         return False, "Pull failed: %s" % (err or "connection error")
-    if not isinstance(resp, dict) or resp.get("kind") != "snapshot":
+    if not isinstance(resp, dict) or resp.get("kind") != "snapshot" or resp.get("api", 1) != SYNC_API_VERSION or resp.get("app", "litebrowser") not in ("litebrowser", "mei"):
         return False, "Remote did not return a snapshot."
     applied = _apply_bundle(base_dir, resp)
     _record_sync(base_dir, pulled_at=int(time.time()))
@@ -288,13 +344,16 @@ def pull(base_dir: str, endpoint: str, token: str) -> tuple[bool, str]:
 
 
 def sync_now(base_dir: str, endpoint: str, token: str) -> tuple[bool, str]:
-    ok_push, msg_push = push(base_dir, endpoint, token)
+    # Read before publishing: publishing first replaces the only remote copy
+    # and silently discards changes from the other device.
     ok_pull, msg_pull = pull(base_dir, endpoint, token)
-    if ok_push and ok_pull:
-        return True, msg_push + " " + msg_pull
-    return False, (msg_push if not ok_push else msg_pull)
+    if not ok_pull and "No snapshot yet" not in msg_pull:
+        return False, msg_pull
+    ok_push, msg_push = push(base_dir, endpoint, token)
+    return ok_push, (msg_pull + " " + msg_push if ok_push else msg_push)
 
 
+@profile_transaction
 def _record_sync(base_dir: str, pushed_at: int | None = None, pulled_at: int | None = None):
     data = life_service.load_sync_state(base_dir)
     if pushed_at:

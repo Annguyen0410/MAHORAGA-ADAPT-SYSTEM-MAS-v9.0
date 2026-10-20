@@ -9,6 +9,7 @@ The Review page is a browsable flashcard deck (SM-2 scheduling); the Sites
 page can show user-added sites only, or also the bundled project apps
 (``Include bundled sites`` toggle, persisted in prefs).
 """
+import copy
 import hashlib
 import math
 import os
@@ -25,7 +26,6 @@ from PyQt5.QtCore import (
     Qt,
     QTimer,
     QUrl,
-    pyqtSignal,
 )
 from PyQt5.QtGui import (
     QBrush,
@@ -58,13 +58,13 @@ from PyQt5.QtWidgets import (
     QCompleter,
     QDateEdit,
     QDialog,
+    QScrollArea,
     QFileDialog,
     QFrame,
     QGraphicsPathItem,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsTextItem,
-    QGraphicsView,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -91,6 +91,10 @@ from litebrowser.browser.browser_page import (
     ensure_chrome_compat_script,
     ensure_text_highlight_script,
 )
+from litebrowser.qt import QtCore, QtGui, QtWidgets
+
+QGridLayout = QtWidgets.QGridLayout
+
 from litebrowser.core import app_paths, app_version, prefs
 from litebrowser.services import (
     focus_service,
@@ -110,9 +114,31 @@ from litebrowser.ui.dialogs.common import (
     primary_button,
 )
 from litebrowser.ui.focus_heatmap import FocusHeatmap
+from litebrowser.ui.board_canvas import BoardView, InkStrokeItem
 
 MAX_NOTE_WATCH_DIRS = 64
 NEURAL_GRAPH_MAX_NOTES = 48
+
+
+class _MinuteTimeSpin(QSpinBox):
+    """Keep the plan's integer minutes API, present a familiar 24-hour time."""
+    def textFromValue(self, value):
+        return f"{value // 60:02d}:{value % 60:02d}"
+
+    def valueFromText(self, text):
+        try:
+            hour, minute = [int(part) for part in text.split(":")]
+            return hour * 60 + minute
+        except ValueError:
+            return self.value()
+
+    def validate(self, text, pos):
+        state = QtGui.QValidator.State.Intermediate
+        if re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", text):
+            state = QtGui.QValidator.State.Acceptable
+        elif len(text) > 5 or re.search(r"[^0-9:]", text):
+            state = QtGui.QValidator.State.Invalid
+        return state, text, pos
 
 
 def _is_dark_palette(p: dict) -> bool:
@@ -123,125 +149,6 @@ def _is_dark_palette(p: dict) -> bool:
         return (r * 299 + g * 587 + b * 114) / 1000 < 150
     except (TypeError, ValueError):
         return False
-
-
-class BoardView(QGraphicsView):
-    stroke_finished = pyqtSignal()
-    link_created = pyqtSignal(str, str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setRenderHint(QPainter.Antialiasing, True)
-        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
-        self.mode = "pan"
-        self.pen_color = "#6f4e37"
-        self.pen_width = 3.0
-        self._drawing_item = None
-        self._drawing_points = []
-        self._link_start = None
-        self.set_mode("pan")
-
-    def wheelEvent(self, event):
-        factor = 1.12 if event.angleDelta().y() > 0 else 0.88
-        zoom = self.transform().m11() * factor
-        if 0.35 <= zoom <= 3.5:
-            self.scale(factor, factor)
-        event.accept()
-
-    def set_mode(self, mode: str):
-        self.mode = mode if mode in ("pan", "draw", "link") else "pan"
-        self._link_start = None
-        if self.mode in ("draw", "link"):
-            self.setDragMode(QGraphicsView.NoDrag)
-            self.viewport().setCursor(Qt.CrossCursor)
-        else:
-            self.setDragMode(QGraphicsView.ScrollHandDrag)
-            self.viewport().setCursor(Qt.OpenHandCursor)
-
-    def set_pen(self, color: str, width: float):
-        self.pen_color = color or "#6f4e37"
-        self.pen_width = float(width or 3.0)
-
-    def mousePressEvent(self, event):
-        if self.mode == "link" and event.button() == Qt.LeftButton and self.scene():
-            hit = self.itemAt(event.pos())
-            card = _find_sticky_ancestor(hit)
-            if card is None:
-                self._clear_link_start()
-                event.accept()
-                return
-            if self._link_start is None:
-                self._link_start = card
-                self._highlight_link_card(card, True)
-                event.accept()
-                return
-            if self._link_start is card:
-                self._clear_link_start()
-                event.accept()
-                return
-            from_id = self._link_start.node.get("id")
-            to_id = card.node.get("id")
-            self._clear_link_start()
-            self.link_created.emit(from_id, to_id)
-            event.accept()
-            return
-        if self.mode == "draw" and event.button() == Qt.LeftButton and self.scene():
-            hit = self.itemAt(event.pos())
-            if _find_sticky_ancestor(hit):
-                super().mousePressEvent(event)
-                return
-            scene_pos = self.mapToScene(event.pos())
-            stroke = {
-                "id": str(int(time.time() * 1000)),
-                "color": self.pen_color,
-                "width": float(self.pen_width),
-                "points": [{"x": float(scene_pos.x()), "y": float(scene_pos.y())}],
-            }
-            self._drawing_item = InkStrokeItem(stroke)
-            self._drawing_points = stroke["points"]
-            self.scene().addItem(self._drawing_item)
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if self.mode == "draw" and self._drawing_item and self.scene():
-            scene_pos = self.mapToScene(event.pos())
-            if self._drawing_points:
-                last = self._drawing_points[-1]
-                if abs(last["x"] - float(scene_pos.x())) < 1.5 and abs(last["y"] - float(scene_pos.y())) < 1.5:
-                    event.accept()
-                    return
-            self._drawing_points.append({"x": float(scene_pos.x()), "y": float(scene_pos.y())})
-            self._drawing_item.set_points(self._drawing_points)
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if self.mode == "draw" and self._drawing_item and event.button() == Qt.LeftButton:
-            self._drawing_item.set_points(self._drawing_points)
-            self._drawing_item = None
-            self._drawing_points = []
-            self.stroke_finished.emit()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-    def _highlight_link_card(self, card, on: bool):
-        if on:
-            card._orig_pen = card.pen()
-            # Accent ring instead of a hard-coded beige (invisible on dark themes).
-            card.setPen(QPen(QColor(theme.palette()["ACCENT"]), 3))
-        elif hasattr(card, "_orig_pen"):
-            card.setPen(card._orig_pen)
-            del card._orig_pen
-
-    def _clear_link_start(self):
-        if self._link_start is not None:
-            self._highlight_link_card(self._link_start, False)
-        self._link_start = None
 
 
 class NeuralGraphWidget(QWidget):
@@ -458,52 +365,6 @@ class EdgeItem(QGraphicsPathItem):
         path = QPainterPath(QPointF(start.x(), start.y()))
         path.lineTo(QPointF(end.x(), end.y()))
         self.setPath(path)
-
-
-class InkStrokeItem(QGraphicsPathItem):
-    def __init__(self, stroke: dict):
-        super().__init__()
-        self.stroke = dict(stroke or {})
-        self.setZValue(-20)
-        self.setAcceptedMouseButtons(Qt.NoButton)
-        self.set_points(self.stroke.get("points", []))
-
-    def set_points(self, points):
-        clean_points = []
-        for point in points or []:
-            try:
-                clean_points.append({"x": float(point.get("x", 0.0)), "y": float(point.get("y", 0.0))})
-            except Exception:
-                continue
-        self.stroke["points"] = clean_points
-        self.stroke["color"] = self.stroke.get("color") or "#6f4e37"
-        self.stroke["width"] = float(self.stroke.get("width", 3.0) or 3.0)
-        self.setPath(_stroke_path(clean_points))
-        pen = QPen(QColor(self.stroke["color"]), self.stroke["width"], Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
-        self.setPen(pen)
-
-
-def _find_sticky_ancestor(item):
-    current = item
-    while current is not None:
-        if isinstance(current, StickyCardItem):
-            return current
-        current = current.parentItem()
-    return None
-
-
-def _stroke_path(points):
-    path = QPainterPath()
-    if not points:
-        return path
-    first = points[0]
-    path.moveTo(float(first["x"]), float(first["y"]))
-    if len(points) == 1:
-        path.lineTo(float(first["x"]) + 0.4, float(first["y"]) + 0.4)
-        return path
-    for point in points[1:]:
-        path.lineTo(float(point["x"]), float(point["y"]))
-    return path
 
 
 class MeiNotesList(QListWidget):
@@ -778,7 +639,7 @@ class PersonalWindow(QMainWindow):
         self.setWindowTitle(f"Personal Hub - {app_version.APP_NAME}")
         self.setWindowIcon(QIcon(os.path.join(self.app_dir, "icon.png")))
         self.resize(1160, 760)
-        self.setMinimumSize(760 if embedded else 900, 520 if embedded else 620)
+        self.setMinimumSize(0 if embedded else 900, 0 if embedded else 620)
         if not self.embedded:
             win_titlebar.apply_dark_titlebar(self, enabled=True)
 
@@ -944,22 +805,35 @@ class PersonalWindow(QMainWindow):
 
     def _apply_compact_layout(self):
         width = max(0, self.width())
+        if hasattr(self, "_boards_splitter"):
+            self._boards_splitter.setSizes([110 if width < 980 else 200, max(240, width - 340)])
+        if hasattr(self, "categories_list"):
+            self.categories_list.setVisible(width >= 680)
+            self._categories_hint.setVisible(width >= 680)
+        if hasattr(self, "_notes_splitter"):
+            orientation = Qt.Vertical if width < 680 else Qt.Horizontal
+            if self._notes_splitter.orientation() != orientation:
+                self._notes_splitter.setOrientation(orientation)
+                self._notes_splitter.setSizes([100, 400] if width < 680 else [220, 620])
         if getattr(self, "_nav_collapsed", False):
             nav = self.findChild(QWidget, "LeftRail")
             if nav:
-                nav.setMinimumWidth(46)
-                nav.setMaximumWidth(46)
+                nav.setMinimumWidth(56)
+                nav.setMaximumWidth(320)
             sw = max(0, width)
             if sw > 0:
-                self.nav_splitter.setSizes([46, max(300, sw - 46)])
+                self.nav_splitter.setSizes([56, max(240, sw - 56)])
             for button in getattr(self, "nav_buttons", {}).values():
-                button.setVisible(False)
+                button.setVisible(True)
+                button.setText(button.property("navGlyph") or "◇")
+                button.setMinimumHeight(34)
+                button.setMaximumHeight(40)
             self.btn_save_set.setVisible(False)
             self.btn_set_root.setVisible(False)
             self.nav_header.setVisible(False)
             self.btn_nav_toggle.setVisible(True)
             return
-        self.nav_header.setVisible(True)
+        self.nav_header.setVisible(width >= 820)
         compact = width < 1220
         narrow = width < 980
         tiny = width < 820
@@ -974,7 +848,10 @@ class PersonalWindow(QMainWindow):
             nav.setMaximumWidth(320)
             current = nav.width()
             sw = max(0, width)
-            if current < 56 or current > 320:
+            nav_bucket = 600 if xtiny else 820 if tiny else 980 if narrow else 1220 if compact else 1 << 30
+            changed_bucket = nav_bucket != getattr(self, "_nav_size_bucket", None)
+            self._nav_size_bucket = nav_bucket
+            if changed_bucket or current < 56 or current > 320:
                 if sw > 0:
                     self.nav_splitter.setSizes([default_w, max(300, sw - default_w)])
         self.btn_save_set.setVisible(not tiny)
@@ -991,11 +868,12 @@ class PersonalWindow(QMainWindow):
                     "boards": ("Boards", "◌"),
                     "files": ("Files", "▦"),
                     "sites": ("Sites", "↗"),
+                    "review": ("Review", "⇄"),
                 }
                 label, glyph = labels.get(key, (key.title(), "◇"))
-                button.setText(glyph if xtiny else f"{glyph}  {label}")
-                button.setMinimumHeight(22 if xtiny else 26)
-                button.setMaximumHeight(24 if xtiny else 30)
+                button.setText(glyph if tiny else f"{glyph}  {label}")
+                button.setMinimumHeight(34)
+                button.setMaximumHeight(40)
 
     def _toggle_nav_collapse(self, checked: bool):
         self._nav_collapsed = bool(checked)
@@ -1036,6 +914,10 @@ class PersonalWindow(QMainWindow):
         return super().eventFilter(obj, ev)
 
     def _switch_page(self, key: str):
+        if key not in self.page_order:
+            return
+        if self.stack.currentIndex() == self.page_order.get("notes") and key != "notes" and not self._flush_note_edits():
+            return
         previous = self.stack.currentIndex()
         self.stack.setCurrentIndex(self.page_order[key])
         for name, button in self.nav_buttons.items():
@@ -1076,7 +958,8 @@ class PersonalWindow(QMainWindow):
             btn = self.nav_buttons.get("review")
             if btn is not None:
                 base_label = "Review"
-                btn.setText(f"⇄  Review ({due})" if due else f"⇄  {base_label}")
+                btn.setText("⇄" if self._nav_collapsed or self.width() < 820 else f"⇄  Review ({due})" if due else f"⇄  {base_label}")
+                btn.setToolTip(f"Review · {due} cards due")
 
     def _build_overview_page(self):
         w = QWidget()
@@ -1084,8 +967,7 @@ class PersonalWindow(QMainWindow):
         l.setContentsMargins(14, 12, 14, 14)
         l.setSpacing(8)
         tool_row = QHBoxLayout()
-        tool_row.addWidget(components.section_header("Life Dashboard", "Overview of your day"))
-        tool_row.addStretch(1)
+        tool_row.addWidget(components.section_header("Life Dashboard", "Overview of your day"), 1)
         l.addLayout(tool_row)
 
         stats_row = QHBoxLayout()
@@ -1208,28 +1090,51 @@ class PersonalWindow(QMainWindow):
         self.chk_neural_graph.setChecked(prefs.get_show_neural_notes_graph(self.base_dir))
         self.chk_neural_graph.toggled.connect(self._on_neural_graph_toggled)
         top_row.addWidget(self.ed_note_search, 1)
-        top_row.addWidget(self.btn_note_back)
-        top_row.addWidget(QLabel("Category"))
         top_row.addWidget(self.cmb_note_category)
-        top_row.addWidget(QLabel("Font"))
-        top_row.addWidget(self.cmb_note_font)
-        top_row.addWidget(self.chk_neural_graph)
+        self.cmb_note_category.setAccessibleName("Filter notes by category")
+        self.cmb_note_category.setMaximumWidth(160)
+        self.ed_note_search.setMinimumWidth(0)
         top_row.addWidget(self.btn_new_note)
-        top_row.addWidget(self.btn_delete_note)
-        top_row.addWidget(self.btn_save_note)
-        top_row.addWidget(self.btn_note_ai)
-        top_row.addWidget(self.btn_note_flash)
         l.addLayout(top_row)
+        # Writing stays primary. Less frequent tools have their own compact,
+        # collapsible row rather than stealing 1300px from the editor.
+        note_actions = QHBoxLayout()
+        note_actions.addWidget(self.btn_note_back)
+        note_actions.addStretch(1)
+        self.lbl_note_save = QLabel("Saved locally")
+        self.lbl_note_save.setObjectName("MutedLabel")
+        self.lbl_note_save.setAccessibleName("Note save status")
+        note_actions.addWidget(self.lbl_note_save)
+        self.btn_save_note.setObjectName("TopAccentButton")
+        note_actions.addWidget(self.btn_save_note)
+        self.btn_note_tools = components.chip("Tools ▾", checkable=True, checked=False)
+        note_actions.addWidget(self.btn_note_tools)
+        l.addLayout(note_actions)
+        self._note_tools = QWidget()
+        tools = QGridLayout(self._note_tools)
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(6)
+        tools.addWidget(self.btn_note_ai, 0, 0)
+        tools.addWidget(self.btn_note_flash, 0, 1)
+        tools.addWidget(self.btn_delete_note, 0, 2)
+        self.btn_delete_note.setObjectName("DangerButton")
+        tools.addWidget(self.cmb_note_font, 1, 0)
+        self.cmb_note_font.setAccessibleName("Note font size")
+        self.cmb_note_font.setCurrentText("14")
+        tools.addWidget(self.chk_neural_graph, 1, 1, 1, 2)
+        self._note_tools.hide()
+        self.btn_note_tools.toggled.connect(self._note_tools.setVisible)
+        l.addWidget(self._note_tools)
 
         # Find-within-note toolbar.
         find_row = QHBoxLayout()
-        find_row.addWidget(QLabel("Tìm"))
+        find_row.addWidget(QLabel("Find"))
         self.ed_note_find = QLineEdit()
-        self.ed_note_find.setPlaceholderText("Tìm và tô sáng trong note...")
+        self.ed_note_find.setPlaceholderText("Find and highlight in this note...")
         self.btn_find_prev = QPushButton("‹")
-        self.btn_find_prev.setToolTip("Kết quả trước")
+        self.btn_find_prev.setToolTip("Previous match")
         self.btn_find_next = QPushButton("›")
-        self.btn_find_next.setToolTip("Kết quả tiếp theo")
+        self.btn_find_next.setToolTip("Next match")
         self.lbl_find_count = QLabel("")
         self.lbl_find_count.setObjectName("MutedLabel")
         find_row.addWidget(self.ed_note_find, 1)
@@ -1247,10 +1152,11 @@ class PersonalWindow(QMainWindow):
         self.notes_list.setObjectName("CafeList")
         self.notes_list.currentItemChanged.connect(self._load_selected_note)
         left_layout.addWidget(self.notes_list, 1)
-        categories_hint = QLabel("Kéo note vào category để di chuyển")
+        categories_hint = QLabel("Drag a note to a category to move it")
         categories_hint.setObjectName("MutedLabel")
         categories_hint.setWordWrap(True)
         left_layout.addWidget(categories_hint)
+        self._categories_hint = categories_hint
         self.categories_list = CategoryDropList(self)
         self.categories_list.setObjectName("CafeList")
         self.categories_list.setMaximumHeight(150)
@@ -1268,11 +1174,14 @@ class PersonalWindow(QMainWindow):
         self.lbl_note_image.setAlignment(Qt.AlignCenter)
         self.lbl_note_image.hide()
         editor_layout.addWidget(self.lbl_note_image)
-        self.btn_open_note_image = QPushButton("Mở ảnh")
+        self.btn_open_note_image = QPushButton("Open image")
         self.btn_open_note_image.setToolTip("Open the attached image at full size")
         self.btn_open_note_image.hide()
         editor_layout.addWidget(self.btn_open_note_image)
         self.note_editor = QPlainTextEdit()
+        self.note_editor.setObjectName("NoteEditor")
+        self.note_editor.setAccessibleName("Note content")
+        self.note_editor.setFont(components._font(16, components.WEIGHT_NORMAL))
         self.note_editor.setPlaceholderText("Longform notes, clipped notes, study notes...\n\nTip: type [[ to link another note — Obsidian-style, with autocomplete.")
         editor_layout.addWidget(self.note_editor, 1)
         # Wiki-links: accent-highlight [[targets]] + completion from note titles.
@@ -1316,7 +1225,8 @@ class PersonalWindow(QMainWindow):
         # Click a [[wiki-link]] in the editor (Ctrl+click safer than plain):
         self.note_editor.mousePressEvent = self._note_mouse_press  # type: ignore[assignment]
         split.addWidget(editor_wrap)
-        split.setChildrenCollapsible(True)
+        self._notes_splitter = split
+        split.setChildrenCollapsible(False)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         split.setSizes([220, 820])
@@ -1386,7 +1296,11 @@ class PersonalWindow(QMainWindow):
         self._update_note_stats()
         if self._suppress_note_dirty:
             return
+        if not self.current_note_id:
+            return
         self._note_dirty = True
+        if hasattr(self, "lbl_note_save"):
+            self.lbl_note_save.setText("Saving…")
         self._note_idle_timer.start()
         self._maybe_wiki_autocomplete()
 
@@ -1432,9 +1346,7 @@ class PersonalWindow(QMainWindow):
         """Autosave debounced: persist edits 250 ms after typing stops."""
         if not self._note_dirty or not self.current_note_id:
             return
-        note_id = self.current_note_id
-        if personal_service.save_note(self.base_dir, note_id, self.note_editor.toPlainText()):
-            self._note_dirty = False
+        self._flush_note_edits()
         # Find highlights were computed against the old text; offsets are now
         # stale (v6.4 jumped to wrong spans). Recompute on the edited content.
         self._find_in_note()
@@ -1544,8 +1456,16 @@ class PersonalWindow(QMainWindow):
         self.select_note(note["id"])
 
     def select_note(self, note_id: str):
-        if not note_id:
+        if not note_id or not self._flush_note_edits():
             return
+        self._switch_page("notes")
+        if not any(self.notes_list.item(i).data(Qt.UserRole) == note_id for i in range(self.notes_list.count())):
+            # Deep links from Home/Library must work even when a prior filter
+            # hid the target. Keep the editor's text safe before clearing it.
+            self.ed_note_search.clear()
+            self.cmb_note_category.setCurrentIndex(0)
+            self._notes_search_timer.stop()
+            self._refresh_notes()
         for index in range(self.notes_list.count()):
             item = self.notes_list.item(index)
             if item.data(Qt.UserRole) == note_id:
@@ -1556,6 +1476,13 @@ class PersonalWindow(QMainWindow):
                 break
 
     def _load_selected_note(self, current, _previous):
+        if self._suppress_note_dirty:
+            return
+        if not self._flush_note_edits():
+            self.notes_list.blockSignals(True)
+            self.notes_list.setCurrentItem(_previous)
+            self.notes_list.blockSignals(False)
+            return
         if not current:
             # Mid-refresh the list clear is spurious: _refresh_notes re-selects
             # the open note afterwards, so keep the editor untouched here.
@@ -1564,7 +1491,11 @@ class PersonalWindow(QMainWindow):
             self.current_note_id = None
             self.current_note_category = "General"
             self.lbl_note_title.setText("No note selected")
-            self.note_editor.setPlainText("")
+            self._suppress_note_dirty = True
+            try:
+                self.note_editor.setPlainText("")
+            finally:
+                self._suppress_note_dirty = False
             self._clear_note_attachments()
             self._find_in_note()
             return
@@ -1573,6 +1504,7 @@ class PersonalWindow(QMainWindow):
             return
         self.current_note_id = note["id"]
         self.current_note_category = note.get("category") or "General"
+        self._note_loaded_content = note["content"]
         self._note_dirty = False
         self._suppress_note_dirty = True
         try:
@@ -1584,7 +1516,8 @@ class PersonalWindow(QMainWindow):
             self._suppress_note_dirty = False
         # The category combo is a *filter* only. Do not change it here, or the
         # note's own category would leak into the filter and hide every other note.
-        self.lbl_note_title.setText(f"{note['title']}  |  {self.current_note_category}")
+        self.lbl_note_title.setText(f"{note['title']}  ·  {self.current_note_category}")
+        self.lbl_note_save.setText("Saved locally")
         self._refresh_backlinks(note)
         self._find_in_note()
 
@@ -1737,10 +1670,30 @@ class PersonalWindow(QMainWindow):
         self.select_note(note["id"])
         self._flash(f"Created [[{target}]]")
 
-    def _flush_note_edits(self):
-        if getattr(self, "_note_dirty", False) and self.current_note_id:
-            personal_service.save_note(self.base_dir, self.current_note_id, self.note_editor.toPlainText())
-            self._note_dirty = False
+    def _flush_note_edits(self) -> bool:
+        if not getattr(self, "_note_dirty", False) or not self.current_note_id:
+            return True
+        self._note_idle_timer.stop()
+        try:
+            saved = personal_service.save_note(self.base_dir, self.current_note_id, self.note_editor.toPlainText(), expected_content=getattr(self, "_note_loaded_content", None))
+        except personal_service.NoteConflictError:
+            self._flash("Newer version found — your draft is retained. Press Save to keep both.")
+            self.lbl_note_save.setText("Conflict · Save keeps both")
+            return False
+        except OSError:
+            saved = False
+        if not saved:
+            # Keep both the dirty flag and the text; never navigate away from
+            # the only copy of an edit after a failed autosave.
+            self._flash("Not saved — check disk access and press Save to retry")
+            if hasattr(self, "lbl_note_save"):
+                self.lbl_note_save.setText("Not saved · retry Save")
+            return False
+        self._note_dirty = False
+        self._note_loaded_content = self.note_editor.toPlainText()
+        if hasattr(self, "lbl_note_save"):
+            self.lbl_note_save.setText("Saved locally")
+        return True
 
     def _flash(self, message: str):
         if hasattr(self, "lbl_note_title"):
@@ -1748,6 +1701,8 @@ class PersonalWindow(QMainWindow):
 
     def _back_to_all_notes(self):
         """Return to the full note list: clear any category filter + selection."""
+        if not self._flush_note_edits():
+            return
         self.cmb_note_category.blockSignals(True)
         self.cmb_note_category.setCurrentIndex(0)  # "All"
         self.cmb_note_category.blockSignals(False)
@@ -1846,9 +1801,9 @@ class PersonalWindow(QMainWindow):
         if not query:
             self.lbl_find_count.setText("")
         elif self._note_find_matches:
-            self.lbl_find_count.setText(f"{len(self._note_find_matches)} kết quả")
+            self.lbl_find_count.setText(f"{len(self._note_find_matches)} matches")
         else:
-            self.lbl_find_count.setText("Không tìm thấy")
+            self.lbl_find_count.setText("No matches")
 
     def _find_note_step(self, direction):
         matches = getattr(self, "_note_find_matches", [])
@@ -1900,7 +1855,8 @@ class PersonalWindow(QMainWindow):
     def _move_notes_to_category(self, note_ids, category):
         # Flush unsaved edits first: moving rewrites the file under a new id,
         # and pending editor text would otherwise be lost (v6.4 bug).
-        self._on_note_edit_idle()
+        if not self._flush_note_edits():
+            return
         moved = 0
         open_moved = None
         for note_id in note_ids:
@@ -1922,9 +1878,9 @@ class PersonalWindow(QMainWindow):
             self.select_note(self.current_note_id)
         self._refresh_overview()
         if moved:
-            self.lbl_note_title.setText(f"Đã chuyển {moved} note vào {category}")
+            self.lbl_note_title.setText(f"Moved {moved} notes to {category}")
         else:
-            self.lbl_note_title.setText("Không chuyển được note")
+            self.lbl_note_title.setText("Could not move the notes")
 
     def _save_note(self):
         if not self.current_note_id:
@@ -1932,13 +1888,27 @@ class PersonalWindow(QMainWindow):
             return
         # Preserve the note's own category on save; the combo is only a filter.
         category = self.current_note_category or "General"
-        note = personal_service.update_note(self.base_dir, self.current_note_id, self.note_editor.toPlainText(), category=category)
+        try:
+            saved = personal_service.save_note(self.base_dir, self.current_note_id, self.note_editor.toPlainText(), expected_content=getattr(self, "_note_loaded_content", None))
+            note = personal_service.read_note(self.base_dir, self.current_note_id) if saved else None
+        except personal_service.NoteConflictError:
+            # Explicit Save offers a non-destructive resolution without a modal.
+            existing = personal_service.read_note(self.base_dir, self.current_note_id)
+            title = (existing or {}).get("title", "Note") + " (my draft)"
+            try:
+                note = personal_service.create_note(self.base_dir, title, self.note_editor.toPlainText(), category=category)
+            except OSError:
+                note = None
+        except OSError:
+            note = None
         if not note:
             QMessageBox.warning(self, "Notes", "Could not save this note.")
             return
         self.current_note_id = note["id"]
         self.current_note_category = note.get("category") or "General"
+        self._note_loaded_content = note["content"]
         self._note_dirty = False
+        self.lbl_note_save.setText("Saved locally")
         self._refresh_notes()
         self.select_note(self.current_note_id)
         self._refresh_overview()
@@ -1954,9 +1924,10 @@ class PersonalWindow(QMainWindow):
         title = self.lbl_note_title.text().strip() or "Current note"
         body = self.note_editor.toPlainText().strip()
         question = f"Summarize and improve this note: {title}"
+        if not shell.switch_workspace("ai"):
+            return
         shell.ed_ai_quick.setText(question)
         shell.ai_page.ask_with_context(question, "Current note", f"Title: {title}\n\n{body[:3000]}")
-        shell.switch_workspace("ai")
 
     def _delete_note(self):
         if not self.current_note_id:
@@ -2019,8 +1990,7 @@ class PersonalWindow(QMainWindow):
         l.setContentsMargins(12, 10, 12, 12)
         l.setSpacing(8)
         header_row = QHBoxLayout()
-        header_row.addWidget(components.page_header("Review", "Spaced repetition — a little every day"))
-        header_row.addStretch(1)
+        header_row.addWidget(components.page_header("Review", "Spaced repetition — a little every day"), 1)
         self.lbl_review_stats = QLabel("")
         self.lbl_review_stats.setObjectName("MutedLabel")
         header_row.addWidget(self.lbl_review_stats)
@@ -2069,7 +2039,8 @@ class PersonalWindow(QMainWindow):
             tooltip="Import a deck from Anki, or export this one for Anki",
         )
         self.btn_deck_file.setObjectName("QuietButton")
-        self.btn_deck_file.setFixedSize(28, 28)
+        self.btn_deck_file.setProperty("compactIcon", True)
+        self.btn_deck_file.setFixedSize(34, 34)
         tool_row.addWidget(self.btn_review_prev)
         tool_row.addWidget(self.btn_review_next)
         tool_row.addWidget(self.btn_card_delete)
@@ -2099,6 +2070,8 @@ class PersonalWindow(QMainWindow):
         self.lbl_card_back.hide()
         card_layout.addWidget(self.lbl_card_back)
         card_layout.addStretch(1)
+        self.review_card.setFocusPolicy(Qt.StrongFocus)
+        self.review_card.setAccessibleName("Flashcard — Space to reveal; 1 to 4 to grade")
         self.review_card.setCursor(Qt.PointingHandCursor)
         self.review_card.mousePressEvent = lambda _ev: self._flip_review_card()
         self.review_card.setMinimumHeight(200)
@@ -2400,8 +2373,7 @@ class PersonalWindow(QMainWindow):
         l.setContentsMargins(12, 10, 12, 12)
         l.setSpacing(6)
         header = QHBoxLayout()
-        header.addWidget(components.page_header("Weekly Plan", "Student planning, deadlines, and focused time blocks"))
-        header.addStretch(1)
+        header.addWidget(components.page_header("Weekly Plan", "Plan your week · drag items between days"), 1)
         self.btn_plan_prev = QPushButton("‹")
         self.btn_plan_prev.setToolTip("Previous week")
         self.btn_plan_today = QPushButton("Today")
@@ -2454,24 +2426,44 @@ class PersonalWindow(QMainWindow):
             "Pour a focus session for the selected item or block; the minutes are credited back"
         )
         form.addWidget(self.ed_plan_title, 2)
-        form.addWidget(self.cmb_plan_kind)
+        self.ed_plan_title.setMinimumWidth(0)
+        self.ed_plan_date.setAccessibleName("Planned date")
+        form.addWidget(QLabel("On"))
         form.addWidget(self.ed_plan_date)
-        form.addWidget(self.ed_plan_due)
-        form.addWidget(self.cmb_plan_priority)
-        form.addWidget(self.cmb_plan_course, 1)
-        form.addWidget(self.spin_plan_duration)
+        self.btn_plan_details = components.chip("Details ▾", checkable=True, checked=False)
+        form.addWidget(self.btn_plan_details)
         form.addWidget(self.btn_plan_add)
         form.addWidget(self.btn_plan_study)
         form.addWidget(self.btn_plan_delete)
         l.addLayout(form)
-
-        block_form = QHBoxLayout()
+        self._plan_details = QWidget()
+        detail_grid = QGridLayout(self._plan_details)
+        detail_grid.setContentsMargins(0, 0, 0, 0)
+        for index, (label, control) in enumerate((("Type", self.cmb_plan_kind), ("Deadline", self.ed_plan_due), ("Priority", self.cmb_plan_priority), ("Course", self.cmb_plan_course), ("Duration", self.spin_plan_duration))):
+            row_index, col = index // 3, (index % 3) * 2
+            control.setAccessibleName(label)
+            control.setMinimumWidth(0)
+            detail_grid.addWidget(QLabel(label), row_index, col)
+            detail_grid.addWidget(control, row_index, col + 1)
+        self._plan_details.hide()
+        self.btn_plan_details.toggled.connect(self._plan_details.setVisible)
+        l.addWidget(self._plan_details)
+        self.btn_plan_setup = components.chip("Focus blocks & courses ▾", checkable=True, checked=False)
+        l.addWidget(self.btn_plan_setup, 0, Qt.AlignLeft)
+        self._plan_setup = QWidget()
+        setup_layout = QVBoxLayout(self._plan_setup)
+        setup_layout.setContentsMargins(0, 0, 0, 0)
+        self._plan_setup.hide()
+        self.btn_plan_setup.toggled.connect(self._plan_setup.setVisible)
+        l.addWidget(self._plan_setup)
+        block_form = QGridLayout()
         self.ed_plan_block_title = QLineEdit()
         self.ed_plan_block_title.setPlaceholderText("Study block title...")
-        self.spin_plan_block_start = QSpinBox()
+        self.spin_plan_block_start = _MinuteTimeSpin()
         self.spin_plan_block_start.setRange(0, 1439)
         self.spin_plan_block_start.setValue(9 * 60)
-        self.spin_plan_block_start.setSuffix(" start min")
+        self.spin_plan_block_start.setSingleStep(15)
+        self.spin_plan_block_start.setAccessibleName("Focus block start time")
         self.spin_plan_block_duration = QSpinBox()
         self.spin_plan_block_duration.setRange(5, 1440)
         self.spin_plan_block_duration.setValue(50)
@@ -2480,14 +2472,14 @@ class PersonalWindow(QMainWindow):
         self.cmb_plan_block_course.setToolTip("Optional course for this focus block")
         self.btn_plan_add_block = ghost_button("Add time block")
         self.btn_plan_add_block.setToolTip("Add a focused study block to the selected planned day")
-        block_form.addWidget(QLabel("Focus block"))
-        block_form.addWidget(self.ed_plan_block_title, 2)
-        block_form.addWidget(self.spin_plan_block_start)
-        block_form.addWidget(self.spin_plan_block_duration)
-        block_form.addWidget(self.cmb_plan_block_course)
-        block_form.addWidget(self.btn_plan_add_block)
-        block_form.addStretch(1)
-        l.addLayout(block_form)
+        block_form.addWidget(self.ed_plan_block_title, 0, 0, 1, 5)
+        block_form.addWidget(QLabel("Start"), 1, 0)
+        block_form.addWidget(self.spin_plan_block_start, 1, 1)
+        block_form.addWidget(QLabel("Duration"), 1, 2)
+        block_form.addWidget(self.spin_plan_block_duration, 1, 3)
+        block_form.addWidget(self.cmb_plan_block_course, 1, 4)
+        block_form.addWidget(self.btn_plan_add_block, 0, 5, 2, 1)
+        setup_layout.addLayout(block_form)
 
         courses_card = QFrame()
         courses_card.setObjectName("SectionCard")
@@ -2496,9 +2488,8 @@ class PersonalWindow(QMainWindow):
         courses_layout.setSpacing(4)
         courses_header = QHBoxLayout()
         courses_header.addWidget(
-            components.section_header("Courses", "Give every item and block a course to belong to")
+            components.section_header("Courses", "Optional subjects for your study plan"), 1
         )
-        courses_header.addStretch(1)
         self.btn_plan_course_add = ghost_button("＋ Course", "Add a course to plan items against")
         self.btn_plan_course_edit = icon_button("✎", "Edit the selected course")
         self.btn_plan_course_delete = icon_button(
@@ -2513,13 +2504,14 @@ class PersonalWindow(QMainWindow):
         self.plan_courses_list.setMaximumHeight(72)
         self.plan_courses_list.setToolTip("Double-click a course to edit it")
         courses_layout.addWidget(self.plan_courses_list)
-        l.addWidget(courses_card)
+        setup_layout.addWidget(courses_card)
 
         self.lbl_plan_guide = QLabel(
             "Guide: choose a date, add an item, tick it when complete, drag it to reschedule, or select it and delete it."
         )
         self.lbl_plan_guide.setObjectName("MutedLabel")
         self.lbl_plan_guide.setWordWrap(True)
+        self.lbl_plan_guide.setText("Tick to complete · drag to reschedule · double-click a focus block to edit")
         l.addWidget(self.lbl_plan_guide)
         self.lbl_plan_study = QLabel("")
         self.lbl_plan_study.setObjectName("MutedLabel")
@@ -2548,9 +2540,15 @@ class PersonalWindow(QMainWindow):
             day_list.itemDoubleClicked.connect(self._planner_edit_clicked)
             card_layout.addWidget(day_label)
             card_layout.addWidget(day_list, 1)
+            card.setMinimumWidth(140)
             columns.addWidget(card, 1)
             self.plan_day_lists[offset] = (day_label, day_list)
-        l.addWidget(self.plan_columns_wrap, 1)
+        self.plan_scroll = QScrollArea()
+        self.plan_scroll.setWidget(self.plan_columns_wrap)
+        self.plan_scroll.setWidgetResizable(True)
+        self.plan_scroll.setFrameShape(QFrame.NoFrame)
+        self.plan_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        l.addWidget(self.plan_scroll, 1)
 
         self._planner_week_start = personal_plan.week_key()
         self._planner_drag_item_id = ""
@@ -2878,7 +2876,7 @@ class PersonalWindow(QMainWindow):
         for offset, (day_label, day_list) in self.plan_day_lists.items():
             day = start.addDays(offset)
             day_key = day.toString("yyyy-MM-dd")
-            day_label.setText(day.toString("ddd\\ndd MMM"))
+            day_label.setText(day.toString("ddd") + "\n" + day.toString("dd MMM"))
             day_list.day_key = day_key
             day_list.clear()
         course_names = {course.get("id"): course.get("name") for course in week["courses"]}
@@ -3038,8 +3036,8 @@ class PersonalWindow(QMainWindow):
         # .ics verbs are a pair of icon buttons instead of two more full boxes.
         self.btn_add_event = primary_button("Add event")
         self.btn_today = ghost_button("Today", "Jump back to today")
-        self.btn_ics_import = icon_button("⇩", "Import events from an .ics file")
-        self.btn_ics_export = icon_button("⇧", "Export your calendar as .ics")
+        self.btn_ics_import = ghost_button("Import .ics", "Import events from an .ics file")
+        self.btn_ics_export = ghost_button("Export .ics", "Export your calendar as .ics")
         row.addWidget(self.btn_add_event)
         row.addWidget(self.btn_today)
         row.addWidget(self.btn_ics_import)
@@ -3058,6 +3056,17 @@ class PersonalWindow(QMainWindow):
         self.calendar_widget.setGridVisible(False)
         self.calendar_widget.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
         self.calendar_widget.setSelectedDate(QDate.currentDate())
+        # Native Qt calendar chevrons can retain white icons on light themes.
+        # Text-only navigation follows the same foreground/focus tokens as chrome.
+        for name, glyph, label in (("qt_calendar_prevmonth", "‹", "Previous month"), ("qt_calendar_nextmonth", "›", "Next month")):
+            button = self.calendar_widget.findChild(QtWidgets.QToolButton, name)
+            if button is not None:
+                button.setIcon(QIcon())
+                button.setText(glyph)
+                button.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
+                button.setAccessibleName(label)
+                button.setToolTip(label)
+                button.setMinimumSize(34, 34)
         left_layout.addWidget(self.calendar_widget)
         self.lbl_calendar_hint = QLabel("")
         self.lbl_calendar_hint.setWordWrap(True)
@@ -3068,7 +3077,7 @@ class PersonalWindow(QMainWindow):
         right_col = QVBoxLayout()
         right_col.setSpacing(6)
         self.lbl_calendar_day = QLabel("")
-        self.lbl_calendar_day.setFont(QFont("Georgia", 15, QFont.Bold))
+        self.lbl_calendar_day.setFont(components._font(15, components.WEIGHT_BOLD))
         right_col.addWidget(self.lbl_calendar_day)
 
         self.day_events_list = QListWidget()
@@ -3107,7 +3116,7 @@ class PersonalWindow(QMainWindow):
             p = theme.palette()
             accent_fmt = QTextCharFormat()
             accent_fmt.setBackground(QColor(p["ACCENT"]))
-            accent_fmt.setForeground(QColor(p["MAIN_BG"]))
+            accent_fmt.setForeground(QColor(p["TEXT_ON_ACCENT"]))
             accent_fmt.setFontWeight(QFont.DemiBold)
             for date_key in events_by_day:
                 year, month, day = [int(part) for part in date_key.split("-")]
@@ -3132,25 +3141,35 @@ class PersonalWindow(QMainWindow):
             placeholder.setFlags(Qt.NoItemFlags)
             self.day_events_list.addItem(placeholder)
         self.calendar_list.clear()
-        for item in events[:20]:
+        for item in [event for event in events if int(event.get("starts_at", 0) or 0) >= int(time.time())][:20]:
             row = QListWidgetItem(f"{item.get('title', '')} · {_format_ts(int(item.get('starts_at', 0) or 0))}")
             row.setData(Qt.UserRole, item.get("id", ""))
             self.calendar_list.addItem(row)
+        if not self.calendar_list.count():
+            self.calendar_list.addItem(components.hint_list_item("No upcoming events", "○"))
 
     def _add_event(self):
         title, ok = QInputDialog.getText(self, "Add event", "Event title:")
         if not ok or not (title or "").strip():
             return
         selected_date = self.calendar_widget.selectedDate() if hasattr(self, "calendar_widget") else QDate.currentDate()
-        default_start = f"{selected_date.toString('yyyy-MM-dd')} 09:00"
-        starts_at_text, ok = QInputDialog.getText(self, "Add event", "Start time (YYYY-MM-DD HH:MM):", text=default_start)
-        if not ok:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Event date & time - {app_version.APP_NAME}")
+        dialog.setStyleSheet(self._dialog_stylesheet())
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Start date and time"))
+        start = QtWidgets.QDateTimeEdit(QtCore.QDateTime(selected_date, QtCore.QTime(9, 0)))
+        start.setCalendarPopup(True)
+        start.setDisplayFormat("ddd, d MMM yyyy · HH:mm")
+        start.setAccessibleName("Event start")
+        layout.addWidget(start)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec_() != QDialog.Accepted:
             return
-        try:
-            starts_at = int(time.mktime(time.strptime(starts_at_text.strip(), "%Y-%m-%d %H:%M")))
-        except Exception:
-            QMessageBox.warning(self, "Calendar", "Invalid date format.")
-            return
+        starts_at = start.dateTime().toSecsSinceEpoch()
         life_service.add_event(self.base_dir, title.strip(), starts_at)
         self._refresh_calendar()
         self._refresh_overview()
@@ -3201,16 +3220,31 @@ class PersonalWindow(QMainWindow):
         self.btn_mode_pan = components.chip("Pan")
         self.btn_mode_draw = components.chip("Draw")
         self.btn_mode_link = components.chip("Link")
+        self.cmb_board_tool = QComboBox()
+        for tool in BoardView.TOOLS:
+            self.cmb_board_tool.addItem(tool.capitalize(), tool)
+        self.cmb_board_tool.setAccessibleName("Drawing tool")
+        self.cmb_board_tool.setToolTip("Pen, pencil, translucent marker, stroke eraser and shapes")
         self.cmb_pen_color = QComboBox()
-        self.cmb_pen_color.addItem("Espresso", "#6f4e37")
-        self.cmb_pen_color.addItem("Caramel", "#a36a3c")
-        self.cmb_pen_color.addItem("Forest", "#50624a")
-        self.cmb_pen_color.addItem("Ink", "#2e2b28")
-        self.cmb_pen_color.addItem("Chalk", "#e8dcc8")
+        for label, color in (("Ink", "#292d32"), ("Espresso", "#6f4e37"), ("Coral", "#c75b52"), ("Honey", "#c89331"), ("Forest", "#42795c"), ("Ocean", "#3e799f"), ("Lilac", "#8462b1"), ("White", "#ffffff")):
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(QColor(color))
+            self.cmb_pen_color.addItem(QIcon(pixmap), label, color)
+        self.cmb_pen_color.setAccessibleName("Pen color preset")
+        self.btn_pen_custom = ghost_button("Color…", "Choose any drawing color")
         self.cmb_pen_width = QComboBox()
-        self.cmb_pen_width.addItem("Fine", 2.0)
-        self.cmb_pen_width.addItem("Medium", 4.0)
-        self.cmb_pen_width.addItem("Bold", 6.0)
+        for label, value in (("1 px", 1.0), ("3 px", 3.0), ("6 px", 6.0), ("12 px", 12.0), ("24 px", 24.0)):
+            self.cmb_pen_width.addItem(label, value)
+        self.cmb_pen_width.setCurrentIndex(1)
+        self.cmb_pen_width.setAccessibleName("Stroke size")
+        self.spin_board_opacity = QSpinBox()
+        self.spin_board_opacity.setRange(5, 100)
+        self.spin_board_opacity.setValue(100)
+        self.spin_board_opacity.setSuffix("%")
+        self.spin_board_opacity.setAccessibleName("Ink opacity")
+        self.btn_canvas_color = ghost_button("Paper…", "Choose the canvas background color")
+        self.btn_board_undo = ghost_button("Undo", "Undo board change (Ctrl+Z on canvas)")
+        self.btn_board_redo = ghost_button("Redo", "Redo board change (Ctrl+Shift+Z on canvas)")
         self.board_mode_group = QButtonGroup(self)
         self.board_mode_group.setExclusive(True)
         self.board_mode_group.addButton(self.btn_mode_pan)
@@ -3220,8 +3254,8 @@ class PersonalWindow(QMainWindow):
         row.addWidget(self.btn_mode_pan)
         row.addWidget(self.btn_mode_draw)
         row.addWidget(self.btn_mode_link)
-        row.addWidget(self.cmb_pen_color)
-        row.addWidget(self.cmb_pen_width)
+        row.addWidget(self.btn_board_undo)
+        row.addWidget(self.btn_board_redo)
         row.addStretch(1)
         row.addWidget(
             more_menu(
@@ -3231,28 +3265,60 @@ class PersonalWindow(QMainWindow):
                     (None, None),
                     ("Clear the ink on this board", self._clear_board_ink),
                     ("Clear every link", self._clear_board_links),
-                    ("Save the card positions", self._save_current_board_positions),
+                    ("Save board", self._save_current_board_positions),
+                    ("Save canvas as a new board…", self._save_board_copy),
                 ),
                 tooltip="Board chores: create, delete, clear, save",
             )
         )
         l.addLayout(row)
-        self.lbl_board_hint = QLabel("Keep it simple: pan the canvas, drop sticky cards, or switch to Draw to sketch directly.")
+        # A second short tool row keeps creation/navigation distinct from ink.
+        tools = QHBoxLayout()
+        tools.setSpacing(6)
+        for label, control in (("Tool", self.cmb_board_tool), ("Ink", self.cmb_pen_color), ("Size", self.cmb_pen_width), ("Opacity", self.spin_board_opacity)):
+            tools.addWidget(QLabel(label))
+            tools.addWidget(control)
+        tools.addWidget(self.btn_pen_custom)
+        tools.addWidget(self.btn_canvas_color)
+        tools.addStretch(1)
+        self.btn_board_zoom_out = ghost_button("−", "Zoom out")
+        self.btn_board_zoom_reset = ghost_button("100%", "Reset canvas zoom")
+        self.btn_board_zoom_in = ghost_button("+", "Zoom in")
+        self.btn_board_fit = ghost_button("Fit", "Fit the entire canvas")
+        toolbar = QWidget()
+        toolbar.setLayout(tools)
+        self._board_tools_scroll = QScrollArea()
+        self._board_tools_scroll.setWidget(toolbar)
+        self._board_tools_scroll.setWidgetResizable(True)
+        self._board_tools_scroll.setFrameShape(QFrame.NoFrame)
+        self._board_tools_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._board_tools_scroll.setFixedHeight(58)
+        l.addWidget(self._board_tools_scroll)
+        self.lbl_board_hint = QLabel("Select a board, then draw. Ctrl+wheel to zoom · Space or middle-drag to pan.")
+        self.lbl_board_hint.setWordWrap(True)
         self.lbl_board_hint.setObjectName("MutedLabel")
-        l.addWidget(self.lbl_board_hint)
+        zoom_row = QHBoxLayout()
+        zoom_row.addWidget(self.lbl_board_hint, 1)
+        for button in (self.btn_board_zoom_out, self.btn_board_zoom_reset, self.btn_board_zoom_in, self.btn_board_fit):
+            zoom_row.addWidget(button)
+        l.addLayout(zoom_row)
 
         split = QSplitter(Qt.Horizontal)
+        self._boards_splitter = split
         self.boards_list = QListWidget()
         self.boards_list.setObjectName("CafeList")
+        self.boards_list.setMinimumWidth(90)
+        self.boards_list.setMaximumWidth(240)
         self.boards_list.currentItemChanged.connect(self._load_selected_board)
         split.addWidget(self.boards_list)
         self.board_scene = QGraphicsScene(self)
         self.board_scene.setSceneRect(0, 0, 2200, 1400)
-        # Board canvas follows the active theme (v6.4: fixed cream background).
-        _p = theme.palette()
-        self.board_scene.setBackgroundBrush(QBrush(QColor(_p["CARD_BG"] if not _is_dark_palette(_p) else _p["MAIN_BG_ALT"])))
+        # Paper is white by default, independent from the application theme.
+        self.board_scene.setBackgroundBrush(QBrush(QColor("#ffffff")))
         self.board_view = BoardView()
         self.board_view.setScene(self.board_scene)
+        self.board_view.set_history_callbacks(self._board_snapshot, self._restore_board_snapshot)
+        self.board_view.setEnabled(False)
         self._board_autosave = QTimer(self)
         self._board_autosave.setSingleShot(True)
         self._board_autosave.setInterval(700)
@@ -3271,34 +3337,90 @@ class PersonalWindow(QMainWindow):
         self.btn_mode_link.clicked.connect(lambda: self._set_board_mode("link"))
         self.cmb_pen_color.currentIndexChanged.connect(self._apply_board_pen)
         self.cmb_pen_width.currentIndexChanged.connect(self._apply_board_pen)
+        self.spin_board_opacity.valueChanged.connect(self._apply_board_pen)
+        self.cmb_board_tool.currentIndexChanged.connect(self._select_board_tool)
+        self.btn_pen_custom.clicked.connect(self._choose_pen_color)
+        self.btn_canvas_color.clicked.connect(self._choose_canvas_color)
+        self.btn_board_undo.clicked.connect(self.board_view.undo)
+        self.btn_board_redo.clicked.connect(self.board_view.redo)
+        self.btn_board_undo.setEnabled(False)
+        self.btn_board_redo.setEnabled(False)
+        self.board_view.history_changed.connect(lambda undo, redo: (self.btn_board_undo.setEnabled(undo), self.btn_board_redo.setEnabled(redo)))
+        self.btn_board_zoom_out.clicked.connect(lambda: self.board_view.set_zoom(self.board_view.transform().m11() / 1.2))
+        self.btn_board_zoom_in.clicked.connect(lambda: self.board_view.set_zoom(self.board_view.transform().m11() * 1.2))
+        self.btn_board_zoom_reset.clicked.connect(lambda: self.board_view.set_zoom(1.0))
+        self.btn_board_fit.clicked.connect(self.board_view.fit_canvas)
+        self.board_view.zoom_changed.connect(lambda value: self.btn_board_zoom_reset.setText(f"{value}%"))
         self.board_view.link_created.connect(self._add_board_edge)
         self.btn_mode_pan.setChecked(True)
         self._apply_board_pen()
         return w
 
     def _refresh_boards(self):
-        boards = life_service.load_boards(self.base_dir)
         current = self.current_board_id
+        if current and not self._save_current_board_positions(notify=False):
+            return
+        boards = life_service.load_boards(self.base_dir)
+        self.boards_list.blockSignals(True)
         self.boards_list.clear()
         for board in boards:
             item = QListWidgetItem(board.get("title", "Untitled board"))
             item.setData(Qt.UserRole, board.get("id", ""))
             self.boards_list.addItem(item)
-        if current:
+        self.boards_list.blockSignals(False)
+        if current and current == getattr(self, "_board_loaded_id", None):
+            # Refresh metadata without destroying the live undo stack/canvas.
+            self.boards_list.blockSignals(True)
+            for index in range(self.boards_list.count()):
+                if self.boards_list.item(index).data(Qt.UserRole) == current:
+                    self.boards_list.setCurrentRow(index)
+                    break
+            self.boards_list.blockSignals(False)
+        elif current:
             self.open_life_item("board", current)
         elif self.boards_list.count() > 0 and self.boards_list.currentRow() < 0:
             self.boards_list.setCurrentRow(0)
         else:
-            self.board_scene.clear()
+            self._load_selected_board(None, None)
 
     def _add_board(self):
         title, ok = QInputDialog.getText(self, "New board", "Board title:")
         if not ok:
             return
+        if not self._save_current_board_positions(notify=False):
+            return
         board = life_service.add_board(self.base_dir, title.strip() or "Idea board")
+        self.board_view.cancel_gesture()
+        self.board_view._clear_link_start()
+        self.current_board_id = None
+        self.board_scene.clear()
+        self.board_view.set_background("#ffffff")
+        self.board_view.reset_history()
         self.current_board_id = board["id"]
         self._refresh_boards()
         self._refresh_overview()
+
+    def _save_board_copy(self):
+        if not self.current_board_id:
+            return
+        title, ok = QInputDialog.getText(self, "Save board copy", "New board title:", text="Idea board copy")
+        if not ok:
+            return
+        snapshot = self._board_snapshot()
+        try:
+            board = life_service.add_board(self.base_dir, title.strip() or "Idea board copy")
+            board.update(snapshot)
+            life_service.update_board(self.base_dir, board)
+        except (OSError, ValueError, RuntimeError) as error:
+            self.lbl_board_hint.setText(f"Copy not saved — your canvas is retained: {error}")
+            return
+        self._board_autosave.stop()
+        self.current_board_id = board["id"]
+        self._board_loaded_id = board["id"]
+        self._board_saved_id = board["id"]
+        self._board_disk_snapshot = copy.deepcopy(snapshot)
+        self._refresh_boards()
+        self.lbl_board_hint.setText("Saved as a separate board · the original is unchanged")
 
     def _delete_board(self):
         if not self.current_board_id:
@@ -3313,25 +3435,44 @@ class PersonalWindow(QMainWindow):
         if confirm != QMessageBox.Yes:
             return
         life_service.remove_board(self.base_dir, self.current_board_id)
+        self._board_autosave.stop()
+        self.board_view.cancel_gesture()
+        self.board_view._clear_link_start()
         self.current_board_id = None
         self._refresh_boards()
         self._refresh_overview()
 
     def _load_selected_board(self, current, _previous):
         previous_board_id = self.current_board_id
-        if previous_board_id:
-            self._save_current_board_positions(notify=False)
+        if previous_board_id and not self._save_current_board_positions(notify=False):
+            self.boards_list.blockSignals(True)
+            for index in range(self.boards_list.count()):
+                if self.boards_list.item(index).data(Qt.UserRole) == previous_board_id:
+                    self.boards_list.setCurrentRow(index)
+                    break
+            self.boards_list.blockSignals(False)
+            return
+        selected_id = current.data(Qt.UserRole) if current else None
+        if selected_id and selected_id == previous_board_id and selected_id == getattr(self, "_board_loaded_id", None):
+            return  # Deep links to the open board must not wipe Undo.
         # Cancel any pending autosave: it must not fire against the *new*
         # board after a quick switch (v6.4 saved the wrong board's positions).
         self._board_autosave.stop()
+        self.board_view.cancel_gesture()
+        self.board_view._clear_link_start()
         self.board_scene.clear()
         self.current_board_id = current.data(Qt.UserRole) if current else None
+        self._board_loaded_id = self.current_board_id
+        self.board_view.reset_history()
+        self.board_view.setEnabled(bool(self.current_board_id))
+        self.btn_add_card.setEnabled(bool(self.current_board_id))
         if not self.current_board_id:
             self.lbl_board_hint.setText("Create a board to start sketching ideas, tasks, or study maps.")
             return
         boards = life_service.load_boards(self.base_dir)
         for board in boards:
             if board.get("id") == self.current_board_id:
+                self.board_view.set_background(board.get("background", "#ffffff"))
                 card_by_id = {}
                 for node in board.get("nodes", []):
                     item = StickyCardItem(node)
@@ -3344,6 +3485,9 @@ class PersonalWindow(QMainWindow):
                     to_item = card_by_id.get(edge.get("to"))
                     if from_item and to_item:
                         self.board_scene.addItem(EdgeItem(edge, from_item, to_item))
+                self._board_saved_id = self.current_board_id
+                self._board_disk_snapshot = {key: copy.deepcopy(board.get(key, "#ffffff" if key == "background" else [])) for key in ("nodes", "strokes", "edges", "background")}
+                self.board_view.fit_canvas()
                 self.lbl_board_hint.setText(
                     f"{len(board.get('nodes', []))} sticky cards · {len(board.get('edges', []))} links · {len(board.get('strokes', []))} ink strokes"
                 )
@@ -3356,14 +3500,18 @@ class PersonalWindow(QMainWindow):
         title, ok = QInputDialog.getText(self, "New sticky", "Card title:")
         if not ok:
             return
-        life_service.add_board_node(self.base_dir, self.current_board_id, title or "Card", payload="Idea, note, or task link")
-        # Force the scene rebuild even if the board was already the current
-        # item (re-selecting it fires no currentItemChanged, v6.4 bug).
-        self._load_selected_board(self.boards_list.currentItem(), None)
-        self._refresh_overview()
+        before = self._board_snapshot()
+        center = self.board_view.mapToScene(self.board_view.viewport().rect().center())
+        import uuid
+        node = {"id": uuid.uuid4().hex, "title": title or "Card", "kind": "sticky", "payload": "", "x": max(0, min(1980, center.x() - 110)), "y": max(0, min(1280, center.y() - 60)), "color": "#f5e4ad"}
+        self.board_scene.addItem(StickyCardItem(node))
+        self.board_view.record_change(before)
+        self._save_current_board_positions(notify=False)
 
     def _set_board_mode(self, mode: str):
         self.board_view.set_mode(mode)
+        if mode == "draw":
+            self.board_view.set_tool(self.cmb_board_tool.currentData())
         self.btn_mode_pan.setChecked(mode == "pan")
         self.btn_mode_draw.setChecked(mode == "draw")
         self.btn_mode_link.setChecked(mode == "link")
@@ -3372,32 +3520,90 @@ class PersonalWindow(QMainWindow):
         elif mode == "link":
             self.lbl_board_hint.setText("Link mode: click a sticky card, then another, to draw a connection. Click empty canvas to cancel.")
         elif self.current_board_id:
-            self.lbl_board_hint.setText("Pan mode is on. Scroll to zoom, drag the canvas, or move sticky cards.")
+            self.lbl_board_hint.setText("Pan mode · drag the canvas or cards · Ctrl+wheel to zoom.")
         else:
             self.lbl_board_hint.setText("Create a board to start sketching ideas, tasks, or study maps.")
 
     def _apply_board_pen(self):
         color = self.cmb_pen_color.currentData() or "#6f4e37"
         width = float(self.cmb_pen_width.currentData() or 3.0)
-        self.board_view.set_pen(color, width)
+        self.board_view.set_pen(color, width, self.spin_board_opacity.value() / 100)
+        self.btn_pen_custom.setText(f"Color {color.upper()}")
+        self.btn_pen_custom.setToolTip(f"Current ink: {color.upper()} · choose a custom color")
+
+    def _select_board_tool(self):
+        self._set_board_mode("draw")
+
+    def _choose_pen_color(self):
+        color = QColorDialog.getColor(QColor(self.board_view.pen_color), self, "Drawing color")
+        if color.isValid():
+            idx = self.cmb_pen_color.findData(color.name())
+            if idx < 0:
+                self.cmb_pen_color.addItem(color.name().upper(), color.name())
+                idx = self.cmb_pen_color.count() - 1
+            self.cmb_pen_color.setCurrentIndex(idx)
+            self._apply_board_pen()
+
+    def _choose_canvas_color(self):
+        if not self.current_board_id:
+            return
+        color = QColorDialog.getColor(QColor(self.board_view.background_color), self, "Canvas / paper color")
+        if color.isValid():
+            before = self._board_snapshot()
+            self.board_view.set_background(color.name())
+            self.board_view.record_change(before)
+
+    def _board_snapshot(self):
+        nodes, strokes, edges = [], [], []
+        for item in reversed(self.board_scene.items()):
+            if isinstance(item, StickyCardItem):
+                nodes.append(dict(item.node, x=item.pos().x(), y=item.pos().y()))
+            elif isinstance(item, InkStrokeItem):
+                strokes.append(copy.deepcopy(item.stroke))
+            elif isinstance(item, EdgeItem):
+                edges.append(dict(item.edge))
+        return {"nodes": nodes, "strokes": strokes, "edges": edges, "background": self.board_view.background_color}
+
+    def _restore_board_snapshot(self, snapshot):
+        self.board_view.cancel_gesture()
+        self.board_view._clear_link_start()
+        self.board_scene.clear()
+        self.board_view.set_background(snapshot.get("background", "#ffffff"))
+        cards = {}
+        for node in snapshot["nodes"]:
+            card = StickyCardItem(node)
+            cards[node["id"]] = card
+            self.board_scene.addItem(card)
+        for stroke in snapshot["strokes"]:
+            self.board_scene.addItem(InkStrokeItem(stroke))
+        for edge in snapshot["edges"]:
+            if edge.get("from") in cards and edge.get("to") in cards:
+                self.board_scene.addItem(EdgeItem(edge, cards[edge["from"]], cards[edge["to"]]))
 
     def _clear_board_ink(self):
+        before = self._board_snapshot()
         removed = False
         for item in list(self.board_scene.items()):
             if isinstance(item, InkStrokeItem):
                 self.board_scene.removeItem(item)
                 removed = True
         if removed:
+            self.board_view.record_change(before)
             self.lbl_board_hint.setText("Ink strokes cleared. Sticky cards are still intact.")
             self._save_current_board_positions(notify=False)
 
     def _clear_board_links(self):
+        before = self._board_snapshot()
         removed = False
         for item in list(self.board_scene.items()):
             if isinstance(item, EdgeItem):
+                for card in (item.from_item, item.to_item):
+                    if item in card._edges:
+                        card._edges.remove(item)
                 self.board_scene.removeItem(item)
                 removed = True
         if removed:
+            self.board_view.record_change(before)
             self.lbl_board_hint.setText("Links cleared. Sticky cards and ink are still intact.")
             self._save_current_board_positions(notify=False)
 
@@ -3418,57 +3624,39 @@ class PersonalWindow(QMainWindow):
                 if pair == {from_id, to_id}:
                     return
         edge = {"id": str(int(time.time() * 1000)), "from": from_id, "to": to_id, "color": "#a36a3c"}
+        before = self._board_snapshot()
         self.board_scene.addItem(EdgeItem(edge, from_item, to_item))
+        self.board_view.record_change(before)
         self.lbl_board_hint.setText("Linked two cards. Drag either card and the line follows.")
         self._save_current_board_positions(notify=False)
 
     def _save_current_board_positions(self, notify: bool = True):
         if not self.current_board_id:
-            return
-        boards = life_service.load_boards(self.base_dir)
-        for board in boards:
-            if board.get("id") != self.current_board_id:
-                continue
-            node_map = {node.get("id"): node for node in board.get("nodes", [])}
-            strokes = []
-            edges = []
-            for item in self.board_scene.items():
-                if isinstance(item, StickyCardItem):
-                    node = node_map.get(item.node.get("id"))
-                    if node is not None:
-                        node["x"] = float(item.pos().x())
-                        node["y"] = float(item.pos().y())
-                elif isinstance(item, InkStrokeItem):
-                    strokes.append(
-                        {
-                            "id": item.stroke.get("id") or str(int(time.time() * 1000)),
-                            "color": item.stroke.get("color") or "#6f4e37",
-                            "width": float(item.stroke.get("width", 3.0) or 3.0),
-                            "points": list(item.stroke.get("points") or []),
-                        }
-                    )
-                elif isinstance(item, EdgeItem):
-                    edges.append(
-                        {
-                            "id": item.edge.get("id") or str(int(time.time() * 1000)),
-                            "from": item.edge.get("from"),
-                            "to": item.edge.get("to"),
-                            "color": item.edge.get("color") or "#a36a3c",
-                        }
-                    )
-            # QGraphicsScene.items() iterates in reverse stacking order; both
-            # strokes and edges are stored in that reversed order so loading
-            # them back keeps a stable z-order (v6.4 only reversed strokes,
-            # flipping edge order on every save).
-            board["strokes"] = list(reversed(strokes))
-            board["edges"] = list(reversed(edges))
-            life_service.update_board(self.base_dir, board)
-            self.lbl_board_hint.setText(
-                f"Saved board with {len(board.get('nodes', []))} cards, {len(edges)} links, and {len(board.get('strokes', []))} ink strokes."
-            )
+            return True
+        try:
+            board = next((board for board in life_service.load_boards(self.base_dir) if board.get("id") == self.current_board_id), None)
+            if board is None:
+                raise ValueError("The open board was removed outside this window")
+            snapshot = self._board_snapshot()
+            disk_snapshot = {key: board.get(key, "#ffffff" if key == "background" else []) for key in snapshot}
+            if disk_snapshot == snapshot:
+                self._board_saved_id = self.current_board_id
+                self._board_disk_snapshot = copy.deepcopy(snapshot)
+                return True
+            if getattr(self, "_board_saved_id", None) == self.current_board_id and disk_snapshot != self._board_disk_snapshot:
+                raise ValueError("Another window changed this board; your local canvas is kept, not overwritten")
+            board.update(snapshot)
+            if life_service.update_board(self.base_dir, board) is None:
+                raise ValueError("The board disappeared while saving")
+            self._board_saved_id = self.current_board_id
+            self._board_disk_snapshot = copy.deepcopy(snapshot)
+            self.lbl_board_hint.setText(f"Saved locally · {len(snapshot['nodes'])} cards · {len(snapshot['strokes'])} strokes · Ctrl+wheel to zoom")
             if notify:
-                QMessageBox.information(self, "Boards", "Board layout saved.")
-            break
+                self._flash("Board saved locally")
+            return True
+        except (OSError, ValueError, RuntimeError) as error:
+            self.lbl_board_hint.setText(f"Board not saved — your canvas is retained. Retry Save: {error}")
+            return False
 
     def _build_files_page(self):
         w = QWidget()
@@ -3547,7 +3735,7 @@ class PersonalWindow(QMainWindow):
         self.btn_bundled_sites.setCheckable(True)
         self.btn_bundled_sites.setChecked(prefs.get_show_bundled_sites(self.base_dir))
         self.btn_bundled_sites.setToolTip(
-            "Show the bundled project sites (Cục Quản Lý, Bí Mật, …) alongside your own. "
+            "Show the bundled project sites (Management Hub, PersonalFrequency, …) alongside your own. "
             "Off = only sites you added yourself."
         )
         self.chk_site_preview = QCheckBox("Live preview")
@@ -3557,10 +3745,13 @@ class PersonalWindow(QMainWindow):
         row.addWidget(self.btn_remove_site)
         row.addWidget(self.btn_open_site)
         row.addWidget(self.btn_site_ai)
-        row.addWidget(self.btn_bundled_sites)
-        row.addWidget(self.chk_site_preview)
         row.addStretch(1)
         l.addWidget(top_bar)
+        preview_options = QHBoxLayout()
+        preview_options.addWidget(self.btn_bundled_sites)
+        preview_options.addWidget(self.chk_site_preview)
+        preview_options.addStretch(1)
+        l.addLayout(preview_options)
         self._sites_top_bar = top_bar
 
         self.lbl_sites_summary = QLabel("Personal sites stay separate from shared browser bookmarks.")
@@ -3599,6 +3790,7 @@ class PersonalWindow(QMainWindow):
         right_layout.addLayout(title_row)
         self.lbl_site_url = QLabel("Select a site to preview it here.")
         self.lbl_site_url.setObjectName("MutedLabel")
+        self.lbl_site_url.setWordWrap(True)
         right_layout.addWidget(self.lbl_site_url)
         self.site_preview_stack = QStackedWidget()
         placeholder = QWidget()
@@ -3679,7 +3871,7 @@ class PersonalWindow(QMainWindow):
             else:
                 self._set_site_placeholder(
                     "No personal sites yet",
-                    "Your own sites are hidden because bundled sites are off. Add a site below, or turn on \"Include bundled sites\" to browse the project apps.",
+                    "No personal sites added yet. Choose Add site, or enable \"Include bundled sites\" to browse the project apps.",
                 )
             return
         for index in range(self.sites_list.count()):
@@ -4113,6 +4305,8 @@ class PersonalWindow(QMainWindow):
                 # Resolve the node's parent board; v6.4 used the node id itself
                 # and could never match any board.
                 target_board_id = self._find_board_for_node(item_id) or self.current_board_id
+            if not any(self.boards_list.item(i).data(Qt.UserRole) == target_board_id for i in range(self.boards_list.count())):
+                self._refresh_boards()
             for index in range(self.boards_list.count()):
                 item = self.boards_list.item(index)
                 if item.data(Qt.UserRole) == target_board_id:
@@ -4154,16 +4348,16 @@ class PersonalWindow(QMainWindow):
         tab_sets.add_tab_set(self.base_dir, "personal", name or default, tabs)
         QMessageBox.information(self, "Personal", "Current personal session saved.")
 
-    def closeEvent(self, event):
+    def persist_state(self) -> bool:
         save_errors = []
         try:
-            if self.current_note_id:
-                if not personal_service.save_note(self.base_dir, self.current_note_id, self.note_editor.toPlainText()):
-                    save_errors.append("the open note could not be saved")
+            if not self._flush_note_edits():
+                save_errors.append("the open note could not be saved")
         except Exception as exc:
             save_errors.append(f"note save failed: {exc}")
         try:
-            self._save_current_board_positions(notify=False)
+            if not self._save_current_board_positions(notify=False):
+                save_errors.append("the open board could not be saved")
         except Exception as exc:
             save_errors.append(f"board save failed: {exc}")
         try:
@@ -4174,8 +4368,20 @@ class PersonalWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Personal Hub",
-                "Some data may not have been saved:\n- " + "\n- ".join(save_errors),
+                "Close was canceled to protect your edits:\n- " + "\n- ".join(save_errors),
             )
+            return False
+        return True
+
+    def shutdown(self):
+        for timer in self.findChildren(QTimer):
+            timer.stop()
+
+    def closeEvent(self, event):
+        if not self.persist_state():
+            event.ignore()
+            return
+        self.shutdown()
         event.accept()
 
 

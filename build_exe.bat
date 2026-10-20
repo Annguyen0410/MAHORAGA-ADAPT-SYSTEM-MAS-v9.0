@@ -6,6 +6,10 @@ REM Run this inside the project folder. PyInstaller is already installed in .ven
 set PY=.venv\Scripts\python.exe
 if not exist .venv\Scripts\python.exe set PY=python
 
+REM Validate and regenerate shared manifests and extension before packaging.
+"%PY%" tools\build_shared_assets.py
+if errorlevel 1 exit /b 1
+
 REM --- Free the space old builds are holding -------------------------------
 REM dist\Mei.exe is deliberately NOT deleted here: PyInstaller overwrites it at
 REM the END of a successful build, so a failed build never costs you the app.
@@ -39,6 +43,7 @@ echo Building Mei.exe with %QTVERSION% ...
   --name="Mei" ^
   --add-data "icon.png;." ^
   --add-data "litebrowser\data\chain.json;litebrowser\data" ^
+  --add-data "litebrowser\data\plugins;litebrowser\data\plugins" ^
   --add-data "web_support\boitoan;web_support\boitoan" ^
   --collect-all cryptography ^
   --collect-all segno ^

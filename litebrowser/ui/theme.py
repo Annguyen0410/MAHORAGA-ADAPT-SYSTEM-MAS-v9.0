@@ -1,5 +1,3 @@
-from PyQt5.QtCore import QEasingCurve, QPropertyAnimation
-from PyQt5.QtWidgets import QGraphicsOpacityEffect
 
 # Pure data + color logic moved to litebrowser.core.theme_data so the data
 # layer can validate theme/accent names without importing Qt. Re-exported
@@ -19,6 +17,7 @@ from litebrowser.core.theme_data import (  # noqa: F401
     accent_keys,
     palette_tokens,
     theme_display_name,
+    valid_accent,
 )
 
 
@@ -91,13 +90,13 @@ def accent_bar_color(tokens: dict, is_today: bool):
 _VERB_QSS = """
 QPushButton#PrimaryButton {
     background-color: %(ACCENT)s;
-    color: %(MAIN_BG)s;
+    color: %(TEXT_ON_ACCENT)s;
     border: 1px solid %(ACCENT)s;
     border-radius: %(RADIUS_SM)s;
     padding: 6px 16px;
     font-weight: 800;
 }
-QPushButton#PrimaryButton:hover { background-color: %(ACCENT_HOVER)s; border-color: %(ACCENT_HOVER)s; }
+QPushButton#PrimaryButton:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
 QPushButton#PrimaryButton:disabled {
     background-color: %(MAIN_BG_ALT)s; color: %(TEXT_DIM)s; border-color: %(BORDER_SOFT)s;
 }
@@ -127,7 +126,12 @@ QPushButton#DangerButton {
     padding: 6px 13px;
     font-weight: 700;
 }
-QPushButton#DangerButton:hover { background-color: %(DANGER)s; border-color: %(DANGER)s; color: %(MAIN_BG)s; }
+QPushButton#DangerButton:hover { background-color: %(DANGER)s; border-color: %(DANGER)s; color: %(TEXT_ON_DANGER)s; }
+QPushButton[compactIcon="true"] { padding: 0; min-width: 0; min-height: 0; font-size: 15px; }
+QToolButton[compactIcon="true"] { padding: 0; min-width: 0; min-height: 0; }
+QCalendarWidget QAbstractItemView { selection-background-color: %(ACCENT)s; selection-color: %(TEXT_ON_ACCENT)s; outline: none; }
+QCalendarWidget QToolButton { color: %(TEXT)s; background-color: %(MAIN_BG_ALT)s; border: none; padding: 0 5px; }
+QCalendarWidget QToolButton:hover { background-color: %(ITEM_HOVER)s; }
 QMenu#DialogOverflowMenu { padding: 6px; }
 QMenu#DialogOverflowMenu::item { padding: 6px 22px 6px 12px; }
 QMenu#DialogOverflowMenu::separator { height: 1px; margin: 5px 8px; background-color: %(BORDER_SOFT)s; }
@@ -164,7 +168,7 @@ QMainWindow, QWidget {
 }
 
 /* ---------- inputs & editors ---------- */
-#ShellOmnibar, #UrlBar, QLineEdit, QTextEdit, QListWidget, QPlainTextEdit, QComboBox, QSpinBox {
+#ShellOmnibar, #UrlBar, QLineEdit, QTextEdit, QListWidget, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit {
     background-color: %(INPUT_BG)s;
     color: %(TEXT)s;
     border: 1px solid %(INPUT_BORDER)s;
@@ -173,10 +177,10 @@ QMainWindow, QWidget {
     selection-background-color: %(MENU_ITEM_SEL)s;
     selection-color: %(TEXT)s;
 }
-#ShellOmnibar:hover, #UrlBar:hover, QLineEdit:hover, QTextEdit:hover, QListWidget:hover, QComboBox:hover, QSpinBox:hover {
+#ShellOmnibar:hover, #UrlBar:hover, QLineEdit:hover, QTextEdit:hover, QListWidget:hover, QComboBox:hover, QSpinBox:hover, QDateEdit:hover, QTimeEdit:hover, QDateTimeEdit:hover {
     border-color: %(ACCENT)s;
 }
-#ShellOmnibar:focus, #UrlBar:focus, QLineEdit:focus, QTextEdit:focus, QListWidget:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus {
+#ShellOmnibar:focus, #UrlBar:focus, QLineEdit:focus, QTextEdit:focus, QListWidget:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
     border-color: %(INPUT_FOCUS)s;
     background-color: %(CARD_BG)s;
 }
@@ -784,7 +788,7 @@ QLabel {
 #Chip:hover { color: %(TEXT)s; border-color: %(INPUT_BORDER)s; background-color: %(ITEM_HOVER)s; }
 #Chip:checked { color: %(ACCENT_HOVER)s; background-color: %(ACCENT_SOFT)s; border-color: %(ACCENT)s; }
 
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit {
     min-height: 24px;
     background-color: %(INPUT_BG)s;
     color: %(TEXT)s;
@@ -794,8 +798,8 @@ QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {
     selection-background-color: %(ACCENT_SOFT)s;
 }
 QTextEdit, QPlainTextEdit { padding: 8px; }
-QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover, QComboBox:hover, QSpinBox:hover { border-color: %(ACCENT)s; }
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus {
+QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover, QComboBox:hover, QSpinBox:hover, QDateEdit:hover, QTimeEdit:hover, QDateTimeEdit:hover { border-color: %(ACCENT)s; }
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
     background-color: %(CARD_BG)s;
     border-color: %(INPUT_FOCUS)s;
 }
@@ -817,12 +821,12 @@ QPushButton:hover, #CafeButton:hover, #TopIconButton:hover {
 QPushButton#TopAccentButton {
     min-height: 26px;
     background-color: %(ACCENT)s;
-    color: %(MAIN_BG)s;
+    color: %(TEXT_ON_ACCENT)s;
     border: 1px solid %(ACCENT)s;
     border-radius: 9px;
     font-weight: 800;
 }
-QPushButton#TopAccentButton:hover { background-color: %(ACCENT_HOVER)s; border-color: %(ACCENT_HOVER)s; }
+QPushButton#TopAccentButton:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
 
 #CafeList, #TabList, QTreeWidget {
     background-color: transparent;
@@ -985,7 +989,7 @@ QMenu::item:selected { background-color: %(ACCENT_SOFT)s; color: %(TEXT)s; }
    Every radius below resolves through core/theme_data.DEFAULTS, so a surface
    can no longer invent its own corner. */
 QPushButton, #CafeButton, #TopIconButton { border-radius: %(RADIUS_SM)s; }
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox { border-radius: %(RADIUS_SM)s; }
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit { border-radius: %(RADIUS_SM)s; }
 #HeroCard { border-radius: %(RADIUS_LG)s; }
 #SectionCard, #StatCard, #ActionTile, #StatTile, #InsightPanel { border-radius: %(RADIUS)s; }
 #ShellOmnibar { border-radius: %(RADIUS_LG)s; }
@@ -995,7 +999,7 @@ QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox { border-radius: %(RAD
 #SiteStatePill, #ZoomLabel, #StatusPill, #Chip, #Pill {
     border-radius: %(RADIUS_PILL)s;
 }
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus,
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus,
 #UrlBar:focus, #ShellOmnibar:focus {
     border: 1px solid %(ACCENT)s;
 }
@@ -1224,7 +1228,7 @@ def dialog_qss(mode: str = "cafe-night", accent: str | None = None):
     QPushButton:hover { background-color: %(BUTTON_HOVER)s; border-color: %(ACCENT)s; }
     QPushButton:pressed { background-color: %(ITEM_SELECTED)s; }
     QPushButton:disabled { color: %(TEXT_DIM)s; background-color: %(MAIN_BG_ALT)s; border-color: %(BORDER_SOFT)s; }
-    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {
+    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit {
         background-color: %(INPUT_BG)s; color: %(TEXT)s;
         border: 1px solid %(INPUT_BORDER)s; border-radius: %(RADIUS_SM)s;
         padding: 5px 9px; font-size: 13px; selection-background-color: %(MENU_ITEM_SEL)s;
@@ -1286,12 +1290,12 @@ def dialog_qss(mode: str = "cafe-night", accent: str | None = None):
     /* The dialog's default action (QMessageBox Yes/OK) pops with the accent. */
     QPushButton:default {
         background-color: %(ACCENT)s;
-        color: %(MAIN_BG)s;
+        color: %(TEXT_ON_ACCENT)s;
         border-color: %(ACCENT)s;
         font-weight: 800;
     }
-    QPushButton:default:hover { background-color: %(ACCENT_HOVER)s; border-color: %(ACCENT_HOVER)s; }
-    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox { min-height: 24px; border-radius: 9px; }
+    QPushButton:default:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
+    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit { min-height: 24px; border-radius: 9px; }
     QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: %(ACCENT)s; }
     QListWidget, QTreeWidget { background-color: %(CARD_BG)s; border: 1px solid %(BORDER_SOFT)s; border-radius: 12px; padding: 3px; }
     QListWidget::item, QTreeWidget::item { border-radius: 8px; padding: 7px; }
@@ -1338,31 +1342,15 @@ def collapse_btn_qss(mode: str = "cafe-night", accent: str | None = None):
 
 
 def animate_entrance(widget, duration: int = 160) -> None:
-    """Qt-native micro-transition; QSS has no reliable transition support."""
-    if widget is None or not widget.isVisible() or widget.graphicsEffect() is not None:
-        return
-    effect = QGraphicsOpacityEffect(widget)
-    effect.setOpacity(0.0)
-    widget.setGraphicsEffect(effect)
-    animation = QPropertyAnimation(effect, b"opacity", widget)
-    animation.setDuration(duration)
-    animation.setStartValue(0.0)
-    animation.setEndValue(1.0)
-    animation.setEasingCurve(QEasingCurve.OutCubic)
+    """Present immediately; never composite native controls into an opacity layer.
 
-    def _cleanup():
-        # The widget can be destroyed before the 160 ms animation lands
-        # (workspace switch/teardown); touching a deleted C++ object would
-        # raise inside the signal handler (v6.4 bug).
-        try:
-            if widget.graphicsEffect() is effect:
-                widget.setGraphicsEffect(None)
-        except RuntimeError:
-            pass
-
-    animation.finished.connect(_cleanup)
-    widget._cafe_entrance_animation = animation  # retain animation for Qt's async lifetime.
-    animation.start()
+    Removing QGraphicsOpacityEffect in its animation-finished callback can
+    delete the emitting native object mid-signal and crash during rapid teardown.
+    Such effects also interfere with native popup hit testing. Keep the shared
+    presentation hook without sacrificing interaction reliability for a fade.
+    """
+    if widget is not None:
+        widget.update()
 
 
 

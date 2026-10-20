@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="chain-app" content="worldleaderboard">
+    <script src="chain.js"></script>
+    <title>World Ranking - Your Position Among 8 Billion People</title>
+    <meta name="description"
+        content="Discover your global ranking among 8 billion people. Calculate your percentile based on skills, achievements, wealth, health, and influence.">
+    <meta name="keywords" content="world ranking, global ranking, self assessment, percentile calculator, life score">
+    <meta name="author" content="World Ranking">
+    <meta name="theme-color" content="#0a0a0f">
+
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="World Ranking - Your Position Among 8 Billion People">
+    <meta property="og:description"
+        content="Calculate your global ranking and see where you stand among 8 billion people.">
+    <meta property="og:image" content="https://example.com/og-image.png">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <!-- Preload critical resources -->
+    <link rel="preload" href="style.css" as="style">
+    <link rel="preload" href="script.js" as="script">
+
+    <!-- Fonts vendored locally for offline + instant load (Inter + Playfair Display) -->
+    <link rel="preload" href="vendor/fonts.css" as="style">
+    <link href="vendor/fonts.css" rel="stylesheet">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Defer non-critical scripts -->
+    <script src="vendor/chart.umd.min.js" defer></script>
+    <script src="vendor/html2canvas.min.js" defer></script>
+</head>
+
+<body>
+    <!-- Animated Background -->
+    <div class="bg-animation">
+        <div class="bg-orb bg-orb-1"></div>
+        <div class="bg-orb bg-orb-2"></div>
+        <div class="bg-orb bg-orb-3"></div>
+        <div class="particles" id="particles"></div>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo-container">
+                    <div class="logo-icon pulse-glow">
+                        <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="50" cy="50" r="45" stroke="url(#gold-gradient)" stroke-width="3" fill="none" />
+                            <circle cx="50" cy="50" r="30" stroke="url(#gold-gradient)" stroke-width="2" fill="none"
+                                opacity="0.5" />
+                            <circle cx="50" cy="50" r="15" fill="url(#gold-gradient)" />
+                            <defs>
+                                <linearGradient id="gold-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#FFD700" />
+                                    <stop offset="50%" style="stop-color:#FFA500" />
+                                    <stop offset="100%" style="stop-color:#FFD700" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <div class="logo-text">
+                        <h1>WORLD RANKING</h1>
+                        <p class="tagline">Discover Your Position Among 8 Billion People</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button class="action-btn" id="save-btn" title="Save Profile">
+                    <span class="btn-icon">💾</span> Save
+                </button>
+                <button class="action-btn" id="load-btn" title="Load Profile">
+                    <span class="btn-icon">📂</span> Load
+                </button>
+                <button class="action-btn" id="quick-fill-btn" title="AI Quick Fill">
+                    <span class="btn-icon">✨</span> Quick Fill
+                </button>
+                <button class="action-btn" id="clear-btn" title="Clear All">
+                    <span class="btn-icon">🗑️</span> Clear
+                </button>
+            </div>
+        </header>
+
+        <!-- Quick Fill Modal -->
+        <div class="modal-overlay" id="quick-fill-modal">
+            <div class="modal-content">
+                <button class="modal-close" id="modal-close">&times;</button>
+                <h3>✨ AI Quick Fill</h3>
+                <p>Describe your background, achievements, and experiences. We'll automatically fill in the relevant
+                    fields.</p>
+                <textarea id="quick-fill-text"
+                    placeholder='Example: "I am a 32-year-old software engineer with a Master&#39;s degree. I&#39;ve been working for 10 years, currently as a Senior Manager leading a team of 15. I have 3,000 LinkedIn connections, 500 Instagram followers. I speak 3 languages, visited 12 countries, run 5K regularly, own a home and 2 cars, and invest about $100K in stocks..."'></textarea>
+                <div class="modal-actions">
+                    <button class="modal-btn primary" id="analyze-btn">🚀 Analyze & Fill</button>
+                    <button class="modal-btn secondary" id="cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <span class="progress-text" id="progress-text">0% Complete</span>
+        </div>
+
+        <!-- Category Tabs -->
+        <div class="category-tabs-wrapper">
+            <div class="category-tabs" id="category-tabs">
+                <button class="category-tab active" data-tab="basic">
+                    <span class="tab-icon">👤</span>
+                    <span class="tab-text">Basic</span>
+                </button>
+                <button class="category-tab" data-tab="health">
+                    <span class="tab-icon">💪</span>
+                    <span class="tab-text">Health</span>
+                </button>
+                <button class="category-tab" data-tab="influence">
+                    <span class="tab-icon">📱</span>
+                    <span class="tab-text">Influence</span>
+                </button>
+                <button class="category-tab" data-tab="professional">
+                    <span class="tab-icon">💼</span>
+                    <span class="tab-text">Career</span>
+                </button>
+                <button class="category-tab" data-tab="achievement">
+                    <span class="tab-icon">🏆</span>
+                    <span class="tab-text">Achievements</span>
+                </button>
+                <button class="category-tab" data-tab="wealth">
+                    <span class="tab-icon">💎</span>
+                    <span class="tab-text">Wealth</span>
+                </button>
+                <button class="category-tab" data-tab="lifestyle">
+                    <span class="tab-icon">✨</span>
+                    <span class="tab-text">Lifestyle</span>
+                </button>
+                <button class="category-tab" data-tab="relationships">
+                    <span class="tab-icon">❤️</span>
+                    <span class="tab-text">Relationships</span>
+                </button>
+                <button class="category-tab" data-tab="network">
+                    <span class="tab-icon">🌐</span>
+                    <span class="tab-text">Network</span>
+                </button>
+                <button class="category-tab" data-tab="impact">
+                    <span class="tab-icon">🌍</span>
+                    <span class="tab-text">Impact</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab Contents -->
+        <div class="tab-content active" id="tab-basic">
+            <div class="section-header">
+                <h2>👤 Basic Profile</h2>
+                <p>Your foundational life metrics and education</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎂</span>
+                        <h3>Age</h3>
+                    </div>
+                    <p class="input-description">Your current age</p>
+                    <input type="number" id="age" min="13" max="120" value="25" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎓</span>
+                        <h3>Education Level</h3>
+                    </div>
+                    <p class="input-description">Highest completed credential</p>
+                    <select id="education" class="input-field">
+                        <option value="20">No formal education</option>
+                        <option value="35">Elementary/Primary</option>
+                        <option value="45">High School</option>
+                        <option value="55" selected>Some College</option>
+                        <option value="70">Bachelor's Degree</option>
+                        <option value="82">Master's Degree</option>
+                        <option value="92">PhD/Doctorate</option>
+                        <option value="98">Multiple Advanced Degrees</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🌍</span>
+                        <h3>Countries Visited</h3>
+                    </div>
+                    <p class="input-description">Unique countries traveled to</p>
+                    <input type="number" id="countries" min="0" max="195" value="5" class="input-field">
+                    <div class="input-hint">📍 Avg: 3 | Top 10%: 20+ | Elite: 50+</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">💬</span>
+                        <h3>Languages Spoken</h3>
+                    </div>
+                    <p class="input-description">Languages you speak fluently</p>
+                    <input type="number" id="languages" min="1" max="20" value="1" class="input-field">
+                    <div class="input-hint">🗣️ Avg: 1.5 | Top 10%: 3+ | Polyglot: 5+</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📚</span>
+                        <h3>Books Read Yearly</h3>
+                    </div>
+                    <p class="input-description">Books completed per year</p>
+                    <input type="number" id="books" min="0" max="200" value="5" class="input-field">
+                    <div class="input-hint">📖 Avg: 4 | Avid: 12+ | Elite: 50+</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🧠</span>
+                        <h3>IQ Estimate</h3>
+                    </div>
+                    <p class="input-description">Your estimated IQ (average is 100)</p>
+                    <input type="number" id="iq" min="70" max="200" value="100" class="input-field">
+                    <div class="input-hint">🧠 Avg: 100 | High: 120+ | Genius: 140+</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-health">
+            <div class="section-header">
+                <h2>💪 Health & Fitness</h2>
+                <p>Your physical wellness and fitness level</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🏃</span>
+                        <h3>Running Ability</h3>
+                    </div>
+                    <p class="input-description">Your running endurance level</p>
+                    <select id="fitness" class="input-field">
+                        <option value="25">Can't run 1K</option>
+                        <option value="40" selected>Can run 1-2K</option>
+                        <option value="55">Can run 5K</option>
+                        <option value="70">Can run 10K</option>
+                        <option value="85">Half marathon capable</option>
+                        <option value="95">Full marathon capable</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🏋️</span>
+                        <h3>Gym/Workout Frequency</h3>
+                    </div>
+                    <p class="input-description">Weekly workout sessions</p>
+                    <select id="workout" class="input-field">
+                        <option value="20">Never exercise</option>
+                        <option value="35" selected>1-2 times/week</option>
+                        <option value="55">3-4 times/week</option>
+                        <option value="75">5-6 times/week</option>
+                        <option value="90">Daily training</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">😴</span>
+                        <h3>Sleep Quality</h3>
+                    </div>
+                    <p class="input-description">Average sleep quality</p>
+                    <select id="sleep" class="input-field">
+                        <option value="30">Poor (under 5h)</option>
+                        <option value="50" selected>Fair (5-6h)</option>
+                        <option value="70">Good (7-8h)</option>
+                        <option value="90">Excellent (optimized)</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🥗</span>
+                        <h3>Diet Quality</h3>
+                    </div>
+                    <p class="input-description">Nutrition and eating habits</p>
+                    <select id="diet" class="input-field">
+                        <option value="30">Poor (fast food, processed)</option>
+                        <option value="50" selected>Average</option>
+                        <option value="70">Good (balanced)</option>
+                        <option value="90">Excellent (optimized nutrition)</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🧘</span>
+                        <h3>Mental Wellness</h3>
+                    </div>
+                    <p class="input-description">Meditation, therapy, mindfulness</p>
+                    <select id="mental" class="input-field">
+                        <option value="40" selected>No practice</option>
+                        <option value="60">Occasional</option>
+                        <option value="75">Regular practice</option>
+                        <option value="90">Daily dedication</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🚭</span>
+                        <h3>Lifestyle Habits</h3>
+                    </div>
+                    <p class="input-description">Smoking, drinking habits</p>
+                    <select id="habits" class="input-field">
+                        <option value="30">Heavy smoker/drinker</option>
+                        <option value="50">Moderate</option>
+                        <option value="70" selected>Occasional</option>
+                        <option value="90">Clean lifestyle</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-influence">
+            <div class="section-header">
+                <h2>📱 Digital Influence</h2>
+                <p>Your online presence and social reach</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📸</span>
+                        <h3>Instagram Followers</h3>
+                    </div>
+                    <input type="number" id="instagram" min="0" max="500000000" value="200" class="input-field">
+                    <div class="input-hint">📱 Micro: 1K+ | Influencer: 10K+ | Star: 1M+</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎵</span>
+                        <h3>TikTok Followers</h3>
+                    </div>
+                    <input type="number" id="tiktok" min="0" max="500000000" value="0" class="input-field">
+                    <div class="input-hint">🎬 Creator: 10K+ | Rising: 100K+ | Mega: 1M+</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🐦</span>
+                        <h3>Twitter/X Followers</h3>
+                    </div>
+                    <input type="number" id="twitter" min="0" max="500000000" value="50" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📺</span>
+                        <h3>YouTube Subscribers</h3>
+                    </div>
+                    <input type="number" id="youtube" min="0" max="500000000" value="0" class="input-field">
+                    <div class="input-hint">📹 Monetized: 1K+ | Established: 100K+ | Star: 1M+</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">💼</span>
+                        <h3>LinkedIn Connections</h3>
+                    </div>
+                    <input type="number" id="linkedin" min="0" max="30000" value="100" class="input-field">
+                    <div class="input-hint">🔗 Avg: 500 | Networker: 2K+ | Super: 10K+</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🌐</span>
+                        <h3>Website Monthly Visitors</h3>
+                    </div>
+                    <input type="number" id="website" min="0" max="100000000" value="0" class="input-field">
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-professional">
+            <div class="section-header">
+                <h2>💼 Career & Professional</h2>
+                <p>Your work achievements and career growth</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📊</span>
+                        <h3>Position Level</h3>
+                    </div>
+                    <select id="position" class="input-field">
+                        <option value="30">Student/Unemployed</option>
+                        <option value="45">Entry Level</option>
+                        <option value="55" selected>Mid-Level</option>
+                        <option value="68">Senior</option>
+                        <option value="78">Manager</option>
+                        <option value="85">Director/VP</option>
+                        <option value="92">C-Suite</option>
+                        <option value="98">Founder/CEO</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🏢</span>
+                        <h3>Years of Experience</h3>
+                    </div>
+                    <input type="number" id="experience" min="0" max="50" value="3" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">👥</span>
+                        <h3>Team Size Managed</h3>
+                    </div>
+                    <input type="number" id="teamsize" min="0" max="10000" value="0" class="input-field">
+                    <div class="input-hint">👥 Manager: 5+ | Director: 20+ | Exec: 100+</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🚀</span>
+                        <h3>Startups Founded</h3>
+                    </div>
+                    <input type="number" id="startups" min="0" max="20" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📜</span>
+                        <h3>Certifications</h3>
+                    </div>
+                    <input type="number" id="certifications" min="0" max="50" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎤</span>
+                        <h3>Conference Talks</h3>
+                    </div>
+                    <input type="number" id="speaking" min="0" max="500" value="0" class="input-field">
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-achievement">
+            <div class="section-header">
+                <h2>🏆 Achievements</h2>
+                <p>Your accomplishments and recognition</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📝</span>
+                        <h3>Publications</h3>
+                    </div>
+                    <p class="input-description">Articles, papers, books</p>
+                    <input type="number" id="publications" min="0" max="1000" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🏆</span>
+                        <h3>Awards Received</h3>
+                    </div>
+                    <input type="number" id="awards" min="0" max="100" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">💻</span>
+                        <h3>GitHub Profile</h3>
+                    </div>
+                    <select id="github" class="input-field">
+                        <option value="30" selected>No presence</option>
+                        <option value="45">1-10 repos</option>
+                        <option value="60">10-50 repos</option>
+                        <option value="75">100+ stars</option>
+                        <option value="88">1K+ stars</option>
+                        <option value="95">10K+ stars</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎨</span>
+                        <h3>Creative Projects</h3>
+                    </div>
+                    <input type="number" id="creative" min="0" max="200" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">💡</span>
+                        <h3>Patents/Inventions</h3>
+                    </div>
+                    <input type="number" id="patents" min="0" max="100" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🏅</span>
+                        <h3>Industry Recognition</h3>
+                    </div>
+                    <select id="recognition" class="input-field">
+                        <option value="30" selected>Unknown</option>
+                        <option value="50">Locally known</option>
+                        <option value="70">Regionally known</option>
+                        <option value="85">Nationally known</option>
+                        <option value="98">Globally known</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-wealth">
+            <div class="section-header">
+                <h2>💎 Wealth & Assets</h2>
+                <p>Your financial status and assets</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">💰</span>
+                        <h3>Annual Income</h3>
+                    </div>
+                    <select id="income" class="input-field">
+                        <option value="25">Under $20K</option>
+                        <option value="38">$20K - $40K</option>
+                        <option value="48">$40K - $60K</option>
+                        <option value="58" selected>$60K - $80K</option>
+                        <option value="68">$80K - $120K</option>
+                        <option value="78">$120K - $200K</option>
+                        <option value="85">$200K - $500K</option>
+                        <option value="92">$500K - $1M</option>
+                        <option value="98">$1M+</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">💵</span>
+                        <h3>Net Worth</h3>
+                    </div>
+                    <select id="networth" class="input-field">
+                        <option value="25">Negative/Debt</option>
+                        <option value="35">$0 - $10K</option>
+                        <option value="48" selected>$10K - $100K</option>
+                        <option value="62">$100K - $500K</option>
+                        <option value="75">$500K - $1M</option>
+                        <option value="85">$1M - $10M</option>
+                        <option value="95">$10M+</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🏠</span>
+                        <h3>Properties Owned</h3>
+                    </div>
+                    <input type="number" id="properties" min="0" max="50" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🚗</span>
+                        <h3>Vehicles Owned</h3>
+                    </div>
+                    <input type="number" id="vehicles" min="0" max="20" value="1" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📈</span>
+                        <h3>Investment Portfolio</h3>
+                    </div>
+                    <select id="investments" class="input-field">
+                        <option value="25" selected>$0 - $10K</option>
+                        <option value="42">$10K - $50K</option>
+                        <option value="55">$50K - $100K</option>
+                        <option value="68">$100K - $500K</option>
+                        <option value="82">$500K - $1M</option>
+                        <option value="95">$1M+</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">💸</span>
+                        <h3>Passive Income Streams</h3>
+                    </div>
+                    <input type="number" id="passive" min="0" max="20" value="0" class="input-field">
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-lifestyle">
+            <div class="section-header">
+                <h2>✨ Lifestyle & Skills</h2>
+                <p>Your hobbies, skills, and life experiences</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎭</span>
+                        <h3>Active Hobbies</h3>
+                    </div>
+                    <input type="number" id="hobbies" min="0" max="30" value="2" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎸</span>
+                        <h3>Musical Instruments</h3>
+                    </div>
+                    <input type="number" id="instruments" min="0" max="20" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">⚽</span>
+                        <h3>Sports Played</h3>
+                    </div>
+                    <input type="number" id="sports" min="0" max="20" value="1" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🍳</span>
+                        <h3>Cuisines You Cook</h3>
+                    </div>
+                    <input type="number" id="cuisines" min="0" max="30" value="2" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎯</span>
+                        <h3>Skills Mastered</h3>
+                    </div>
+                    <input type="number" id="skills" min="0" max="50" value="3" class="input-field">
+                    <div class="input-hint">🎯 Versatile: 10+ | Master: 20+</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🌟</span>
+                        <h3>Bucket List Completed</h3>
+                    </div>
+                    <input type="number" id="experiences" min="0" max="100" value="3" class="input-field">
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-relationships">
+            <div class="section-header">
+                <h2>❤️ Relationships</h2>
+                <p>Your personal connections and social life</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">💑</span>
+                        <h3>Relationship Status</h3>
+                    </div>
+                    <select id="relationship" class="input-field">
+                        <option value="40" selected>Single</option>
+                        <option value="55">Dating</option>
+                        <option value="70">Long-term relationship</option>
+                        <option value="80">Married</option>
+                        <option value="85">Happily married 5+ years</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">👥</span>
+                        <h3>Close Friends</h3>
+                    </div>
+                    <p class="input-description">Friends you can truly rely on</p>
+                    <input type="number" id="closefriends" min="0" max="50" value="5" class="input-field">
+                    <div class="input-hint">Quality over quantity matters here</div>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">👨‍👩‍👧</span>
+                        <h3>Family Relationships</h3>
+                    </div>
+                    <select id="family" class="input-field">
+                        <option value="30">Estranged</option>
+                        <option value="50">Distant</option>
+                        <option value="70" selected>Good</option>
+                        <option value="90">Very close</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">👶</span>
+                        <h3>Children</h3>
+                    </div>
+                    <input type="number" id="children" min="0" max="15" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">👨‍🏫</span>
+                        <h3>People Mentored</h3>
+                    </div>
+                    <input type="number" id="mentored" min="0" max="500" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎉</span>
+                        <h3>Social Life Quality</h3>
+                    </div>
+                    <select id="sociallife" class="input-field">
+                        <option value="30">Isolated</option>
+                        <option value="50" selected>Occasional outings</option>
+                        <option value="70">Active social life</option>
+                        <option value="90">Very active, many events</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-network">
+            <div class="section-header">
+                <h2>🌐 Network & Connections</h2>
+                <p>Your professional network and influence</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🤝</span>
+                        <h3>Industry Contacts</h3>
+                    </div>
+                    <p class="input-description">Professionals you can reach</p>
+                    <input type="number" id="contacts" min="0" max="10000" value="50" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">👔</span>
+                        <h3>VIP Connections</h3>
+                    </div>
+                    <p class="input-description">C-level, celebrities, politicians</p>
+                    <input type="number" id="vip" min="0" max="500" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🏢</span>
+                        <h3>Companies Worked At</h3>
+                    </div>
+                    <input type="number" id="companies" min="0" max="50" value="2" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📧</span>
+                        <h3>Email Subscribers</h3>
+                    </div>
+                    <input type="number" id="subscribers" min="0" max="10000000" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🎪</span>
+                        <h3>Communities Led</h3>
+                    </div>
+                    <p class="input-description">Groups, clubs, forums you lead</p>
+                    <input type="number" id="communities" min="0" max="20" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📡</span>
+                        <h3>Media Features</h3>
+                    </div>
+                    <p class="input-description">News, podcasts, interviews</p>
+                    <input type="number" id="media" min="0" max="500" value="0" class="input-field">
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-impact">
+            <div class="section-header">
+                <h2>🌍 Impact & Legacy</h2>
+                <p>Your contribution to the world</p>
+            </div>
+            <div class="input-section">
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🌱</span>
+                        <h3>Environmental Actions</h3>
+                    </div>
+                    <select id="environment" class="input-field">
+                        <option value="35" selected>Minimal</option>
+                        <option value="55">Active (recycling, reducing)</option>
+                        <option value="75">Dedicated (solar, EV)</option>
+                        <option value="90">Pioneer (advocacy, business)</option>
+                    </select>
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">❤️</span>
+                        <h3>Charities Supported</h3>
+                    </div>
+                    <input type="number" id="charities" min="0" max="100" value="2" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🤝</span>
+                        <h3>Volunteer Hours/Year</h3>
+                    </div>
+                    <input type="number" id="volunteer" min="0" max="2000" value="10" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">📚</span>
+                        <h3>Free Educational Content</h3>
+                    </div>
+                    <input type="number" id="courses" min="0" max="500" value="0" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">💰</span>
+                        <h3>Annual Donations ($)</h3>
+                    </div>
+                    <input type="number" id="donations" min="0" max="10000000" value="100" class="input-field">
+                </div>
+                <div class="input-card">
+                    <div class="input-header"><span class="input-icon">🌟</span>
+                        <h3>Lives Positively Impacted</h3>
+                    </div>
+                    <p class="input-description">Estimate of people you've helped</p>
+                    <input type="number" id="livesimpacted" min="0" max="10000000" value="10" class="input-field">
+                </div>
+            </div>
+        </div>
+
+        <!-- Calculate Button -->
+        <button class="calculate-btn glow-btn" id="calculate-btn">
+            <span class="btn-icon">🚀</span>
+            <span>Calculate My Global Ranking</span>
+        </button>
+
+        <!-- Results Section -->
+        <div class="results-section" id="results">
+            <!-- Tier Display -->
+            <div class="tier-card" id="tier-card">
+                <div class="tier-icon" id="tier-icon">💎</div>
+                <div class="tier-name" id="tier-name">Diamond</div>
+                <div class="tier-subtitle">Elite Global Citizen</div>
+            </div>
+
+            <!-- Rank Card -->
+            <div class="rank-card" id="rank-card-capture">
+                <div class="rank-header">
+                    <span class="rank-label">YOUR GLOBAL RANK</span>
+                </div>
+                <div class="rank-number-container">
+                    <span class="rank-hash">#</span>
+                    <span class="rank-number" id="rank-number">1,234,567</span>
+                </div>
+                <div class="rank-out-of">out of <span class="highlight">8,000,000,000</span> people</div>
+                <div class="percentile-bar">
+                    <div class="percentile-fill" id="percentile-fill"></div>
+                    <div class="percentile-marker" id="percentile-marker"></div>
+                </div>
+                <div class="percentile-display">
+                    <h2 id="percentile-text">Top 1%</h2>
+                    <p id="percentile-description">You rank higher than X people on Earth</p>
+                </div>
+                <div class="comparison-stats" id="comparison-stats">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
+            <!-- Score Breakdown -->
+            <div class="breakdown-section">
+                <h3>📊 Score Breakdown</h3>
+                <div class="chart-container">
+                    <canvas id="radar-chart"></canvas>
+                </div>
+                <div class="score-bars" id="score-bars"></div>
+            </div>
+
+            <!-- Badges -->
+            <div class="badges-section" id="badges-section">
+                <h3>🏆 Achievements Unlocked</h3>
+                <div class="badges-container" id="badges-container"></div>
+            </div>
+
+            <!-- Category Rankings -->
+            <div class="category-rankings-section">
+                <h3>📊 Your Ranking By Category</h3>
+                <p class="section-subtitle">See where you stand in each life dimension</p>
+                <div class="category-rankings-grid" id="category-rankings-grid">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
+            <!-- What-If Simulator -->
+            <div class="whatif-section">
+                <h3>🎯 What-If Simulator</h3>
+                <p class="section-subtitle">See how changes would affect your rank</p>
+                <div class="whatif-scenarios" id="whatif-scenarios">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
+            <!-- Rank History -->
+            <div class="rank-history-section">
+                <h3>📈 Your Rank History</h3>
+                <p class="section-subtitle">Track your progress over time</p>
+                <div class="history-chart-container">
+                    <canvas id="history-chart"></canvas>
+                </div>
+                <div class="history-stats" id="history-stats">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
+            <!-- Demographic Comparison -->
+            <div class="comparison-section">
+                <h3>👥 How You Compare</h3>
+                <p class="section-subtitle">Your rank among different groups</p>
+                <div class="demographic-grid" id="demographic-grid">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
+            <!-- Next Milestone -->
+            <div class="milestone-section">
+                <h3>🎯 Next Milestone</h3>
+                <div class="milestone-card" id="milestone-card">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
+            <!-- Suggestions -->
+            <div class="suggestions-section">
+                <h3>💡 How to Level Up</h3>
+                <div class="suggestions-list" id="suggestions-list"></div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="result-actions">
+                <button class="action-btn large" id="share-btn">
+                    <span class="btn-icon">📤</span> Share Results
+                </button>
+                <button class="action-btn large" id="screenshot-btn">
+                    <span class="btn-icon">📸</span> Save as Image
+                </button>
+                <button class="action-btn large secondary" id="reset-btn">
+                    <span class="btn-icon">🔄</span> New Assessment
+                </button>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>© 2024 World Ranking | All calculations happen locally in your browser</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+<a href="../hub/index.html" data-chain-link="hub" title="Project Hub" style="position:fixed;bottom:14px;right:14px;z-index:2147483000;display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:999px;background:rgba(20,16,16,.88);color:#f3ede4;font:600 12px/1 'Segoe UI',system-ui,sans-serif;text-decoration:none;border:1px solid rgba(255,255,255,.2);box-shadow:0 6px 18px rgba(0,0,0,.4);backdrop-filter:blur(8px);">☰ Project Hub</a>
+</body>
+
+</html>

@@ -93,7 +93,8 @@ def show_onboarding(shell) -> None:
 
     combo_theme.currentIndexChanged.connect(lambda _i: _update_preview())
     combo_accent.currentIndexChanged.connect(lambda _i: _update_preview())
-    combo_theme.setCurrentIndex(max(0, sorted(theme.PALETTES.keys()).index(theme.DEFAULT_THEME)))
+    combo_theme.setCurrentIndex(max(0, combo_theme.findData(prefs.get_shell_theme(shell.profile_dir))))
+    combo_accent.setCurrentIndex(max(0, combo_accent.findData(prefs.get_accent(shell.profile_dir))))
     _update_preview()
     tp_layout.addWidget(QLabel("Theme:"))
     tp_layout.addWidget(combo_theme)
@@ -101,6 +102,7 @@ def show_onboarding(shell) -> None:
     tp_layout.addWidget(combo_accent)
     tp_layout.addWidget(preview)
     chk_auto = QCheckBox("Auto day / night — day palette by day, night palette after 18:00")
+    chk_auto.setChecked(prefs.get_auto_theme(shell.profile_dir))
     tp_layout.addWidget(chk_auto)
     tp_layout.addWidget(
         QLabel(
@@ -162,11 +164,9 @@ def show_onboarding(shell) -> None:
         "The Android bridge lets your phone push links, files and notes into Mei over Wi-Fi. "
         "Enable it later from Settings, or run the VPN / Bridge hub anytime."
     ))
-    chk_skip_phone = QCheckBox("Skip for now")
-    chk_skip_phone.setChecked(True)
-    phone_layout.addWidget(chk_skip_phone)
-    chk_bridge = QCheckBox("Enable the Android bridge now (localhost only)")
+    chk_bridge = QCheckBox("Enable the Android bridge for local testing (localhost only)")
     phone_layout.addWidget(chk_bridge)
+    phone_layout.addWidget(QLabel("Phone pairing needs a reachable Wi-Fi address. Configure LAN access explicitly in Settings; it is never enabled automatically."))
     phone_layout.addStretch(1)
     body_layout.addWidget(phone_page)
     phone_page.hide()
@@ -178,6 +178,8 @@ def show_onboarding(shell) -> None:
     btn_back.setEnabled(False)
     btn_next = QPushButton("Next")
     btn_next.setObjectName("TopAccentButton")
+    btn_skip = QPushButton("Skip setup")
+    nav_row.addWidget(btn_skip)
     nav_row.addStretch(1)
     nav_row.addWidget(btn_back)
     nav_row.addWidget(btn_next)
@@ -208,12 +210,10 @@ def show_onboarding(shell) -> None:
             return
         if step == 2:
             if not chk_skip_import.isChecked():
-                dlg.accept()
                 from litebrowser.ui.dialogs import sessions as _sessions
 
                 _sessions.show_extensions_dialog(shell.browser_page)
-            else:
-                _show_step(3)
+            _show_step(3)
             return
         if chk_bridge.isChecked():
             prefs.set_mobile_bridge_enabled(shell.profile_dir, True)
@@ -223,6 +223,14 @@ def show_onboarding(shell) -> None:
     def _on_back():
         _show_step(max(1, state["step"] - 1))
 
+    def _skip_setup():
+        prefs.save_pref(shell.profile_dir, "onboarding_done", True)
+        dlg.accept()
+
+    for label in dlg.findChildren(QLabel):
+        if label is not preview:
+            label.setWordWrap(True)
+    btn_skip.clicked.connect(_skip_setup)
     btn_next.clicked.connect(_on_next)
     btn_back.clicked.connect(_on_back)
     _show_step(1)

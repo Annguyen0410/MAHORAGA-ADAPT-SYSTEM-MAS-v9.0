@@ -140,6 +140,7 @@ class TestOmnibarPopupEventFilter(unittest.TestCase):
 
     _PROBE = r'''
 import os, sys, tempfile
+from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
     os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "") + " --disable-gpu --no-sandbox --disable-software-rasterizer"
@@ -155,7 +156,11 @@ app = QApplication(["mei-tests"])
 tmp = tempfile.mkdtemp(prefix="mei_filter_probe_")
 base = os.path.join(tmp, "p")
 prefs.ensure_profile_layout(base)
-shell = AppShell(base, app_dir=os.getcwd())
+prefs.save_pref(base, "onboarding_done", True)
+# This probe owns only event-filter interactions; first-run setup, network
+# updates, tray integration and global hotkeys must not enter its event loop.
+with mock.patch.object(AppShell, "_startup_update_check"), mock.patch.object(AppShell, "_init_tray"), mock.patch.object(AppShell, "_init_global_hotkey"):
+    shell = AppShell(base, app_dir=tmp, window_slot="secondary")
 shell.show()
 app.processEvents()
 # 1) QWindow objects through the filter must not raise.

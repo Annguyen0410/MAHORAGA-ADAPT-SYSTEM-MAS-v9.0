@@ -2,6 +2,7 @@
 import os
 import sys
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -75,6 +76,62 @@ class TestNoteEditorSurvivesRefresh(unittest.TestCase):
         win._refresh_notes()  # what the debounce timer would run
         self.assertEqual(win.current_note_id, note["id"], "selection must survive refresh")
         self.assertIn("edits", win.note_editor.toPlainText())
+
+    def test_immediate_note_switch_flushes_the_previous_edit(self):
+        win = self._window()
+        first = personal_service.create_note(self.base, "First", "original")
+        second = personal_service.create_note(self.base, "Second", "other")
+        win._refresh_notes()
+        win.select_note(first["id"])
+        win.note_editor.setPlainText("typed just before switching")
+        win.select_note(second["id"])
+        self.assertEqual(personal_service.read_note(self.base, first["id"])["content"], "typed just before switching")
+        self.assertEqual(win.current_note_id, second["id"])
+        win.deleteLater()
+
+    def test_failed_autosave_keeps_text_and_cancels_navigation(self):
+        win = self._window()
+        first = personal_service.create_note(self.base, "First", "original")
+        second = personal_service.create_note(self.base, "Second", "other")
+        win._refresh_notes()
+        win.select_note(first["id"])
+        win.note_editor.setPlainText("must not lose this")
+        with mock.patch.object(personal_service, "save_note", side_effect=OSError("disk full")):
+            win._on_note_edit_idle()
+            win.select_note(second["id"])
+            win._back_to_all_notes()
+        self.assertTrue(win._note_dirty)
+        self.assertEqual(win.current_note_id, first["id"])
+        self.assertEqual(win.note_editor.toPlainText(), "must not lose this")
+        self.assertTrue(win._flush_note_edits())
+        win.deleteLater()
+
+    def test_deep_link_opens_a_note_hidden_by_search(self):
+        win = self._window()
+        note = personal_service.create_note(self.base, "Target", "body", "School")
+        win.ed_note_search.setText("not a match")
+        win._refresh_notes()
+        win.select_note(note["id"])
+        self.assertEqual(win.current_note_id, note["id"])
+        self.assertEqual(win.ed_note_search.text(), "")
+        win.deleteLater()
+
+    def test_conflicting_edit_keeps_both_versions(self):
+        win = self._window()
+        note = personal_service.create_note(self.base, "Shared", "original")
+        win._refresh_notes()
+        win.select_note(note["id"])
+        personal_service.save_note(self.base, note["id"], "newer edit from another window")
+        win.note_editor.setPlainText("my unsaved draft")
+        self.assertFalse(win._flush_note_edits())
+        self.assertTrue(win._note_dirty)
+        self.assertEqual(personal_service.read_note(self.base, note["id"])["content"], "newer edit from another window")
+        win._save_note()
+        self.assertNotEqual(win.current_note_id, note["id"])
+        self.assertEqual(personal_service.read_note(self.base, win.current_note_id)["content"], "my unsaved draft")
+        self.assertFalse(win._note_dirty)
+        win.shutdown()
+        win.deleteLater()
 
     def test_move_notes_updates_open_note_id(self):
         win = self._window()

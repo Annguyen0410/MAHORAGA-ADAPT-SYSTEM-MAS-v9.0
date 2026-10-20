@@ -67,6 +67,21 @@ class TestShippedManifests(_ProfileTmp):
             self.assertTrue(plugin.touches(), plugin.id)
             self.assertIn(plugin.target, plugins.TARGETS)
 
+    def test_build_configurations_include_builtin_manifests(self):
+        import ast
+        from pathlib import Path
+        import tomllib
+
+        root = Path(__file__).resolve().parents[1]
+        spec = ast.parse((root / "Mei.spec").read_text(encoding="utf-8"))
+        data = next(node.value for node in spec.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "datas" for target in node.targets))
+        entries = ast.literal_eval(data)
+        self.assertIn(("litebrowser\\data\\plugins", "litebrowser\\data\\plugins"), entries)
+        script = (root / "build_exe.bat").read_text(encoding="utf-8")
+        self.assertIn('--add-data "litebrowser\\data\\plugins;litebrowser\\data\\plugins"', script)
+        package = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertIn("data/plugins/*.json", package["tool"]["setuptools"]["package-data"]["litebrowser"])
+
     def test_a_manifest_found_by_id_exposes_what_it_touches(self):
         task_plugin = self._plugin("todoist-csv")
         self.assertIn("Quick tasks", task_plugin.touches())

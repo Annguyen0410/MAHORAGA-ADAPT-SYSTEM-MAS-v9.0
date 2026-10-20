@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="chain-app" content="cucquanly">
+    <script src="chain.js"></script>
+    <meta name="description" content="Management Hub for the seven available and planned systems.">
+    <title>Management Hub</title>
+    <link rel="stylesheet" href="main.css">
+</head>
+<body>
+    <div class="shell">
+        <header class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">Your management hub</p>
+                <h1>Management Hub</h1>
+                <p class="hero-text">
+                    One dashboard for energy analysis, personal file catalogs, Visualgraph,
+                    reference libraries and data exports.
+                </p>
+            </div>
+            <div class="hero-panel">
+                <div class="metric">
+                    <span class="metric-label">Systems</span>
+                    <strong>7 main areas</strong>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Catalog target</span>
+                    <strong>10 GB</strong>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Purpose</span>
+                    <strong>Connected management</strong>
+                </div>
+            </div>
+        </header>
+
+        <main class="grid">
+            <a class="system-card accent-energy" href="https://personalfrequencys.netlify.app" target="_blank" rel="noopener">
+                    <span class="system-tag">01</span>
+                    <h2>Energy Analysis</h2>
+                    <p>Open the online energy analysis and simulation app. An internet connection is required.</p>
+                </a>
+            <a class="system-card accent-storage" href="./Hệ Thống Lưu Trữ Máy Chủ/index.html">
+                <span class="system-tag">02</span>
+                <h2>Personal File Catalog</h2>
+                <p>Catalog metadata for notes, PDFs, code, archives and audio against a 10 GB planning target. File contents are not stored.</p>
+            </a>
+            <a class="system-card accent-graph" href="./Hệ Thống Toàn Diện Cá Nhân/index.html">
+                <span class="system-tag">03</span>
+                <h2>Visualgraph</h2>
+                <p>Turn topics, transcripts and notes into animated, topic-linked knowledge graphs.</p>
+            </a>
+            <a class="system-card accent-export" href="./Hệ Thống Trích Xuất/index.html">
+                <span class="system-tag">04</span>
+                <h2>Export Studio</h2>
+                <p>Export all systems together or separately in several formats.</p>
+            </a>
+            <a class="system-card accent-library" href="./Hệ Thống Thư Viện Toàn Thư/index.html">
+                <span class="system-tag">05</span>
+                <h2>Reference Library</h2>
+                <p>A collection of 20 reference slots for online documents and resources.</p>
+            </a>
+            <a class="system-card accent-world" href="#" onclick="alert('World Monitor: The worldmonitor/ folder is empty — source is not installed. See the Launch Center below.');return false;" title="Empty folder — source not installed">
+                <span class="system-tag">06</span>
+                <h2>World Monitor</h2>
+                <p>Real-time intelligence dashboard using Node/Vite. Basic local mode needs no API keys. <em>(source not installed)</em></p>
+            </a>
+            <a class="system-card accent-miro" href="#" onclick="alert('MiroFish: The MiroFish/ folder is empty — source is not installed. See the Launch Center below.');return false;" title="Empty folder — source not installed">
+                <span class="system-tag">07</span>
+                <h2>MiroFish</h2>
+                <p>Multi-agent simulation with a Vue frontend and Python backend. Requires LLM and Zep configuration. <em>(source not installed)</em></p>
+            </a>
+        </main>
+
+        <section class="overview">
+            <div class="overview-card">
+                <h3>Suggested workflow</h3>
+                <p>1. Explore the online energy analysis app.</p>
+                <p>2. Catalog your files and documents locally.</p>
+                <p>3. Turn notes into topic-based knowledge graphs.</p>
+                <p>4. Export all data together or by system.</p>
+            </div>
+            <div class="overview-card">
+                <h3>Technical notes</h3>
+                <p>The file catalog, graph and export screens share data locally through <code>localStorage</code> in this browser. File catalog entries contain metadata only, not file bytes.</p>
+                <p>PDF export uses the browser print dialog to save a PDF.</p>
+            </div>
+        </section>
+
+        <section class="overview">
+            <div class="overview-card">
+                <h3>Launch World Monitor</h3>
+                <p>Folder: <code>worldmonitor</code></p>
+                <p>Requirements: Node.js, npm.</p>
+                <p>Commands (after installing source): <code>npm install</code> then <code>npm run dev</code></p>
+                <p>Default URL: <code>http://localhost:5173</code></p>
+                <p>Basic local mode is intended to work without API keys; advanced features may require them. Source is not installed in this checkout.</p>
+            </div>
+            <div class="overview-card">
+                <h3>Launch MiroFish</h3>
+                <p>Folder: <code>MiroFish</code></p>
+                <p>Requirements: Node.js 18+, Python 3.11-3.12, <code>uv</code>.</p>
+                <p>Configuration: copy <code>.env.example</code> to <code>.env</code> and configure <code>LLM_API_KEY</code>, <code>LLM_BASE_URL</code>, <code>LLM_MODEL_NAME</code>, <code>ZEP_API_KEY</code>.</p>
+                <p>Commands (after installing source): <code>npm run setup:all</code> then <code>npm run dev</code></p>
+                <p>Default URL: frontend <code>http://localhost:3000</code>, backend <code>http://localhost:5001</code></p>
+            </div>
+        </section>
+
+        <section class="launch-center">
+            <div class="launch-header">
+                <div>
+                    <p class="eyebrow">Launch Center</p>
+                    <h2>External App Launch Center</h2>
+                    <p class="hero-text">
+                        These optional apps do not run as static HTML. Each needs its own runtime, port and configuration.
+                        Their source folders are currently empty; the commands below are reference instructions, not active launch buttons.
+                    </p>
+                </div>
+            </div>
+
+            <div class="launch-grid">
+                <article class="launch-card launch-world">
+                    <div class="launch-top">
+                        <span class="launch-id">WM</span>
+                        <div>
+                            <h3>World Monitor</h3>
+                            <p>Realtime global intelligence dashboard</p>
+                        </div>
+                    </div>
+                    <div class="launch-body">
+                        <p><strong>Folder:</strong> <code>worldmonitor</code></p>
+                        <p><strong>Stack:</strong> Node.js, Vite, TypeScript</p>
+                        <p><strong>Env:</strong> optional for basic local mode</p>
+                        <p><strong>Default URL:</strong> <code>http://localhost:5173</code></p>
+                    </div>
+                    <div class="launch-steps">
+                        <p><strong>Reference commands</strong></p>
+                        <p><code>cd worldmonitor</code></p>
+                        <p><code>npm install</code></p>
+                        <p><code>npm run dev</code></p>
+                    </div>
+                    <div class="launch-links">
+                        <span class="launch-link" title="Empty folder — no files installed">README <small>(missing)</small></span>
+                        <span class="launch-link" title="Empty folder — no files installed">package.json <small>(missing)</small></span>
+                        <span class="launch-link" title="Empty folder — no files installed">entry <small>(missing)</small></span>
+                    </div>
+                </article>
+
+                <article class="launch-card launch-miro">
+                    <div class="launch-top">
+                        <span class="launch-id">MF</span>
+                        <div>
+                            <h3>MiroFish</h3>
+                            <p>Frontend Vue + backend Python + Zep memory graph</p>
+                        </div>
+                    </div>
+                    <div class="launch-body">
+                        <p><strong>Folder:</strong> <code>MiroFish</code></p>
+                        <p><strong>Stack:</strong> Node.js 18+, Python 3.11-3.12, <code>uv</code>, Vue, Flask</p>
+                        <p><strong>Required configuration:</strong> <code>LLM_API_KEY</code>, <code>LLM_BASE_URL</code>, <code>LLM_MODEL_NAME</code>, <code>ZEP_API_KEY</code></p>
+                        <p><strong>Default URL:</strong> frontend <code>http://localhost:3000</code>, backend <code>http://localhost:5001</code></p>
+                    </div>
+                    <div class="launch-steps">
+                        <p><strong>Reference commands</strong></p>
+                        <p><code>cd MiroFish</code></p>
+                        <p><code>cp .env.example .env</code> then configure credentials</p>
+                        <p><code>npm run setup:all</code></p>
+                        <p><code>npm run dev</code></p>
+                    </div>
+                    <div class="launch-links">
+                        <span class="launch-link" title="Empty folder — no files installed">README <small>(missing)</small></span>
+                        <span class="launch-link" title="Empty folder — no files installed">package.json <small>(missing)</small></span>
+                        <span class="launch-link" title="Empty folder — no files installed">.env.example <small>(missing)</small></span>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </div>
+<a href="../hub/index.html" data-chain-link="hub" title="Project Hub" style="position:fixed;bottom:14px;right:14px;z-index:2147483000;display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:999px;background:rgba(20,16,16,.88);color:#f3ede4;font:600 12px/1 'Segoe UI',system-ui,sans-serif;text-decoration:none;border:1px solid rgba(255,255,255,.2);box-shadow:0 6px 18px rgba(0,0,0,.4);backdrop-filter:blur(8px);">☰ Project Hub</a>
+</body>
+</html>

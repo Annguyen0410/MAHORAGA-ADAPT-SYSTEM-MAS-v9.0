@@ -5,7 +5,7 @@ a coherent design language: a page header strip, an icon-led page title,
 stat tiles, section cards with headers, and empty-state hints. They only
 compose plain Qt widgets + object names, so styling stays in ``theme.py``.
 """
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
     QFrame,
@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -33,10 +34,51 @@ WEIGHT_DEMI = 63
 WEIGHT_BOLD = 75
 
 
+class ResponsiveGrid(QWidget):
+    """Reflow existing widgets without recreating their state or connections."""
+
+    def __init__(self, widgets, *, minimum_width=240, maximum_columns=4, parent=None):
+        super().__init__(parent)
+        self._widgets = list(widgets)
+        self._minimum_width = minimum_width
+        self._maximum_columns = maximum_columns
+        self._columns = 0
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(12)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._reflow()
+
+    def _reflow(self):
+        columns = max(1, min(self._maximum_columns, len(self._widgets) or 1,
+                            (max(0, self.width()) + 12) // (self._minimum_width + 12)))
+        if columns == self._columns:
+            return
+        while self._grid.count():
+            self._grid.takeAt(0)
+        for col in range(self._maximum_columns):
+            self._grid.setColumnStretch(col, 1 if col < columns else 0)
+        for index, widget in enumerate(self._widgets):
+            self._grid.addWidget(widget, index // columns, index % columns)
+        self._columns = columns
+        self.updateGeometry()
+
+    def minimumSizeHint(self):
+        # Multi-column minimum hints must not prevent the resize that would
+        # trigger single-column reflow inside a QScrollArea.
+        hint = super().minimumSizeHint()
+        return QSize(min(hint.width(), self._minimum_width), hint.height())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reflow()
+
+
 def page_header(title: str = "", subtitle: str = "") -> QWidget:
     """A calm, icon-led page header shared by full workspace pages."""
     header = QWidget()
     header.setObjectName("PageHeader")
+    header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout = QHBoxLayout(header)
     layout.setContentsMargins(4, 4, 4, 6)
     layout.setSpacing(10)
@@ -50,11 +92,13 @@ def page_header(title: str = "", subtitle: str = "") -> QWidget:
     text_col.setSpacing(1)
     lbl_title = QLabel(title)
     lbl_title.setObjectName("PageTitle")
+    lbl_title.setWordWrap(True)
     lbl_title.setFont(_font(18, WEIGHT_DEMI))
     text_col.addWidget(lbl_title)
     if subtitle:
         lbl_sub = QLabel(subtitle)
         lbl_sub.setObjectName("PageSubtitle")
+        lbl_sub.setWordWrap(True)
         lbl_sub.setFont(_font(11, WEIGHT_NORMAL))
         text_col.addWidget(lbl_sub)
     layout.addLayout(text_col, 1)
@@ -117,6 +161,7 @@ def section_header(title: str, subtitle: str = "", action: QPushButton | None = 
     """A section title row with an optional trailing action button."""
     row = QWidget()
     row.setObjectName("SectionHeaderRow")
+    row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout = QHBoxLayout(row)
     layout.setContentsMargins(2, 6, 2, 2)
     layout.setSpacing(8)
@@ -126,6 +171,7 @@ def section_header(title: str, subtitle: str = "", action: QPushButton | None = 
     text_col.setSpacing(1)
     lbl = QLabel(title)
     lbl.setObjectName("SectionTitle")
+    lbl.setWordWrap(True)
     lbl.setFont(_font(12, WEIGHT_BOLD))
     text_col.addWidget(lbl)
     if subtitle:
@@ -149,7 +195,7 @@ def empty_state(text: str, hint: str = "") -> QFrame:
     layout = QVBoxLayout(card)
     layout.setContentsMargins(18, 18, 18, 18)
     layout.setSpacing(6)
-    layout.setAlignment(Qt.AlignCenter)
+    layout.setAlignment(Qt.AlignVCenter)
 
     glyph = QLabel("✦")
     glyph.setObjectName("EmptyGlyph")
@@ -159,12 +205,14 @@ def empty_state(text: str, hint: str = "") -> QFrame:
     lbl = QLabel(text)
     lbl.setAlignment(Qt.AlignCenter)
     lbl.setObjectName("MutedLabel")
+    lbl.setWordWrap(True)
     layout.addWidget(lbl)
     card._empty_title = lbl
 
     if hint:
         sub = QLabel(hint)
         sub.setAlignment(Qt.AlignCenter)
+        sub.setWordWrap(True)
         sub.setObjectName("MutedLabel")
         layout.addWidget(sub)
     else:
@@ -197,6 +245,9 @@ def nav_button(label: str, glyph: str = "◆", tooltip: str = "") -> QPushButton
     button.setObjectName("NavButton")
     button.setCheckable(True)
     button.setToolTip(tooltip or label)
+    button.setAccessibleName(label)
+    button.setProperty("navGlyph", glyph)
+    button.setProperty("navLabel", label)
     return button
 
 
@@ -204,6 +255,9 @@ def action_tile(glyph: str, label: str, hint: str = "") -> QPushButton:
     """A large launcher tile (glyph on top, label below) for dashboard quick actions."""
     button = QPushButton()
     button.setObjectName("ActionTile")
+    button.setAccessibleName(label)
+    button.setAccessibleDescription(hint)
+    button.setToolTip(hint or label)
     layout = QVBoxLayout(button)
     layout.setContentsMargins(8, 12, 8, 10)
     layout.setSpacing(4)
@@ -221,6 +275,10 @@ def action_tile(glyph: str, label: str, hint: str = "") -> QPushButton:
         h.setObjectName("ActionHint")
         h.setAlignment(Qt.AlignCenter)
         layout.addWidget(h)
+    for child in button.findChildren(QLabel):
+        child.setWordWrap(True)
+        child.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        child.setProperty("decorative", True)
     button._label = lbl
     return button
 

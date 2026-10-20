@@ -19,12 +19,12 @@ from litebrowser.services import focus_service, history_service
 
 #: (id, menu line, minutes). The minutes are the point: a cup *is* a pace.
 POURS: tuple[tuple[str, str, int], ...] = (
-    ("ca-phe-den", "Cà phê đen · a short black sitting", 25),
-    ("tra-sen", "Trà sen · lotus tea, light and quiet", 25),
-    ("ca-phe-sua", "Cà phê sữa · the classic long one", 45),
-    ("tra-dao", "Trà đào · iced peach, warm afternoon", 45),
-    ("bac-xiu", "Bạc xỉu · a slow double", 50),
-    ("nuoc-cam", "Nước cam · a quick sip before class", 15),
+    ("ca-phe-den", "Black coffee · a short focus session", 25),
+    ("tra-sen", "Lotus tea · light and quiet", 25),
+    ("ca-phe-sua", "Milk coffee · the classic long session", 45),
+    ("tra-dao", "Peach tea · iced peach, warm afternoon", 45),
+    ("bac-xiu", "Light milk coffee · a slow double", 50),
+    ("nuoc-cam", "Orange juice · a quick sip before class", 15),
 )
 
 #: The pour a first-time user gets, and the fallback when a saved one is gone.

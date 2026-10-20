@@ -47,7 +47,10 @@ def _due_at_to_unix(due_at) -> int:
     if isinstance(due_at, int):
         return int(due_at)
     if isinstance(due_at, float):
-        return int(due_at)
+        try:
+            return int(due_at)
+        except (ValueError, OverflowError):
+            return 0
     s = str(due_at).strip()
     if not s:
         return 0
@@ -61,13 +64,13 @@ def _due_at_to_unix(due_at) -> int:
             # v6.4 pinned them to UTC, shifting due times by the UTC offset.
             dt = dt.astimezone()
         return int(dt.timestamp())
-    except ValueError:
+    except (ValueError, OverflowError, OSError):
         return 0
 
 
 def _read_list(path: str):
     data = read_json(path, [])
-    return data if isinstance(data, list) else []
+    return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else []
 
 
 def _write_list(path: str, items):
@@ -157,6 +160,9 @@ def remove_task(base_dir: str, task_id: str) -> bool:
             return False
         _write_list(tasks_path(base_dir), after)
         _touch_sync_state(base_dir)
+        from litebrowser.services import link_service
+
+        link_service.delete_links_for(base_dir, "task", task_id)
         history_service.log_event(base_dir, "task", task_id, "Task deleted", {"task_id": task_id})
         return True
 
@@ -280,29 +286,6 @@ def remove_board(base_dir: str, board_id: str) -> bool:
         _touch_sync_state(base_dir)
         history_service.log_event(base_dir, "board", board_id, "Board deleted", {"board_id": board_id})
         return True
-
-
-def add_board_node(base_dir: str, board_id: str, title: str, kind: str = "sticky", payload: str = "", x: float = 40, y: float = 40):
-    with profile_locked(base_dir):
-        items = _read_list(boards_path(base_dir))
-        for board in items:
-            if board.get("id") == board_id:
-                node = {
-                    "id": uuid.uuid4().hex,
-                    "kind": kind,
-                    "title": title or "Card",
-                    "x": float(x),
-                    "y": float(y),
-                    "color": "#c39d63",
-                    "payload": payload or "",
-                }
-                board.setdefault("nodes", []).append(node)
-                board["updated_at"] = _now()
-                _write_list(boards_path(base_dir), items)
-                _touch_sync_state(base_dir)
-                history_service.log_event(base_dir, "board-note", node["title"], "Board card added", {"board_id": board_id, "node_id": node["id"]})
-                return node
-        return None
 
 
 def _normalize_board(board):

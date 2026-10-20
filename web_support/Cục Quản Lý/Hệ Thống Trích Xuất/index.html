@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Export Studio</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">Publishing Studio</p>
+                <h1>Export Studio</h1>
+                <p class="hero-text">
+                    Collect system metadata, file catalog entries and Visualgraph topics for export.
+                    Export everything or choose a system, then preview your selected format before downloading. File contents are not included.
+                </p>
+            </div>
+            <div class="hero-side">
+                <a class="back-link" href="../index.html">Back to Management Hub</a>
+                <div class="studio-note">
+                    <strong>Supported formats:</strong>
+                    <span>JSON, CSV, TXT, Markdown, HTML, DOC and PDF through the print dialog.</span>
+                </div>
+            </div>
+        </header>
+
+        <section class="summary-grid" id="summaryGrid"></section>
+
+        <section class="workspace">
+            <article class="panel control-panel">
+                <div class="section-head">
+                    <h2>Configure Export</h2>
+                    <p>Choose the data scope, output format and report detail.</p>
+                </div>
+                <div class="field">
+                    <label for="datasetScope">Export scope</label>
+                    <select id="datasetScope">
+                        <option value="all">All systems</option>
+                        <option value="energy">Energy metadata only</option>
+                        <option value="storage">File catalog only</option>
+                        <option value="visualgraph">Visualgraph only</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="formatSelect">Output format</label>
+                    <select id="formatSelect">
+                        <option value="json">JSON</option>
+                        <option value="csv">CSV</option>
+                        <option value="txt">TXT</option>
+                        <option value="md">MD</option>
+                        <option value="html">HTML</option>
+                        <option value="doc">DOC</option>
+                        <option value="pdf">PDF</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="reportMode">Report mode</label>
+                    <select id="reportMode">
+                        <option value="full">Full detail</option>
+                        <option value="summary">Executive summary</option>
+                        <option value="audit">Data audit</option>
+                    </select>
+                </div>
+                <div class="button-row">
+                    <button id="refreshBtn" class="secondary-btn" type="button">Refresh data</button>
+                    <button id="exportBtn" class="primary-btn" type="button">Export file</button>
+                </div>
+                <div class="export-tips" id="exportTips"></div>
+
+                <div class="backup-block">
+                    <div class="section-head compact">
+                        <h2>Backup / Restore</h2>
+                        <p>Export local catalog metadata and graph topics, or restore a backup. Original file contents are not backed up.</p>
+                    </div>
+                    <div class="field">
+                        <label for="backupFormat">Backup format</label>
+                        <select id="backupFormat">
+                            <option value="json">JSON backup</option>
+                            <option value="zip">ZIP backup</option>
+                        </select>
+                    </div>
+                    <div class="button-row">
+                        <button id="backupBtn" class="primary-btn" type="button">Export backup</button>
+                        <label class="restore-label">
+                            <input id="restoreInput" type="file" accept=".json,.zip,application/json,application/zip">
+                            <span>Import restore</span>
+                        </label>
+                    </div>
+                    <div class="export-tips" id="restoreTips"></div>
+                </div>
+            </article>
+
+            <article class="panel preview-panel">
+                <div class="preview-head">
+                    <div>
+                        <h2>Preview Studio</h2>
+                        <p id="previewMeta">Building your export preview.</p>
+                    </div>
+                    <div class="preview-tags">
+                        <span id="scopeTag">all</span>
+                        <span id="formatTag">json</span>
+                        <span id="modeTag">full</span>
+                    </div>
+                </div>
+                <pre id="previewBox" class="preview-box"></pre>
+            </article>
+        </section>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

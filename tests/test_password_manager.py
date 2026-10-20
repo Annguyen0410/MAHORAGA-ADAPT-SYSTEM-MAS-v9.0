@@ -33,6 +33,13 @@ class TestPasswordManager(unittest.TestCase):
         creds = password_manager.get_credentials_for(self.base, "https://example.com/account", "master")
         self.assertEqual(creds, {"username": "alice", "password": "secret"})
 
+    def test_credentials_never_cross_origins(self):
+        self.assertTrue(password_manager.add_password(self.base, "https://example.com/login", "alice", "secret", "master"))
+        for url in ("https://example.com.evil.test/", "https://evil-example.com/", "http://example.com/", "https://example.com:444/", "https://example.com@evil.test/"):
+            with self.subTest(url=url):
+                self.assertFalse(password_manager.get_credentials_for(self.base, url, "master"))
+        self.assertEqual(password_manager.get_credentials_for(self.base, "https://example.com:443/account", "master")["username"], "alice")
+
     def test_legacy_vault_loads_and_resave_migrates_to_v2(self):
         master = "master"
         cipher = password_manager._get_cipher(master)

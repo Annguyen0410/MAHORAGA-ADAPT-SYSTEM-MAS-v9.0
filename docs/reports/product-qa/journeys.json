@@ -1,0 +1,226 @@
+[
+  {
+    "name": "locked Home does not expose private note titles",
+    "ok": true
+  },
+  {
+    "name": "note switching saves the previous draft",
+    "ok": true
+  },
+  {
+    "name": "deep link clears stale note filters",
+    "ok": true
+  },
+  {
+    "name": "concurrent editor does not overwrite newer content",
+    "ok": true
+  },
+  {
+    "name": "explicit Save keeps both conflicting versions",
+    "ok": true
+  },
+  {
+    "name": "Library Refresh works without a query",
+    "ok": true
+  },
+  {
+    "name": "Library note filter can be selected",
+    "ok": true
+  },
+  {
+    "name": "study journey starts one linked focus session",
+    "ok": true
+  },
+  {
+    "name": "home-wide remains within window width",
+    "ok": true
+  },
+  {
+    "name": "home-narrow remains within window width",
+    "ok": true
+  },
+  {
+    "name": "board paper defaults to white independently from chrome",
+    "ok": true
+  },
+  {
+    "name": "native gesture creates pen",
+    "ok": true
+  },
+  {
+    "name": "native gesture creates pencil",
+    "ok": true
+  },
+  {
+    "name": "native gesture creates marker",
+    "ok": true
+  },
+  {
+    "name": "native gesture creates line",
+    "ok": true
+  },
+  {
+    "name": "native gesture creates rectangle",
+    "ok": true
+  },
+  {
+    "name": "native gesture creates ellipse",
+    "ok": true
+  },
+  {
+    "name": "Undo removes the last drawn shape",
+    "ok": true
+  },
+  {
+    "name": "Redo restores the shape",
+    "ok": true
+  },
+  {
+    "name": "custom drawing color has visible hex feedback",
+    "ok": true
+  },
+  {
+    "name": "paper color is independently customizable",
+    "ok": true
+  },
+  {
+    "name": "zoom preserves scene/viewport coordinate mapping",
+    "ok": true
+  },
+  {
+    "name": "middle-drag pans without drawing",
+    "ok": true
+  },
+  {
+    "name": "eraser removes ink and is undoable",
+    "ok": true
+  },
+  {
+    "name": "More Save persists full drawing records and paper",
+    "ok": true
+  },
+  {
+    "name": "More Clear ink is genuinely clickable",
+    "ok": true
+  },
+  {
+    "name": "More New board selects a fresh white board",
+    "ok": true
+  },
+  {
+    "name": "More Delete removes only the selected board",
+    "ok": true
+  },
+  {
+    "name": "Calendar import/export labels are explicit and visible",
+    "ok": true
+  },
+  {
+    "name": "Weekly Plan opens calmly with advanced forms collapsed",
+    "ok": true
+  },
+  {
+    "name": "Weekly Plan day labels use real line breaks",
+    "ok": true
+  },
+  {
+    "name": "dark appearance reaches every Desktop workspace",
+    "ok": true
+  },
+  {
+    "name": "light appearance reaches every Desktop workspace",
+    "ok": true
+  },
+  {
+    "name": "system appearance reaches every Desktop workspace",
+    "ok": true
+  },
+  {
+    "name": "custom accent persists",
+    "ok": true
+  },
+  {
+    "name": "routine refresh preserves unsaved Settings drafts",
+    "ok": true
+  },
+  {
+    "name": "browser reload turns into accessible Stop",
+    "ok": true
+  },
+  {
+    "name": "browser stop/loading state resets on failure",
+    "ok": true
+  },
+  {
+    "name": "browser Back reflects engine history",
+    "ok": true
+  },
+  {
+    "name": "browser Back navigates and enables Forward",
+    "ok": true
+  },
+  {
+    "name": "browser Forward returns to the newer page",
+    "ok": true
+  },
+  {
+    "name": "browser zoom reset is a real keyboard-focusable button",
+    "ok": true
+  },
+  {
+    "name": "internal new tab renders its heading",
+    "ok": true
+  },
+  {
+    "name": "compact Settings content fits viewport",
+    "ok": true
+  },
+  {
+    "name": "narrow internal page retains rendered content after workspace switching",
+    "ok": true
+  },
+  {
+    "name": "narrow browser retains visible panel controls",
+    "ok": true
+  },
+  {
+    "name": "repeated navigation does not accumulate timers",
+    "ok": true
+  },
+  {
+    "name": "folder preview runs asynchronously with controls disabled",
+    "ok": true
+  },
+  {
+    "name": "folder preview recovers controls without writing a payload",
+    "ok": true
+  },
+  {
+    "name": "appearance updates another open profile window",
+    "ok": true
+  },
+  {
+    "name": "lock hides Personal and clears AI preview",
+    "ok": true
+  },
+  {
+    "name": "profile lock relocks every open window",
+    "ok": true
+  },
+  {
+    "name": "failed save cancels window close",
+    "ok": true
+  },
+  {
+    "name": "session persists before closing",
+    "ok": true
+  },
+  {
+    "name": "normal close shuts down embedded resources",
+    "ok": true
+  },
+  {
+    "name": "reopening restores saved note contents",
+    "ok": true
+  }
+]

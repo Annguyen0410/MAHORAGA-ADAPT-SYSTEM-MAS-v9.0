@@ -58,6 +58,38 @@ class _SettingsCard(unittest.TestCase):
         self.shell.deleteLater()
         self._tmp.cleanup()
 
+    def test_preview_uses_background_relay_and_keeps_controls_disabled(self):
+        from concurrent.futures import Future
+        sync_folder.set_folder(self.base, self.folder)
+        self.page._refresh_folder_sync()
+        submitted = []
+        with mock.patch.object(_StubShell, "run_in_background", create=True, side_effect=lambda work, done: submitted.append((work, done))):
+            self.page.btn_preview_sync.click()
+            self.page._refresh_folder_sync()
+            self.page._preview_sync()
+        self.assertEqual(len(submitted), 1)
+        for button in (self.page.btn_preview_sync, self.page.btn_apply_sync, self.page.btn_choose_sync_folder, self.page.btn_clear_sync_folder):
+            self.assertFalse(button.isEnabled())
+        future = Future()
+        future.set_result(submitted[0][0]())
+        with mock.patch.object(pages_module.QMessageBox, "information") as told:
+            submitted[0][1](future)
+        self.assertIn("already in step", told.call_args[0][2])
+        self.assertTrue(self.page.btn_preview_sync.isEnabled())
+        self.assertFalse(self.page._folder_sync_running)
+
+    def test_background_preview_failure_recovers_controls(self):
+        from concurrent.futures import Future
+        sync_folder.set_folder(self.base, self.folder)
+        self.page._folder_sync_running = True
+        future = Future()
+        future.set_exception(OSError("offline drive"))
+        with mock.patch.object(pages_module.QMessageBox, "warning") as told:
+            self.page._finish_folder_preview(future)
+        self.assertIn("offline drive", told.call_args[0][2])
+        self.assertTrue(self.page.btn_choose_sync_folder.isEnabled())
+        self.assertIn("No data was changed", self.page.lbl_sync_status.text())
+
     def test_the_card_starts_switched_off(self):
         self.assertEqual(self.page.lbl_sync_folder.text(), "No folder chosen")
         self.assertFalse(self.page.btn_preview_sync.isEnabled())

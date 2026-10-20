@@ -31,6 +31,7 @@ list they act on.
 | `best coffee recipes` | Web search with the active engine |
 | `b` | **Feature finder** — a live list of matching features (workspaces, Personal pages, sites, commands). Enter/click jumps there |
 | `/task Buy milk` | Runs the command (creates a task) |
+| `/capture` | Opens a compact form for a note, task, saved link, or flashcard; page title, URL, and selected text are prefilled when available |
 | `!` then a word | (if supported by the search engine) exact web search |
 
 **Feature finder tips**
@@ -85,6 +86,12 @@ if you already poured today and nothing is due, it says nothing at all.
 
 ## 3. Browser workspace
 
+### Research workspaces
+
+Open the browser's **Options → Sessions & Spaces → Save Research Workspace…** to save the current regular tabs as a named research collection and link one existing note and one existing task. The note and task remain in their original profile stores; the workspace records references, not copies. Incognito tabs are excluded. Use **Restore Tab Set…** to inspect saved collections and open one with **Open & merge**. The **⋯** menu includes **Replace current workspace…**; Mei asks before closing the tabs in the current browser workspace, and closed tabs remain available through Reopen Closed Tab.
+
+Saving or restoring a research workspace makes it the active **Research desk** on Home. Home shows its linked items and offers **Resume tabs**, **Ask AI with context**, and **Capture to desk**. Captures from that desk link the new note, task, saved page, or flashcard back to the same collection. You can find named research workspaces from Ctrl+K by title.
+
 The left desk holds your **workspace tabs** (groups with color dots, speaker chips for playing tabs, hibernation state). The divider between the desk and the page can be:
 
 - **clicked once** → collapse/expand,
@@ -128,13 +135,24 @@ The left rail inside Personal has its own collapse/expand (click the «/≫ butt
 - **👁 Read my browser** (on by default) attaches the page you are reading — its real text, plus
 the open tabs — to every question, labelled untrusted so the assistant reads it without obeying
 it. Turn it off for purely local questions.
+- **Use research desk** is off by default. Turning it on adds the active workspace's tab list and linked item contents to the next question, and keeps the preference for that profile. Linked note and task text may be sent to the selected AI provider; the checkbox tooltip discloses this, and the assembled context appears under **Show sources**. Mei treats those records as untrusted reference data. Incognito page contents are excluded even when **Read my browser** is enabled.
 - **Capture tab** (Ollama only) grabs the visible page as an in-memory screenshot for local vision.
 - `/ask your question` asks with the current workspace context; the Insights panel shows what the AI is reading.
 - The workspace is passcode-gated: the first time you open it you set a passcode; later opens prompt for it.
 
 ## 6. Themes & focus
 
-- `/theme <id>` — 16 café themes; `/accent <id>` — accent presets. **Auto day/night** flips to the sibling palette at 6:00/18:00.
+The theme picker includes additional art-directed families such as Aurora Glass, Sakura Twilight, Cyberpunk Neon, Midnight AMOLED, Arctic Aurora, Retro Terminal, Paper Studio, Monochrome Pro, Dreamscape, Solarized Focus, High Contrast, and Glasshouse. The Glasshouse treatment uses opaque botanical surfaces for consistent readability across platforms. Themes recolor Mei's interface and new-tab page; they do not restyle third-party websites.
+
+On Home, select **Customize Home** to hide, reorder (drag rows), or resize the four desk cards for the current profile. **Reset to default** restores only the dashboard layout.
+
+In **Settings → Interface**, choose **Motion → System**, **Reduce**, or **Allow**.
+System follows Windows' reduced-animation preference when the OS exposes it; on
+other systems it keeps motion enabled unless you choose **Reduce**. This is saved
+per profile. Reduce removes the new-tab page's animation and makes the browser tab
+desk collapse immediately; it does not change animation or styling on websites.
+
+- `/theme <id>` — 32 café and art-directed themes; `/accent <id>` — accent presets. **Auto day/night** flips paired palettes at 6:00/18:00; standalone art themes stay selected.
 - **One theme, everywhere.** The dashboard charts, the tab desk, the connection chip and the
   new-tab page repaint when the theme changes (including the automatic 6:00/18:00 flip), so
   nothing is left in yesterday's colours. The "Your Week" and "Where time goes" charts sit on

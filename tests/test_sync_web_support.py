@@ -11,6 +11,7 @@ is pure ASCII again so it cannot rot the same way.
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 import litebrowser  # noqa: F401  activates the Qt compatibility shim
 from litebrowser.core import app_paths
@@ -79,6 +80,63 @@ class TestDeadPayloadIsSkipped(unittest.TestCase):
             self.assertFalse(
                 os.path.exists(os.path.join(dest, "MAS - Mahoraga Adapt System", "server_test.log"))
             )
+
+    def test_private_sources_and_secrets_never_enter_a_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, dest = os.path.join(tmp, "src"), os.path.join(tmp, "out")
+            for relative in ("hub/index.html", "hub/style.css", "app/vendor/font.woff2", "app/server/.env", "app/server/sessions.json", "app/.env", "app/sessions.json", "app/config.local.json", "app/node_modules/x.js", "profiles/p/index.html", "app/tests/test.js"):
+                _write(os.path.join(source, relative))
+            files, _ = sync_web_support.sync(source, dest, log=QUIET)
+            self.assertEqual(files, 3)
+            actual = {os.path.relpath(os.path.join(root, name), dest).replace(os.sep, '/') for root, _, names in os.walk(dest) for name in names}
+            self.assertEqual(actual, {"hub/index.html", "hub/style.css", "app/vendor/font.woff2"})
+
+    def test_stale_private_payload_is_pruned_without_reading_contents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, dest = os.path.join(tmp, "src"), os.path.join(tmp, "out")
+            _write(os.path.join(source, "hub", "index.html"), "fresh")
+            for relative in ("hub/index.html", "app/server/.env", "app/server/sessions.json", "app/.env", "app/config.local.json", "app/node_modules/x.js", "profiles/p/index.html", "app/old.log", ".hidden/secret.json"):
+                _write(os.path.join(dest, relative), "old")
+            sync_web_support.sync(source, dest, log=QUIET)
+            actual = {os.path.relpath(os.path.join(root, name), dest).replace(os.sep, '/') for root, _, names in os.walk(dest) for name in names}
+            self.assertEqual(actual, {"hub/index.html"})
+            with open(os.path.join(dest, "hub", "index.html"), encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), "fresh")
+
+    def test_failed_private_cleanup_fails_the_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, dest = os.path.join(tmp, "src"), os.path.join(tmp, "out")
+            _write(os.path.join(source, "index.html"))
+            _write(os.path.join(dest, "app", "server", ".env"))
+            with mock.patch.object(sync_web_support.shutil, "rmtree", side_effect=PermissionError("locked")):
+                self.assertEqual(sync_web_support.main([source, dest]), 1)
+            self.assertFalse(os.path.exists(os.path.join(dest, "index.html")))
+
+    def test_failed_copy_fails_the_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = os.path.join(tmp, "src")
+            _write(os.path.join(source, "index.html"))
+            with mock.patch.object(sync_web_support.shutil, "copy2", side_effect=OSError("disk full")):
+                self.assertEqual(sync_web_support.main([source, os.path.join(tmp, "out")]), 1)
+
+    def test_public_bundle_sources_survive_ignore_rules(self):
+        import subprocess
+        git_dir = os.path.join(ROOT, '.git')
+        if not os.path.exists(git_dir):
+            self.skipTest('Git metadata absent')
+        paths = [str(path).replace(os.sep, '/') for path in sync_web_support.public_files(os.path.join(ROOT, 'web_support')) if not any(part in ('extension',) for part in path.parts) and path.name != 'replace_colors.js']
+        result = subprocess.run(['git', 'check-ignore', '-z', '--stdin'], input='\0'.join('web_support/' + path for path in paths).encode('utf-8') + b'\0', capture_output=True, cwd=ROOT, timeout=30)
+        self.assertIn(result.returncode, (0, 1), result.stderr)
+        self.assertEqual(result.stdout, b'', 'Public bundle assets must not disappear from a clean checkout')
+        for private in ('web_support/MAS - Mahoraga Adapt System/server/.env', 'web_support/MAS - Mahoraga Adapt System/server/sessions.json'):
+            result = subprocess.run(['git', 'check-ignore', private], capture_output=True, cwd=ROOT, timeout=30)
+            self.assertEqual(result.returncode, 0, 'Private stores must stay ignored')
+
+    def test_nested_or_identical_destinations_are_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for dest in (tmp, os.path.join(tmp, "out")):
+                with self.assertRaises(ValueError):
+                    sync_web_support.sync(tmp, dest, log=QUIET)
 
     def test_prune_reports_nothing_for_a_missing_dest(self):
         with tempfile.TemporaryDirectory() as tmp:

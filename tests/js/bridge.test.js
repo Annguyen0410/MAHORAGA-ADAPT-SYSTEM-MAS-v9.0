@@ -69,6 +69,10 @@ test("anything that is not a pairing code is refused", () => {
     "MEI1|h|65536|t",
     "MEI1|127.0.0.1/x|18444|t",
     "MEI1|has space|18444|t",
+    "MEI1|user@host|18444|t",
+    "MEI1|host?redirect=evil|18444|t",
+    "MEI1|host:123|18444|t",
+    "MEI1|host|١٢٣|t",
     null,
     undefined,
     42,
@@ -124,6 +128,7 @@ test("URLs point at the bridge endpoints the desktop serves", () => {
   if (bridge.origin(settings) !== "http://127.0.0.1:18444") throw new Error("bad origin");
   if (bridge.ingestUrl(settings) !== "http://127.0.0.1:18444/api/mobile/ingest") throw new Error("bad ingest url");
   if (bridge.pingUrl(settings) !== "http://127.0.0.1:18444/api/mobile/ping") throw new Error("bad ping url");
+  if (bridge.origin({ host: "::1", port: 18444 }) !== "http://[::1]:18444") throw new Error("IPv6 must be bracketed");
 });
 
 /* --- payloads ------------------------------------------------------------ */
@@ -207,10 +212,10 @@ test("replies become one readable sentence, ok or not", () => {
 
 test("the capability line mentions the version, the mode, and a missing action", () => {
   const full = bridge.capabilitiesLine({ version: "1.0.0.0", mode: "local", capabilities: ["save_page", "save_selection"] });
-  if (!full.includes("1.0.0.0") || !full.includes("chỉ máy này")) throw new Error("got " + full);
-  if (full.includes("chưa hỗ trợ")) throw new Error("a capable bridge must not be warned about");
+  if (!full.includes("1.0.0.0") || !full.includes("this device only")) throw new Error("got " + full);
+  if (full.includes("does not support")) throw new Error("a capable bridge must not be warned about");
   const old = bridge.capabilitiesLine({ version: "0.7.1.0", mode: "lan", capabilities: ["save_page"] });
-  if (!old.includes("LAN") || !old.includes("chưa hỗ trợ gửi đoạn bôi đen")) throw new Error("got " + old);
+  if (!old.includes("LAN") || !old.includes("does not support sending selections")) throw new Error("got " + old);
 });
 
 /* --- talking to the bridge (fake fetch, real logic) ----------------------- */
@@ -231,7 +236,7 @@ async function run() {
     const log = [];
     const reply = await bridge.post({}, "save_page", { url: "https://x/y" }, recordingFetch(jsonResponse(200, {}), log));
     if (reply.ok) throw new Error("a token-less call must not succeed");
-    if (!reply.message.includes("Chưa ghép nối")) throw new Error("got " + reply.message);
+    if (!reply.message.includes("not paired")) throw new Error("got " + reply.message);
     if (log.length) throw new Error("no request should have been made");
   });
 
@@ -305,7 +310,19 @@ async function run() {
       40
     );
     if (reply.status !== 0) throw new Error("a timeout must be status 0");
-    if (!reply.message.includes("không trả lời")) throw new Error("got " + reply.message);
+    if (!reply.message.includes("did not respond")) throw new Error("got " + reply.message);
+  });
+
+  await testAsync("a stalled or failed response body never hangs or rejects", async () => {
+    const settings = { token: "tok" };
+    const hung = await bridge.requestJson(settings, bridge.pingUrl(settings), {}, () => Promise.resolve({
+      status: 200, text: () => new Promise(() => {}),
+    }), 30);
+    if (hung.ok || !hung.message.includes("did not respond")) throw new Error("body deadline missing");
+    const failed = await bridge.requestJson(settings, bridge.pingUrl(settings), {}, () => Promise.resolve({
+      status: 200, text: () => Promise.reject(new Error("body failed")),
+    }), 30);
+    if (failed.ok || !failed.message.includes("body failed")) throw new Error("body rejection escaped");
   });
 
   await testAsync("ping reports the desktop version, mode and capabilities", async () => {

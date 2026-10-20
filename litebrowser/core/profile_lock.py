@@ -17,6 +17,22 @@ import os
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from functools import wraps
+
+
+def profile_transaction(function):
+    """Serialize an entire profile read/modify/write, not only its final write.
+
+    Service functions take ``base_dir`` first; the RLock permits nested service
+    calls while preserving that transaction boundary across UI/bridge threads.
+    """
+    @wraps(function)
+    def locked(base_dir, *args, **kwargs):
+        with profile_locked(base_dir):
+            return function(base_dir, *args, **kwargs)
+
+    return locked
+
 
 _registry_lock = threading.Lock()
 _locks: dict[str, threading.RLock] = {}
@@ -24,7 +40,7 @@ _process_locks: dict[str, object] = {}
 
 
 def _profile_key(base_dir: str) -> str:
-    return os.path.normcase(os.path.abspath(base_dir))
+    return os.path.normcase(os.path.realpath(base_dir))
 
 
 @contextmanager

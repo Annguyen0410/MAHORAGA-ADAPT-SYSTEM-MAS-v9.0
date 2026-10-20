@@ -35,7 +35,10 @@
   function cleanHost(value) {
     var host = String(value == null ? "" : value).trim();
     if (!host) return "";
-    if (/[\s/\\|,]/.test(host)) return "";
+    if (host.length > 253 || /[\s/\\|,?#@%]/.test(host)) return "";
+    if (host.indexOf(":") >= 0) {
+      if (!/^(?:[0-9a-f]*:){2,}[0-9a-f.]*$/i.test(host.replace(/^\[|\]$/g, ""))) return "";
+    } else if (!/^[a-z0-9.-]+$/i.test(host)) return "";
     return host;
   }
 
@@ -53,10 +56,10 @@
     var host = cleanHost(parts[1]);
     var rawPort = parts[2].trim();
     var token = parts[3].trim();
-    if (!host || !token || !/^\d+$/.test(rawPort)) return null;
+    if (!host || !token || !/^[0-9]{1,5}$/.test(rawPort)) return null;
     var port = Number(rawPort);
     if (!(port >= 1 && port <= 65535)) return null;
-    if (token.length > MAX_TOKEN_CHARS) return null;
+    if (token.length > MAX_TOKEN_CHARS || /[\r\n\x00]/.test(token)) return null;
     return { host: host, port: port, token: token };
   }
 
@@ -77,7 +80,8 @@
 
   function origin(settings) {
     var s = normalizeSettings(settings);
-    return "http://" + s.host + ":" + s.port;
+    var host = s.host.indexOf(":") >= 0 ? "[" + s.host.replace(/^\[|\]$/g, "") + "]" : s.host;
+    return "http://" + host + ":" + s.port;
   }
 
   function ingestUrl(settings) {
@@ -162,13 +166,13 @@
     var result = (body && body.result) || {};
     switch ((body && body.action) || "") {
       case "save_page":
-        return "Đã gửi tab sang Mei: " + (result.url || "");
+        return "Tab sent to Mei: " + (result.url || "");
       case "save_selection":
-        if (result.card_id != null) return "Đã lưu thành thẻ: " + (result.front || "");
-        if (result.saved_page_id != null) return "Đã lưu trang: " + (result.url || "");
-        return "Đã lưu ghi chú vào Mei" + (result.category ? " (" + result.category + ")" : "");
+        if (result.card_id != null) return "Saved as a flashcard: " + (result.front || "");
+        if (result.saved_page_id != null) return "Page saved: " + (result.url || "");
+        return "Note saved in Mei" + (result.category ? " (" + result.category + ")" : "");
       default:
-        return "Mei đã nhận.";
+        return "Received by Mei.";
     }
   }
 
@@ -176,15 +180,15 @@
   function replyMessage(body) {
     if (body && body.ok) return describeReply(body);
     var error = (body && body.error) || {};
-    return error.message || error.code || "Mei từ chối yêu cầu.";
+    return error.message || error.code || "Mei rejected the request.";
   }
 
   function capabilitiesLine(body) {
     var b = body || {};
     var caps = Array.isArray(b.capabilities) ? b.capabilities : [];
-    var line = "Mei " + (b.version || "?") + " · " + (b.mode === "lan" ? "LAN" : "chỉ máy này");
+    var line = "Mei " + (b.version || "?") + " · " + (b.mode === "lan" ? "LAN" : "this device only");
     if (caps.indexOf("save_selection") < 0) {
-      line += " · bản Mei này chưa hỗ trợ gửi đoạn bôi đen";
+      line += " · this Mei version does not support sending selections";
     }
     return line;
   }
@@ -197,18 +201,18 @@
       ok: false,
       body: null,
       message:
-        "Chưa gọi được Mei ở " +
+        "Could not reach Mei at " +
         origin(settings) +
         " (" +
         detail +
-        "). Kiểm tra Mei → Settings → Mobile bridge đang bật, và mã ghép nối còn đúng.",
+        "). Check that Mei → Settings → Mobile bridge is enabled and the pairing code is current.",
     };
   }
 
   function failureDetail(error, timeoutMs) {
     if (error && error.name === "AbortError") {
       var seconds = Math.max(1, Math.round((timeoutMs || REQUEST_TIMEOUT_MS) / 1000));
-      return "Mei không trả lời sau " + seconds + "s";
+      return "Mei did not respond after " + seconds + "s";
     }
     return (error && (error.message || error.name)) || "network error";
   }
@@ -229,31 +233,28 @@
   function requestJson(settings, url, init, fetchImpl, timeoutMs) {
     var s = normalizeSettings(settings);
     var impl = fetchImpl || (typeof fetch === "function" ? fetch : null);
-    if (!impl) return Promise.resolve(unreachable(s, "trình duyệt này không có fetch"));
+    if (!impl) return Promise.resolve(unreachable(s, "this browser does not support fetch"));
     var budget = timeoutMs || REQUEST_TIMEOUT_MS;
 
     var options = Object.assign({}, init);
-    if (typeof AbortController !== "function" || options.signal) {
-      return sendRequest(impl, url, options).then(readReply, function (error) {
-        return unreachable(s, failureDetail(error, budget));
-      });
-    }
-
-    var controller = new AbortController();
-    options.signal = controller.signal;
-    var timer = setTimeout(function () {
-      controller.abort();
-    }, budget);
-    return sendRequest(impl, url, options).then(
-      function (response) {
-        clearTimeout(timer);
-        return readReply(response);
-      },
-      function (error) {
-        clearTimeout(timer);
-        return unreachable(s, failureDetail(error, budget));
-      }
-    );
+    var controller = typeof AbortController === "function" && !options.signal ? new AbortController() : null;
+    if (controller) options.signal = controller.signal;
+    // Keep the deadline through response.text(), not just response headers.
+    // Promise.race also bounds fetch implementations that ignore abort.
+    var timer;
+    var deadline = new Promise(function (resolve) {
+      timer = setTimeout(function () {
+        if (controller) controller.abort();
+        resolve(unreachable(s, failureDetail({ name: "AbortError" }, budget)));
+      }, budget);
+    });
+    var request = sendRequest(impl, url, options).then(readReply).catch(function (error) {
+      return unreachable(s, failureDetail(error, budget));
+    });
+    return Promise.race([request, deadline]).then(function (reply) {
+      clearTimeout(timer);
+      return reply;
+    });
   }
 
   function readReply(response) {
@@ -271,12 +272,12 @@
           status: response.status,
           ok: false,
           body: null,
-          message: "Mei trả lời không đọc được (HTTP " + response.status + ").",
+          message: "Unreadable response from Mei (HTTP " + response.status + ").",
         };
       }
       return {
         status: response.status,
-        ok: Boolean(body.ok),
+        ok: response.status >= 200 && response.status < 300 && body.ok === true,
         body: body,
         message: replyMessage(body),
       };
@@ -288,7 +289,7 @@
       status: 0,
       ok: false,
       body: null,
-      message: "Chưa ghép nối Mei — dán mã ghép nối (MEI1|host|port|token) từ Mei → Settings → Mobile bridge rồi bấm Nối.",
+      message: "Mei is not paired — paste the pairing code (MEI1|host|port|token) from Mei → Settings → Mobile bridge and press Connect.",
     };
   }
 

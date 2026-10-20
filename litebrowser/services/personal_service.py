@@ -1,3 +1,4 @@
+import copy
 import os
 import re
 import time
@@ -5,12 +6,16 @@ import time
 from litebrowser.core import prefs
 from litebrowser.core.log import get_logger
 from litebrowser.core.profile_lock import profile_locked
-from litebrowser.core.storage_utils import write_text_atomic
+from litebrowser.core.storage_utils import safe_child_path, write_text_atomic
 from litebrowser.services import history_service
 
 _log = get_logger("personal_service")
 
 NOTE_EXTENSIONS = (".md", ".txt")
+
+
+class NoteConflictError(OSError):
+    """A newer note exists on disk; keep the editor draft instead of overwriting."""
 
 _cache = {"notes": None, "base_dir": "", "notes_time": 0, "notes_ttl": 2.0}
 
@@ -38,7 +43,9 @@ def _get_cached_notes(base_dir: str) -> list[dict[str, str]]:
             for fn in sorted(files):
                 if not fn.lower().endswith(NOTE_EXTENSIONS):
                     continue
-                path = os.path.join(root, fn)
+                path = _note_path(base_dir, os.path.relpath(os.path.join(root, fn), notes_dir(base_dir)))
+                if not path:
+                    continue
                 try:
                     with open(path, "r", encoding="utf-8", errors="ignore") as f:
                         text = f.read()
@@ -57,7 +64,9 @@ _WIN_FORBIDDEN_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def notes_dir(base_dir: str) -> str:
-    path = os.path.join(prefs.vault_path(base_dir), "notes")
+    path = safe_child_path(base_dir, "SafeVault/notes")
+    if not path:
+        raise OSError("The notes folder must stay inside this profile")
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -72,9 +81,7 @@ def _normalize_category(category: str) -> str:
 
 
 def _note_path(base_dir: str, note_id: str) -> str:
-    root = os.path.abspath(notes_dir(base_dir))
-    path = os.path.abspath(os.path.join(root, str(note_id or "")))
-    return path if path.startswith(root + os.sep) else ""
+    return safe_child_path(notes_dir(base_dir), note_id)
 
 
 def _note_record_from_path(base_dir: str, path: str, text: str | None = None):
@@ -102,6 +109,8 @@ def _safe_name(title: str) -> str:
     raw = re.sub(r"-{2,}", "-", raw).strip(" .") or "note"
     if len(raw) > 80:
         raw = raw[:80].rstrip(" .") or "note"
+    if raw.split(".", 1)[0].upper() in {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]}:
+        raw = "_" + raw
     return raw
 
 
@@ -109,8 +118,8 @@ def list_notes(base_dir: str, query: str = "") -> list[dict[str, str]]:
     q = (query or "").strip().lower()
     if q:
         items = _get_cached_notes(base_dir)
-        return [it for it in items if q in f"{it['title']}\n{it['category']}\n{it['content']}".lower()]
-    return list(_get_cached_notes(base_dir))
+        return copy.deepcopy([it for it in items if q in f"{it['title']}\n{it['category']}\n{it['content']}".lower()])
+    return copy.deepcopy(_get_cached_notes(base_dir))
 
 
 def read_note(base_dir: str, note_id: str):
@@ -127,7 +136,9 @@ def read_note(base_dir: str, note_id: str):
 def create_note(base_dir: str, title: str, content: str = "", category: str = "General"):
     with profile_locked(base_dir):
         category_path = _normalize_category(category)
-        folder = os.path.join(notes_dir(base_dir), *category_path.split("/"))
+        folder = safe_child_path(notes_dir(base_dir), category_path)
+        if not folder:
+            raise OSError("The note category points outside this profile")
         os.makedirs(folder, exist_ok=True)
         note_id = os.path.join(*category_path.split("/"), _safe_name(title) + ".md")
         path = _note_path(base_dir, note_id)
@@ -142,11 +153,16 @@ def create_note(base_dir: str, title: str, content: str = "", category: str = "G
     return read_note(base_dir, note_id)
 
 
-def save_note(base_dir: str, note_id: str, content: str) -> bool:
-    path = _note_path(base_dir, note_id)
-    if not os.path.isfile(path):
-        return False
+def save_note(base_dir: str, note_id: str, content: str, *, expected_content: str | None = None) -> bool:
     with profile_locked(base_dir):
+        path = _note_path(base_dir, note_id)
+        if not path or not os.path.isfile(path):
+            return False
+        if expected_content is not None:
+            with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                current = handle.read()
+            if current != expected_content and current != content:
+                raise NoteConflictError("Another window or device updated this note. Your draft is retained; save it as a separate note.")
         write_text_atomic(path, content or "")
     _invalidate_cache()
     history_service.log_event(base_dir, "note", os.path.splitext(note_id)[0], "Note updated", {"note_id": note_id})
@@ -160,9 +176,12 @@ def update_note(base_dir: str, note_id: str, content: str, category: str | None 
             return None
         target_category = _normalize_category(category or note.get("category") or "General")
         current_category = _normalize_category(note.get("category") or "General")
+        original_id = note_id
         target_id = note_id
         if target_category != current_category:
-            target_folder = os.path.join(notes_dir(base_dir), *target_category.split("/"))
+            target_folder = safe_child_path(notes_dir(base_dir), target_category)
+            if not target_folder:
+                raise OSError("The note category points outside this profile")
             os.makedirs(target_folder, exist_ok=True)
             target_id = os.path.join(*target_category.split("/"), os.path.basename(note_id))
             target_path = _note_path(base_dir, target_id)
@@ -179,12 +198,73 @@ def update_note(base_dir: str, note_id: str, content: str, category: str | None 
                         if not os.path.exists(target_path):
                             break
                         suffix += 1
-                os.replace(_note_path(base_dir, note_id), target_path)
+                from litebrowser.services import flashcard_service, link_service
+
+                # Keep the source until its replacement and all references are
+                # durable. A failed move must leave the original note usable.
+                old_links = link_service.load_links(base_dir)
+                old_cards = flashcard_service.load_cards(base_dir)
+                old_order = prefs.get_note_order(base_dir)
+                links = copy.deepcopy(old_links)
+                cards = copy.deepcopy(old_cards)
+                for link in links:
+                    for side in ("from", "to"):
+                        if link.get(f"{side}_type") == "note" and link.get(f"{side}_id") == original_id:
+                            link[f"{side}_id"] = target_id
+                for card in cards:
+                    if card.get("source_note_id") == original_id:
+                        card["source_note_id"] = target_id
+                # Snapshot raw reference files so rollback preserves unknown
+                # fields and timestamps, not just normalized service records.
+                snapshots = {}
+                for reference_name in ("entity_links.json", "flashcards.json", "prefs.json"):
+                    reference_path = os.path.join(base_dir, reference_name)
+                    if os.path.isfile(reference_path):
+                        with open(reference_path, "r", encoding="utf-8", newline="") as handle:
+                            snapshots[reference_path] = handle.read()
+                    else:
+                        snapshots[reference_path] = None
+                write_text_atomic(target_path, content or "")
+                changed_links = changed_cards = changed_order = False
+                try:
+                    if links != old_links:
+                        link_service.save_links(base_dir, links)
+                        changed_links = True
+                    if cards != old_cards:
+                        flashcard_service.save_cards(base_dir, cards)
+                        changed_cards = True
+                    if original_id in old_order:
+                        prefs.set_note_order(base_dir, [target_id if value == original_id else value for value in old_order])
+                        changed_order = True
+                    os.remove(_note_path(base_dir, original_id))
+                except (OSError, ValueError, TypeError) as exc:
+                    rollback_errors = []
+                    changed = (changed_links, changed_cards, changed_order)
+                    for (reference_path, previous), touched in zip(snapshots.items(), changed):
+                        if not touched:
+                            continue
+                        try:
+                            if previous is None:
+                                if os.path.exists(reference_path):
+                                    os.remove(reference_path)
+                            else:
+                                write_text_atomic(reference_path, previous)
+                        except OSError as rollback_exc:
+                            rollback_errors.append(str(rollback_exc))
+                    if rollback_errors:
+                        # Keep both note files if a reference could not roll back:
+                        # neither the old nor the new edge becomes a missing note.
+                        _invalidate_cache()
+                        raise OSError("Note move failed; both note copies were retained because reference rollback failed: " + "; ".join(rollback_errors)) from exc
+                    os.remove(target_path)
+                    _invalidate_cache()
+                    raise
                 note_id = target_id
-        path = _note_path(base_dir, note_id)
-        if not os.path.isfile(path):
-            return None
-        write_text_atomic(path, content or "")
+        if note_id == original_id:
+            path = _note_path(base_dir, note_id)
+            if not os.path.isfile(path):
+                return None
+            write_text_atomic(path, content or "")
     _invalidate_cache()
     history_service.log_event(base_dir, "note", os.path.splitext(note_id)[0], "Note updated", {"note_id": note_id})
     return read_note(base_dir, note_id)

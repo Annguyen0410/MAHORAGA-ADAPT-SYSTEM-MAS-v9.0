@@ -352,7 +352,10 @@ class WindowToolsMixin:
             try:
                 from litebrowser.services import password_manager
                 if save:
-                    password_manager.add_password(self.base_dir, browser.url().toString(), username, password, master)
+                    if password_manager._normalize_origin(browser.url().toString()) != host:
+                        raise ValueError("The page changed before saving this login. Nothing was saved.")
+                    if not password_manager.add_password(self.base_dir, host, username, password, master):
+                        raise OSError("The login could not be saved. Check disk access and retry.")
                     self._flash_status(f"Login saved for {host}")
                 result_box["saved"] = save
             except Exception as exc:

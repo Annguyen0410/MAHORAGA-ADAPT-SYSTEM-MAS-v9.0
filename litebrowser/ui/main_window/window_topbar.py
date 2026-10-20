@@ -118,7 +118,9 @@ class TopBarMixin:
         self.btn_reload.setText("↻")
         self.btn_reload.setToolTip("Reload (F5)")
         self.btn_reload.setAccessibleName("Reload")
-        self.btn_reload.clicked.connect(lambda: self.current_browser().reload() if self.current_browser() else None)
+        self.btn_reload.clicked.connect(self._reload_or_stop)
+        self.btn_back.setEnabled(False)
+        self.btn_forward.setEnabled(False)
         self.topbar_layout.addWidget(self.btn_back)
         self.topbar_layout.addWidget(self.btn_forward)
         self.topbar_layout.addWidget(self.btn_reload)
@@ -161,6 +163,7 @@ class TopBarMixin:
         self.url_bar.setMinimumWidth(120)
         self.url_bar.setClearButtonEnabled(False)
         self.url_bar.setToolTip("Type a URL or search and press Enter")
+        self.url_bar.setAccessibleName("Search or enter an address")
         self.url_bar.returnPressed.connect(self.navigate)
         self.url_clear_action = self.url_bar.addAction(
             self.style().standardIcon(QStyle.SP_DialogCloseButton),
@@ -210,6 +213,39 @@ class TopBarMixin:
         self.topbar_layout.addWidget(self.btn_toggle_topbar)
         self.topbar_layout.setStretchFactor(self.address_cluster, 1)
         self.content_layout.addWidget(self.topbar, 0)
+
+    def _reload_or_stop(self):
+        browser = self.current_browser()
+        if browser is not None:
+            if browser.property("mei_loading"):
+                browser.stop()
+            else:
+                browser.reload()
+
+    def sync_navigation(self, browser=None):
+        browser = browser or self.current_browser()
+        if browser is not self.current_browser():
+            return
+        if browser is None:
+            self.btn_back.setEnabled(False)
+            self.btn_forward.setEnabled(False)
+            self.btn_reload.setEnabled(False)
+            return
+        history = browser.history()
+        self.btn_back.setEnabled(history.canGoBack())
+        self.btn_forward.setEnabled(history.canGoForward())
+        self.btn_reload.setEnabled(True)
+        loading = bool(browser.property("mei_loading"))
+        self.btn_reload.setText("×" if loading else "↻")
+        self.btn_reload.setAccessibleName("Stop loading" if loading else "Reload")
+        self.btn_reload.setToolTip("Stop loading (Esc)" if loading else "Reload (F5)")
+
+    def on_load_started(self, browser):
+        browser.setProperty("mei_loading", True)
+        self.sync_navigation(browser)
+        if browser is self.current_browser():
+            self.load_progress.setValue(1)
+            self.load_progress.show()
 
     def _build_site_pill(self, cluster_layout):
         """Address-bar connection pill: 🔒 Secure / ⚠ HTTP / Local / File / Search.
@@ -322,13 +358,15 @@ class TopBarMixin:
         A permanent '100%' is chrome that never carries information; the zoom
         level matters exactly when it differs from the default. Still click-to-reset.
         """
-        self.lbl_zoom = QLabel("100%")
+        self.lbl_zoom = QToolButton()
+        self.lbl_zoom.setText("100%")
+        self.lbl_zoom.setAccessibleName("Reset page zoom")
         self.lbl_zoom.setObjectName("ZoomLabel")
         self.lbl_zoom.setMinimumWidth(42)
-        self.lbl_zoom.setAlignment(Qt.AlignCenter)
+        self.lbl_zoom.setMinimumHeight(32)
         self.lbl_zoom.setToolTip("Zoom level — click to reset (Ctrl+0)")
         self.lbl_zoom.setCursor(Qt.PointingHandCursor)
-        self.lbl_zoom.mousePressEvent = lambda _ev: self.zoom_reset()
+        self.lbl_zoom.clicked.connect(self.zoom_reset)
         self._zoom_at_default = True
         self.lbl_zoom.setVisible(False)
         self.topbar_layout.addWidget(self.lbl_zoom)
@@ -367,9 +405,9 @@ class TopBarMixin:
         self.act_text_highlight.triggered.connect(self.toggle_text_highlight)
         menu.addSeparator()
         menu.addAction("Open externally").triggered.connect(self.open_current_in_external_browser)
-        menu.addAction("Site permissions...").triggered.connect(dialogs.show_permissions_manager)
+        menu.addAction("Site permissions...").triggered.connect(lambda: dialogs.show_permissions_manager(self))
         menu.addAction("Help & guide\tF1").triggered.connect(lambda: dialogs.show_browser_control_center(self))
-        menu.addAction("Hotkeys...").triggered.connect(dialogs.show_hotkeys_hub)
+        menu.addAction("Hotkeys...").triggered.connect(lambda: dialogs.show_hotkeys_hub(self))
         menu.addAction("Open accounts.google.com in Chrome / Edge").triggered.connect(
             lambda: self.open_url_in_external_browser("https://accounts.google.com/")
         )

@@ -16,6 +16,18 @@ class TestFlashcardEdges(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
+    def test_malformed_scheduler_fields_do_not_crash_review_or_stats(self):
+        from litebrowser.core.storage_utils import write_json
+
+        write_json(flashcard_service.cards_path(self.base), {"cards": [{
+            "id": "bad", "front": "Keep my question", "back": "Keep my answer",
+            "due": "invalid", "ease": None, "interval": "NaN", "reviews": {}, "lapses": [],
+        }, None]})
+        self.assertEqual(flashcard_service.stats(self.base), {"total": 1, "due": 1, "matured": 0})
+        card = flashcard_service.review_card(self.base, "bad", "good")
+        self.assertEqual(card["front"], "Keep my question")
+        self.assertEqual(card["reviews"], 1)
+
     def test_matured_card_lapse_resets_gracefully(self):
         """A 60-day card graded 'again' goes back to 10-minute retry, not 60."""
         card = flashcard_service.add_card(self.base, "Q", "A")

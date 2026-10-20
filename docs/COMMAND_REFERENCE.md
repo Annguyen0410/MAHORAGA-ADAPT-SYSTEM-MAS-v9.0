@@ -25,6 +25,7 @@ command prefills the box so you can finish the argument.
 
 | Command | Action |
 |---|---|
+| `/capture` | Open a review-first form for a note, task, saved link, or flashcard |
 | `/task <title>` *arg* | Create a task and jump to Personal |
 | `/note <Cat / Title / body>` *arg* | Create a note (`/note Work/Brief \| body`) |
 | `/board <name>` *arg* | Create an idea board |

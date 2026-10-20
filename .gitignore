@@ -15,7 +15,133 @@ runtime_data/
 BrowserData/
 profiles/
 SafeVault/
-web_support/
+# Bundled web data is local; explicitly retain maintained public source changes.
+web_support/*
+!web_support/chain.js
+!web_support/chain.json
+!web_support/link/
+web_support/link/*
+!web_support/link/layout.js
+!web_support/link/laws.js
+!web_support/link/sw.js
+!web_support/link/script.js
+!web_support/link/timeline.js
+!web_support/link/index.html
+!web_support/link/styles.css
+!web_support/link/package.json
+!web_support/link/analytics.js
+!web_support/link/artifact-features.js
+!web_support/link/backup-core.js
+!web_support/link/contextmenu.js
+!web_support/link/eventbus.js
+!web_support/link/features.js
+!web_support/link/folders.js
+!web_support/link/living_bg.js
+!web_support/link/manifest.json
+!web_support/link/migrations.js
+!web_support/link/modules.js
+!web_support/link/neural.js
+!web_support/link/search-engine.js
+!web_support/link/sidepeek.js
+!web_support/link/sync.js
+!web_support/link/tools.js
+!web_support/link/vendor/
+web_support/link/vendor/*
+!web_support/link/vendor/*.js
+!web_support/link/vendor/*.css
+!web_support/link/vendor/*.woff2
+!web_support/link/chain.js
+!web_support/link/chain.json
+!web_support/link/tests/
+web_support/link/tests/*
+!web_support/link/tests/reliability.test.js
+!web_support/link/tests/link-save.test.js
+!web_support/link/tests/*.test.js
+!web_support/MAS - Mahoraga Adapt System/
+web_support/MAS - Mahoraga Adapt System/*
+!web_support/MAS - Mahoraga Adapt System/chain.js
+!web_support/MAS - Mahoraga Adapt System/chain.json
+!web_support/MAS - Mahoraga Adapt System/index.html
+!web_support/MAS - Mahoraga Adapt System/style.css
+!web_support/MAS - Mahoraga Adapt System/package.json
+!web_support/MAS - Mahoraga Adapt System/assets/
+web_support/MAS - Mahoraga Adapt System/assets/*
+!web_support/MAS - Mahoraga Adapt System/assets/mahoraga_wheel.gif
+!web_support/MAS - Mahoraga Adapt System/js/
+web_support/MAS - Mahoraga Adapt System/js/*
+!web_support/MAS - Mahoraga Adapt System/js/api.js
+!web_support/MAS - Mahoraga Adapt System/js/storage.js
+!web_support/MAS - Mahoraga Adapt System/js/backup.js
+!web_support/MAS - Mahoraga Adapt System/js/adaptation.js
+!web_support/MAS - Mahoraga Adapt System/js/main.js
+!web_support/MAS - Mahoraga Adapt System/js/session.js
+!web_support/MAS - Mahoraga Adapt System/js/utils.js
+!web_support/MAS - Mahoraga Adapt System/js/templates.js
+!web_support/MAS - Mahoraga Adapt System/js/assessment.js
+!web_support/MAS - Mahoraga Adapt System/js/graph.js
+!web_support/MAS - Mahoraga Adapt System/js/ui.js
+!web_support/MAS - Mahoraga Adapt System/server/
+web_support/MAS - Mahoraga Adapt System/server/*
+!web_support/MAS - Mahoraga Adapt System/server/server.js
+!web_support/MAS - Mahoraga Adapt System/server/sessionStore.js
+!web_support/MAS - Mahoraga Adapt System/server/deepAnalysis.js
+!web_support/MAS - Mahoraga Adapt System/server/geminiBudget.js
+!web_support/MAS - Mahoraga Adapt System/server/perspectives.js
+!web_support/MAS - Mahoraga Adapt System/server/validate.js
+!web_support/MAS - Mahoraga Adapt System/server/package.json
+!web_support/MAS - Mahoraga Adapt System/server/package-lock.json
+!web_support/MAS - Mahoraga Adapt System/tests/
+web_support/MAS - Mahoraga Adapt System/tests/*
+!web_support/MAS - Mahoraga Adapt System/tests/reliability.test.js
+!web_support/MAS - Mahoraga Adapt System/tests/server.test.js
+!web_support/MAS - Mahoraga Adapt System/tests/*.test.js
+!web_support/MAS - Mahoraga Adapt System/tests/harness.js
+!web_support/MAS - Mahoraga Adapt System/tests/run.js
+!web_support/hub/
+web_support/hub/*
+!web_support/hub/chain.js
+!web_support/hub/chain.json
+!web_support/hub/index.html
+!web_support/boitoan/
+web_support/boitoan/*
+!web_support/boitoan/index.html
+!web_support/Cục Quản Lý/
+web_support/Cục Quản Lý/*
+!web_support/Cục Quản Lý/chain.js
+!web_support/Cục Quản Lý/chain.json
+!web_support/Cục Quản Lý/index.html
+!web_support/Cục Quản Lý/main.css
+!web_support/Cục Quản Lý/Hệ Thống Lưu Trữ Máy Chủ/
+web_support/Cục Quản Lý/Hệ Thống Lưu Trữ Máy Chủ/*
+!web_support/Cục Quản Lý/Hệ Thống Lưu Trữ Máy Chủ/index.html
+!web_support/Cục Quản Lý/Hệ Thống Lưu Trữ Máy Chủ/app.js
+!web_support/Cục Quản Lý/Hệ Thống Lưu Trữ Máy Chủ/style.css
+!web_support/Cục Quản Lý/Hệ Thống Toàn Diện Cá Nhân/
+web_support/Cục Quản Lý/Hệ Thống Toàn Diện Cá Nhân/*
+!web_support/Cục Quản Lý/Hệ Thống Toàn Diện Cá Nhân/index.html
+!web_support/Cục Quản Lý/Hệ Thống Toàn Diện Cá Nhân/app.js
+!web_support/Cục Quản Lý/Hệ Thống Toàn Diện Cá Nhân/style.css
+!web_support/Cục Quản Lý/Hệ Thống Trích Xuất/
+web_support/Cục Quản Lý/Hệ Thống Trích Xuất/*
+!web_support/Cục Quản Lý/Hệ Thống Trích Xuất/index.html
+!web_support/Cục Quản Lý/Hệ Thống Trích Xuất/app.js
+!web_support/Cục Quản Lý/Hệ Thống Trích Xuất/style.css
+!web_support/Cục Quản Lý/Hệ Thống Thư Viện Toàn Thư/
+web_support/Cục Quản Lý/Hệ Thống Thư Viện Toàn Thư/*
+!web_support/Cục Quản Lý/Hệ Thống Thư Viện Toàn Thư/index.html
+!web_support/Cục Quản Lý/Hệ Thống Thư Viện Toàn Thư/style.css
+!web_support/World Leaderboard/
+web_support/World Leaderboard/*
+!web_support/World Leaderboard/chain.js
+!web_support/World Leaderboard/chain.json
+!web_support/World Leaderboard/script.js
+!web_support/World Leaderboard/index.html
+!web_support/World Leaderboard/style.css
+!web_support/World Leaderboard/vendor/
+web_support/World Leaderboard/vendor/*
+!web_support/World Leaderboard/vendor/*.js
+!web_support/World Leaderboard/vendor/*.css
+!web_support/World Leaderboard/vendor/*.woff2
 litebrowser-update/
 legacy/
 

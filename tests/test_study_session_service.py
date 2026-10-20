@@ -4,6 +4,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from litebrowser.core import prefs
 from litebrowser.services import focus_service, personal_plan, study_session
@@ -69,6 +70,40 @@ class TestStudySessionService(unittest.TestCase):
         self.assertEqual(summary["minutes"], 25)
         self.assertEqual(personal_plan.load_plan(self.base)["items"][0]["studied_minutes"], 25)
         self.assertEqual(focus_service.focus_status(self.base)["running"], False)
+
+    def test_credit_recovers_a_crash_before_journal_acknowledgement(self):
+        item = personal_plan.create_item(self.base, "Recovery", duration_minutes=25)
+        study_session.start_for_item(self.base, item["id"])
+        self._expire_active_session(1500)
+        with mock.patch.object(focus_service, "mark_credited", side_effect=OSError("disk busy")):
+            with self.assertRaises(OSError):
+                study_session.credit_pending(self.base)
+        self.assertEqual(personal_plan.load_plan(self.base)["items"][0]["studied_minutes"], 25)
+        self.assertEqual(study_session.credit_pending(self.base)["credited"], 0)
+        self.assertEqual(personal_plan.load_plan(self.base)["items"][0]["studied_minutes"], 25)
+        self.assertTrue(focus_service.focus_journal(self.base)[0]["credited"])
+
+    def test_starting_a_new_pour_preserves_expired_credit(self):
+        item = personal_plan.create_item(self.base, "First", duration_minutes=25)
+        study_session.start_for_item(self.base, item["id"])
+        path = focus_service.sessions_path(self.base)
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        now = int(time.time())
+        data["active"].update(started_at=now - 1500, ends_at=now - 1)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+        focus_service.start_focus(self.base, 10, "Second")
+        self.assertEqual(study_session.credit_pending(self.base)["minutes"], 25)
+        self.assertEqual(focus_service.focus_journal(self.base)[0]["status"], "completed")
+
+    def test_planner_read_does_not_make_every_item_look_edited(self):
+        item = personal_plan.create_item(self.base, "Stable", updated_at="2025-01-01T00:00:00")
+        personal_plan.create_item(self.base, "Unrelated")
+        stored = next(row for row in personal_plan.load_plan(self.base)["items"] if row["id"] == item["id"])
+        self.assertEqual(stored["updated_at"], "2025-01-01T00:00:00")
+        changed = personal_plan.update_item(self.base, item["id"], title="Changed")
+        self.assertNotEqual(changed["updated_at"], stored["updated_at"])
 
     def test_abandoned_session_is_not_credited(self):
         item = personal_plan.create_item(self.base, "Essay", duration_minutes=25)

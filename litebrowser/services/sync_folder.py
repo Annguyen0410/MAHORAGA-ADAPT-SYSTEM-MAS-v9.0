@@ -49,6 +49,7 @@ from datetime import datetime
 from typing import Any
 
 from litebrowser.core import prefs, storage_utils
+from litebrowser.core.profile_lock import profile_transaction
 from litebrowser.services import (
     flashcard_service,
     life_service,
@@ -315,7 +316,7 @@ def state_path(base_dir: str) -> str:
 
 def _load_state(base_dir: str) -> dict:
     raw = storage_utils.read_json(state_path(base_dir), {})
-    if not isinstance(raw, dict) or int(raw.get("version", 0) or 0) != STATE_VERSION:
+    if not isinstance(raw, dict) or str(raw.get("version", "")) != str(STATE_VERSION):
         return {"version": STATE_VERSION, "baseline": {}, "payload_id": "", "last_sync": ""}
     baseline = raw.get("baseline")
     raw["baseline"] = baseline if isinstance(baseline, dict) else {}
@@ -349,12 +350,18 @@ def read_payload(base_dir: str) -> dict:
     try:
         with open(path, "r", encoding="utf-8-sig") as handle:
             data = json.load(handle)
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, UnicodeError) as exc:
         raise SyncFormatError(f"The sync file could not be read ({exc}). Nothing was changed.") from exc
     if not isinstance(data, dict) or data.get("kind") != PAYLOAD_KIND:
         raise SyncFormatError("That file is not a Mei sync file. Nothing was changed.")
-    if int(data.get("version", 0) or 0) > PAYLOAD_VERSION:
+    try:
+        version = int(data.get("version", 0))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise SyncFormatError("Invalid sync schema version. Nothing was changed.") from exc
+    if version > PAYLOAD_VERSION:
         raise SyncFormatError("That sync file was written by a newer Mei. Update before syncing.")
+    if version < 1:
+        raise SyncFormatError("Invalid sync schema version. Nothing was changed.")
     stores = data.get("stores")
     data["stores"] = stores if isinstance(stores, dict) else {}
     data["payload_id"] = str(data.get("payload_id") or "")
@@ -593,7 +600,7 @@ def _warnings(base_dir: str, folder: str, payload: dict, state: dict) -> list[st
 
 def _snapshot(base_dir: str, keys: tuple[str, ...]) -> str:
     """Copy the affected stores into ``<profile>/backups/sync-<stamp>/``."""
-    stamp = time.strftime("%Y%m%d-%H%M%S")
+    stamp = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
     target = os.path.join(base_dir, BACKUP_DIRNAME, f"{BACKUP_PREFIX}{stamp}")
     os.makedirs(target, exist_ok=True)
     for key in keys:
@@ -648,22 +655,11 @@ def _write_payload(base_dir: str, payload: dict) -> bool:
     path = payload_path(base_dir)
     if not path:
         return False
-    folder = os.path.dirname(path)
-    os.makedirs(folder, exist_ok=True)
-    handle, temp = storage_utils.tempfile_mkstemp_same_dir(folder, ".mei-sync")
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as file:
-            json.dump(payload, file, ensure_ascii=False, indent=2)
-        os.replace(temp, path)
-    except OSError:
-        try:
-            os.unlink(temp)
-        except OSError:
-            pass
-        return False
+    storage_utils.write_json(path, payload)
     return True
 
 
+@profile_transaction
 def sync(base_dir: str, apply: bool = True) -> dict:
     """Merge with the folder (``apply=False`` is exactly ``preview``).
 
@@ -702,6 +698,10 @@ def sync(base_dir: str, apply: bool = True) -> dict:
     existing = plan.get("payload") or {}
     published = _stores_differ(outgoing.get("stores", {}), existing.get("stores", {}))
     stored = _write_payload(base_dir, outgoing) if published else False
+    if published and not stored:
+        # Never acknowledge unpublished edits as a shared baseline: doing so
+        # makes the next run interpret them as deletions by the other device.
+        raise OSError("Could not publish the sync file; your edits remain local and can be retried")
     did_something = bool(touched) or stored
     _save_state(
         base_dir,

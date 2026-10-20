@@ -101,6 +101,17 @@ class TestConcurrentWriteSafety(unittest.TestCase):
             self.assertIn("value", payload)
             self.assertIsInstance(payload["value"], list)
 
+    def test_invalid_json_does_not_allocate_a_handle_or_touch_the_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, "state.json")
+            storage_utils.write_json(target, {"keep": True})
+            for invalid in ({"bad": object()}, {"bad": float("nan")}):
+                with mock.patch.object(storage_utils, "tempfile_mkstemp_same_dir") as allocate:
+                    with self.assertRaises((TypeError, ValueError)):
+                        storage_utils.write_json(target, invalid)
+                    allocate.assert_not_called()
+            self.assertEqual(storage_utils.read_json(target, None), {"keep": True})
+
     def test_atomic_replace_retries_a_transient_windows_lock(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = os.path.join(tmp, "state.json")

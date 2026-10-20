@@ -103,10 +103,10 @@ class TestReleaseNotes(unittest.TestCase):
         self.assertIn(product.APP_VERSION, body)
         self.assertIn("Folder sync", body, "the notes still quote the changelog section")
 
-    def test_the_body_opens_in_vietnamese_and_quotes_the_changelog(self):
+    def test_the_body_opens_in_english_and_quotes_the_changelog(self):
         site = f"Mei-{product.APP_VERSION}-web_support.zip"
         body = publish_release.build_release_body(product.APP_VERSION, product.ASSET_NAME, site, self.changelog)
-        self.assertTrue(body.startswith("**Tải về:**"))
+        self.assertTrue(body.startswith("**Download:**"))
         self.assertIn(product.ASSET_NAME, body)
         self.assertIn(site, body)
         self.assertIn(product.APP_VERSION, body)
@@ -178,6 +178,36 @@ class TestWebSupportZip(unittest.TestCase):
         self.assertIn("index.html", names)
         self.assertIn("boitoan/app.js", names, "zip member names are always forward-slashed")
         self.assertNotIn("run.log", names)
+
+
+    def test_private_web_data_is_excluded_from_release_zip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "web")
+            for relative in ("hub/index.html", "app/server/.env", "app/server/sessions.json", "app/.env", "app/sessions.json", "app/node_modules/x.js"):
+                target = os.path.join(src, relative)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "w", encoding="utf-8") as handle:
+                    handle.write("fixture")
+            out = os.path.join(tmp, "site.zip")
+            publish_release.zip_web_support(src, out)
+            import zipfile
+            with zipfile.ZipFile(out) as bundle:
+                self.assertEqual(bundle.namelist(), ["hub/index.html"])
+
+    def test_failed_zip_preserves_previous_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "web")
+            os.makedirs(src)
+            with open(os.path.join(src, "index.html"), "w", encoding="utf-8") as handle:
+                handle.write("public")
+            out = os.path.join(tmp, "site.zip")
+            with open(out, "wb") as handle:
+                handle.write(b"previous")
+            with mock.patch.object(publish_release.zipfile.ZipFile, "write", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    publish_release.zip_web_support(src, out)
+            with open(out, "rb") as handle:
+                self.assertEqual(handle.read(), b"previous")
 
 
 class TestReleaseFlags(unittest.TestCase):
@@ -268,7 +298,7 @@ class TestPublishRefusals(unittest.TestCase):
         self.assertTrue(os.path.isfile(result["body_path"]))
         with open(result["body_path"], encoding="utf-8") as handle:
             body = handle.read()
-        self.assertTrue(body.startswith("**Tải về:**"))
+        self.assertTrue(body.startswith("**Download:**"))
         self.assertIn(product.APP_VERSION, body)
 
     def test_publishing_without_a_token_says_which_variable_to_set(self):

@@ -93,7 +93,7 @@ def _clean_kind(value: Any) -> str:
 def _clean_minutes(value: Any, default: int = DEFAULT_DURATION_MINUTES) -> int:
     try:
         minutes = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         minutes = default
     return max(5, min(24 * 60, minutes))
 
@@ -102,7 +102,7 @@ def _clean_studied_minutes(value: Any) -> int:
     """Minutes actually studied; unlike a planned duration, zero is valid."""
     try:
         minutes = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         minutes = 0
     return max(0, min(100_000, minutes))
 
@@ -123,9 +123,10 @@ def _normalize_item(item: Any) -> dict | None:
     else:
         try:
             start_minutes = max(0, min(1439, int(start_minutes)))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             start_minutes = None
     normalized = {
+        **item,
         "id": item_id,
         "kind": _clean_kind(item.get("kind")),
         "title": title,
@@ -145,7 +146,8 @@ def _normalize_item(item: Any) -> dict | None:
         "last_studied_at": _clean_text(item.get("last_studied_at"), 40),
         "completed": bool(item.get("completed", False)),
         "created_at": _clean_text(item.get("created_at"), 40) or now,
-        "updated_at": now,
+        "updated_at": _clean_text(item.get("updated_at"), 40) or _clean_text(item.get("created_at"), 40) or now,
+        "credited_session_ids": [str(value) for value in item.get("credited_session_ids", []) if isinstance(value, str)][-256:] if isinstance(item.get("credited_session_ids"), list) else [],
     }
     return normalized
 
@@ -157,6 +159,7 @@ def _normalize_course(course: Any) -> dict | None:
     if not name:
         return None
     return {
+        **course,
         "id": _clean_text(course.get("id"), 80) or uuid.uuid4().hex,
         "name": name,
         "code": _clean_text(course.get("code"), 40),
@@ -164,7 +167,7 @@ def _normalize_course(course: Any) -> dict | None:
         "schedule": _clean_text(course.get("schedule"), 500),
         "credits": _clean_text(course.get("credits"), 20),
         "created_at": _clean_text(course.get("created_at"), 40) or datetime.now().isoformat(timespec="seconds"),
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": _clean_text(course.get("updated_at") or course.get("created_at"), 40) or datetime.now().isoformat(timespec="seconds"),
     }
 
 
@@ -177,9 +180,10 @@ def _normalize_block(block: Any) -> dict | None:
         return None
     try:
         start = max(0, min(1439, int(block.get("start_minutes", 0))))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         start = 0
     return {
+        **block,
         "id": _clean_text(block.get("id"), 80) or uuid.uuid4().hex,
         "title": title,
         "date": block_date,
@@ -191,7 +195,7 @@ def _normalize_block(block: Any) -> dict | None:
         "item_id": _clean_text(block.get("item_id"), 80),
         "color": _clean_text(block.get("color"), 20) or "#c39d63",
         "created_at": _clean_text(block.get("created_at"), 40) or datetime.now().isoformat(timespec="seconds"),
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": _clean_text(block.get("updated_at") or block.get("created_at"), 40) or datetime.now().isoformat(timespec="seconds"),
     }
 
 
@@ -241,7 +245,7 @@ def _plan_v1_to_v2(data: dict) -> dict:
 
 def _normalize_plan(data: Any) -> dict:
     source = data if isinstance(data, dict) else {}
-    plan = _default_plan()
+    plan = {**_default_plan(), **source}
     semester = source.get("semester")
     if isinstance(semester, dict):
         plan["semester"] = {
@@ -309,6 +313,7 @@ def update_item(base_dir: str, item_id: str, **changes) -> dict | None:
                 continue
             merged = dict(current)
             merged.update(changes)
+            merged["updated_at"] = datetime.now().isoformat(timespec="microseconds")
             merged["id"] = item_id
             updated = _normalize_item(merged)
             if updated is None:
@@ -330,11 +335,14 @@ def delete_item(base_dir: str, item_id: str) -> bool:
         plan = load_plan(base_dir)
         before = len(plan["items"])
         plan["items"] = [item for item in plan["items"] if item.get("id") != item_id]
+        removed_blocks = [block["id"] for block in plan["time_blocks"] if block.get("item_id") == item_id]
         plan["time_blocks"] = [block for block in plan["time_blocks"] if block.get("item_id") != item_id]
         if len(plan["items"]) == before:
             return False
         _persist_plan(base_dir, plan)
     link_service.delete_links_for(base_dir, "planner_item", item_id)
+    for block_id in removed_blocks:
+        link_service.delete_links_for(base_dir, "planner_block", block_id)
     return True
 
 
@@ -357,6 +365,7 @@ def update_course(base_dir: str, course_id: str, **changes) -> dict | None:
                 continue
             merged = dict(current)
             merged.update(changes)
+            merged["updated_at"] = datetime.now().isoformat(timespec="microseconds")
             merged["id"] = course_id
             updated = _normalize_course(merged)
             if updated is None:
@@ -412,6 +421,7 @@ def update_time_block(base_dir: str, block_id: str, **changes) -> dict | None:
                 continue
             merged = dict(current)
             merged.update(changes)
+            merged["updated_at"] = datetime.now().isoformat(timespec="microseconds")
             merged["id"] = block_id
             updated = _normalize_block(merged)
             if updated is None:

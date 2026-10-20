@@ -48,7 +48,7 @@ litebrowser/services/                 Data layer (never imports Qt widgets)
    ├─ brief_service.py                Morning Brief (local-first digest)
    ├─ agent_actions.py                AI agent: /agent summary|tasks|review
    ├─ sync_service.py                 Self-hosted sync (push/pull JSON bundle)
-   ├─ tab_sets.py                     Save/open tab sets (Search/Personal/AI)
+   ├─ tab_sets.py                     Save/open tab and research collections (versioned links)
    └─ ...                             download_mgr, password, security, ...
         │
 litebrowser/core/                     Foundation: paths, storage, lock, version
@@ -97,6 +97,12 @@ and re-persisted exactly once; a file written by a **newer** build is left untou
 writing a half-upgraded payload. To change a shape: bump the version and add
 `@migrations.register("<file>", from_version=N)`, which returns the next version's payload.
 Covered by `tests/test_store_migrations.py`.
+
+`services/tab_sets.py` uses that store contract at schema v4. Research workspace rows hold
+tab descriptions plus bounded references to existing notes, tasks, saved pages, and cards;
+they do not copy those records. The active research workspace ID is a profile preference,
+resolved against the collection store before use. v1–v3 collections migrate forward
+stepwise.
 
 ---
 

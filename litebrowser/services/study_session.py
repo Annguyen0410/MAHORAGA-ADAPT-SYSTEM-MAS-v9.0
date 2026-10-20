@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from litebrowser.core.profile_lock import profile_transaction
+
 from litebrowser.services import (
     flashcard_service,
     focus_service,
@@ -44,7 +46,7 @@ def _find_block(base_dir: str, block_id: str) -> dict | None:
 def _planned_minutes(value, default: int) -> int:
     try:
         planned = int(value or default)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         planned = default
     return max(MIN_SESSION_MINUTES, min(MAX_SESSION_MINUTES, planned))
 
@@ -108,6 +110,7 @@ def active_session(base_dir: str) -> dict:
     return payload
 
 
+@profile_transaction
 def finish(base_dir: str, complete: bool = True) -> dict:
     """Stop the running pour, then credit whatever it earned."""
     focus_service.stop_focus(base_dir, complete=complete)
@@ -115,6 +118,7 @@ def finish(base_dir: str, complete: bool = True) -> dict:
     return summary
 
 
+@profile_transaction
 def credit_pending(base_dir: str) -> dict:
     """Credit every finished, uncredited item session in the journal.
 
@@ -142,11 +146,19 @@ def credit_pending(base_dir: str) -> dict:
             # session so the next refresh does not re-examine it.
             focus_service.mark_credited(base_dir, session.get("id", ""))
             continue
+        session_id = session.get("id", "")
+        credited_ids = item.get("credited_session_ids", [])
+        if session_id in credited_ids:
+            # Recover a crash after the planner write but before the journal
+            # acknowledgement without adding those minutes a second time.
+            focus_service.mark_credited(base_dir, session_id)
+            continue
         updated = personal_plan.update_item(
             base_dir,
             item_id,
             studied_minutes=int(item.get("studied_minutes", 0) or 0) + spent,
             last_studied_at=datetime.now().isoformat(timespec="seconds"),
+            credited_session_ids=[*credited_ids, session_id][-256:],
         )
         focus_service.mark_credited(base_dir, session.get("id", ""))
         history_service.log_event(

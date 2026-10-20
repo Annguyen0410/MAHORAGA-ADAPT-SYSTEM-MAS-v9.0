@@ -1,0 +1,21 @@
+{
+  "scope": "Loopback static preview; earlier incognito journeys and final synthetic-data checks in regular tabs on a fresh ephemeral localhost origin; no private configuration or API keys",
+  "journeys": [
+    {"name": "LinkLumina create, persist after navigation, search empty state, clear and edit", "ok": true, "evidence": "Live browser journey from the earlier audit pass; final 32-test suite also passes."},
+    {"name": "MAS example to Plan to local assessment to Evolve", "ok": true, "evidence": "Repeated after the blank-score fix; UI explicitly reported local assessment, not external AI."},
+    {"name": "MAS rejects four blank scores and retains draft", "ok": true, "evidence": "Spins stayed at zero; English feedback focused Quality; the typed note remained present."},
+    {"name": "MAS accepts valid scores including zero discomfort", "ok": true, "evidence": "One saved check-in with quality 7, effort 6, stability 7, discomfort 0; phase became Calibrating."},
+    {"name": "Management Hub English navigation and truthful missing-app states", "ok": true, "evidence": "Accessibility snapshot showed English labels, metadata-only catalog notice, and source-not-installed states for World Monitor/MiroFish."},
+    {"name": "Management Export Studio scope change", "ok": true, "evidence": "Real keyboard changed All systems to Energy metadata only; scoped preview updated without a JavaScript exception. All 84 format/mode/scope combinations also pass the Node harness."},
+    {"name": "Project Hub renders eight real cards without nested anchors", "ok": true, "evidence": "After correcting anchor nesting, live DOM had eight grid children, eight cards, zero empty cards and zero nested anchors; screenshot reviewed."},
+    {"name": "Visualgraph creates and stores an English topic", "ok": true, "evidence": "Earlier English QA topic journey passed. Final recheck created Reliable study workflow, stored one topic, reloaded it and reopened its graph: 12 nodes, 11 keywords and 24 links."},
+    {"name": "Visualgraph deletion refreshes a second-tab export preview", "ok": true, "evidence": "Export Studio initially read one topic and its active summary. Deleting the synthetic topic in Visualgraph produced an empty topic list, removed the active summary and updated the export preview without refresh. No captured console errors in either tab."},
+    {"name": "Final native screenshot review", "ok": true, "evidence": "Regenerated 19-journey Desktop gallery reviewed; wide Home and Notes text rendered legibly with English controls."}
+  ],
+  "expected_preview_limitations": [
+    "The static QA preview has no application API. MAS /api/health probes return 404 and the app remains in local mode.",
+    "External websites, paid AI, cloud auth, production services and real mobile UI were not exercised.",
+    "This host's incognito preview cleared localStorage on reload; final reload/cross-tab persistence was verified on the fresh localhost origin in regular tabs instead."
+
+  ]
+}

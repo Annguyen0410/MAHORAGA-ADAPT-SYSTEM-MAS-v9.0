@@ -7,7 +7,28 @@ from typing import Any
 from litebrowser.core.log import get_logger
 
 _log = get_logger("storage_utils")
-_JSON_ENCODER = json.JSONEncoder(ensure_ascii=False, indent=2, sort_keys=False)
+_JSON_ENCODER = json.JSONEncoder(ensure_ascii=False, indent=2, sort_keys=False, allow_nan=False)
+
+
+def safe_child_path(root: str, relative: str) -> str:
+    """Resolve an untrusted child path without traversal or symlink escapes.
+
+    Apply Windows restrictions on every platform so exchanged backups and
+    bridge messages have the same interpretation on each device.
+    """
+    if not isinstance(relative, str) or not relative or "\x00" in relative or ":" in relative:
+        return ""
+    normalized = relative.replace("\\", "/")
+    if normalized.startswith("/") or any(part in ("", ".", "..") for part in normalized.split("/")):
+        return ""
+    root_path = os.path.normcase(os.path.realpath(root))
+    path = os.path.realpath(os.path.join(root_path, *normalized.split("/")))
+    try:
+        if os.path.commonpath([root_path, os.path.normcase(path)]) != root_path or os.path.normcase(path) == root_path:
+            return ""
+    except ValueError:
+        return ""
+    return path
 
 
 def read_json(path: str, default: Any):
@@ -72,13 +93,15 @@ def tempfile_mkstemp_same_dir(parent: str, base_hint: str) -> tuple[int, str]:
 
 
 def write_json(path: str, data: Any) -> None:
+    # Encode before allocating a file descriptor: invalid payloads must not
+    # leak handles or touch the previous on-disk value.
+    serialized = _JSON_ENCODER.encode(data)
     parent = os.path.dirname(os.path.abspath(path))
     if parent:
         os.makedirs(parent, exist_ok=True)
     base_name = os.path.basename(path) or "data.json"
     fd, tmp_path = tempfile_mkstemp_same_dir(parent or os.getcwd(), base_name)
     try:
-        serialized = _JSON_ENCODER.encode(data)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(serialized)
             f.write("\n")

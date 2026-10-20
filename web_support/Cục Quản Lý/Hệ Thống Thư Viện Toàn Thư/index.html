@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Reference Library — a collection of online reference resources.">
+    <title>Reference Library</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="shell">
+        <header class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">Personal reference library</p>
+                <h1>Reference Library</h1>
+                <p class="hero-text">
+                    Explore a collection of online documents and reference resources.
+                    Twelve resources are linked; eight slots remain available for future additions.
+                </p>
+            </div>
+            <div class="hero-panel">
+                <div class="metric">
+                    <span class="metric-label">Resource slots</span>
+                    <strong>20 slots</strong>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Content</span>
+                    <strong>Encyclopedias</strong>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Location</span>
+                    <strong>Online</strong>
+                </div>
+            </div>
+        </header>
+
+        <main class="link-grid" id="linkGrid">
+        </main>
+
+        <section class="footer-note">
+            <p>Eight reference slots are placeholders. Linked external resources may be in their original language.</p>
+        </section>
+    </div>
+
+    <script>
+        var LIBRARY_LINKS = [
+            { id: 1,  site: 'Traditional Medicine Encyclopedia',    url: 'https://yhoccotruyenhiendai.netlify.app',   note: 'Traditional medicine reference' },
+            { id: 2,  site: 'Galaxy & Cosmos Encyclopedia',      url: 'https://cheerful-dieffenbachia-b154ee.netlify.app', note: 'Galactic and cosmic reference' },
+            { id: 3,  site: 'Trading & Crypto Encyclopedia',    url: 'https://cheerful-dieffenbachia-b154ee.netlify.app', note: 'Trading and cryptocurrency reference' },
+            { id: 4,  site: 'Survival & Civilization Recovery', url: 'https://symphonious-salamander-1f8d42.netlify.app',  note: 'Survival and rebuilding civilization' },
+            { id: 5,  site: 'All Tools Encyclopedia',       url: 'https://allthetools.netlify.app',            note: 'A comprehensive tools reference' },
+            { id: 6,  site: 'Algorithms, Mathematics & Physics',   url: 'https://graceful-marigold-93e760.netlify.app',   note: 'Algorithms, mathematics and physics reference' },
+            { id: 7,  site: 'Aesthetics Encyclopedia',            url: 'https://radiences.netlify.app',             note: 'Aesthetics reference' },
+            { id: 8,  site: 'Guardian Encyclopedia',            url: 'https://toanthuvethan.netlify.app',         note: 'Guardian reference' },
+            { id: 9,  site: 'Language Encyclopedia',           url: 'https://preeminent-longma-83c182.netlify.app',  note: 'Language reference' },
+            { id: 10, site: 'Medical Encyclopedia',    url: 'https://benevolent-marigold-739e33.netlify.app', note: 'Medical reference' },
+            { id: 11, site: 'Mind & Neuroscience Encyclopedia',   url: 'https://lambent-queijadas-51d2eb.netlify.app',  note: 'Mind and neuroscience reference' },
+            { id: 12, site: 'Law Encyclopedia',       url: 'https://toanthuluat-f74u.onrender.com',   note: 'Legal reference' },
+            { id: 13, site: 'Resource 13', note: 'Placeholder for a future resource' },
+            { id: 14, site: 'Resource 14', note: 'Placeholder for a future resource' },
+            { id: 15, site: 'Resource 15', note: 'Placeholder for a future resource' },
+            { id: 16, site: 'Resource 16', note: 'Placeholder for a future resource' },
+            { id: 17, site: 'Resource 17', note: 'Placeholder for a future resource' },
+            { id: 18, site: 'Resource 18', note: 'Placeholder for a future resource' },
+            { id: 19, site: 'Resource 19', note: 'Placeholder for a future resource' },
+            { id: 20, site: 'Resource 20', note: 'Placeholder for a future resource' }
+        ];
+
+        var grid = document.getElementById('linkGrid');
+        function render() {
+            grid.innerHTML = LIBRARY_LINKS.map(function (item) {
+                var target = item.url && item.url.trim() ? item.url : '#';
+                var tag = item.url && item.url.trim() ? 'link' : 'awaiting link';
+                return [
+                    '<a class="lib-card" href="' + target + '" target="_blank" rel="noopener">',
+                    '<span class="lib-id">' + String(item.id).padStart(2, '0') + '</span>',
+                    '<div class="lib-body">',
+                    '<h2>' + item.site + '</h2>',
+                    '<p>' + item.note + '</p>',
+                    '<span class="lib-tag">' + tag + '</span>',
+                    '</div>',
+                    '</a>'
+                ].join('');
+            }).join('');
+        }
+        render();
+    </script>
+</body>
+</html>

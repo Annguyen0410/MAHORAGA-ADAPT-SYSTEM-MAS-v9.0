@@ -1,0 +1,9 @@
+{
+  "name": "linklumina",
+  "version": "6.0.0",
+  "private": true,
+  "description": "Visual bookmark manager — Product Hunt tools, Neural Web graph, Power Search, ZIP folder backup",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  }
+}

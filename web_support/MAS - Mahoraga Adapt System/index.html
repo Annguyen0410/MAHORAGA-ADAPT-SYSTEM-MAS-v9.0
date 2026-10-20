@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="chain-app" content="mas">
+    <script src="chain.js"></script>
+    <title>MAS Knowledge Graph + Roadmap Trainer</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Application navigation">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">MAS</div>
+            <div>
+              <h1>Adaptation Trainer</h1>
+              <p>Learn to adapt to anything — objects, tools, environments, people, ideas</p>
+            </div>
+          </div>
+
+        <nav class="nav-list" aria-label="Primary">
+          <button class="nav-button active" type="button" data-view="graph">Knowledge Graph</button>
+          <button class="nav-button" type="button" data-view="trainer">Roadmap Builder</button>
+          <button class="nav-button" type="button" data-view="templates">Template Memory</button>
+          <button class="nav-button" type="button" data-view="sources">Source Map</button>
+        </nav>
+        <button class="help-button" type="button" id="open-background">Background / How To Use</button>
+
+        <div class="rate-limit-badge" id="rate-limit-badge">
+          <div class="rate-limit-header">
+            <span class="rate-limit-label">Gemini AI</span>
+            <span class="rate-limit-status" id="api-status-indicator">●</span>
+          </div>
+          <div class="rate-limit-body">
+            <span class="rate-limit-remaining" id="rate-limit-remaining">--</span>
+            <span class="rate-limit-text" id="rate-limit-text">calls remaining</span>
+          </div>
+          <div class="rate-limit-bar">
+            <div class="rate-limit-fill" id="rate-limit-fill" style="width:100%"></div>
+          </div>
+        </div>
+
+        <div class="backup-block">
+          <div class="backup-title">Data backup</div>
+          <div class="backup-actions">
+            <button class="ghost-button" type="button" id="export-data">⬇ Export</button>
+            <button class="ghost-button" type="button" id="import-data">⬆ Import</button>
+            <input type="file" id="import-file" accept="application/json,.json" hidden>
+          </div>
+          <span class="backup-hint">Save or restore your session, templates and evolution history.</span>
+        </div>
+
+        <div class="system-note">
+          <strong>How it works</strong>
+          <span>1. Describe what you want to adapt to → 2. Write down what you notice → 3. Get a step-by-step plan to improve → 4. Run the plan, track results, repeat.</span>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section class="view active" id="graph-view" aria-labelledby="graph-title">
+          <header class="view-header">
+            <div>
+              <p class="section-label">Graph View</p>
+              <h2 id="graph-title">Corrected MAS Flow</h2>
+            </div>
+            <div class="toolbar" role="group" aria-label="Graph filters">
+              <button class="chip active" type="button" data-filter="all">All</button>
+              <button class="chip" type="button" data-filter="human">Human</button>
+              <button class="chip" type="button" data-filter="ai">AI Assessment</button>
+              <button class="chip" type="button" data-filter="roadmap">Roadmap</button>
+              <button class="chip" type="button" data-filter="guardrail">Guardrails</button>
+              <button class="chip" type="button" data-filter="mythos">Mythos</button>
+            </div>
+          </header>
+
+          <div class="graph-layout">
+            <section class="graph-panel" aria-label="Interactive knowledge graph">
+              <svg class="edge-layer" id="edge-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                  <marker id="arrowhead" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(147, 161, 183, 0.4)" />
+                  </marker>
+                </defs>
+                <g id="edge-paths"></g>
+              </svg>
+              <div class="node-layer" id="node-layer"></div>
+            </section>
+
+            <aside class="detail-panel" aria-live="polite">
+              <div class="detail-kicker" id="node-category">Human</div>
+              <h3 id="node-title">Observe</h3>
+              <p id="node-definition"></p>
+              <div class="detail-block">
+                <h4>Related Concepts</h4>
+                <div class="relation-list" id="node-relations"></div>
+              </div>
+              <div class="detail-block">
+                <h4>Use In Practice</h4>
+                <p id="node-practice"></p>
+              </div>
+              <div class="detail-source" id="node-source"></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="trainer-view" aria-labelledby="trainer-title">
+          <header class="view-header">
+            <div>
+              <p class="section-label">Trainer</p>
+              <h2 id="trainer-title">Adapt to anything, step by step</h2>
+            </div>
+          </header>
+
+          <!-- quick guide -->
+          <div class="guide-banner">
+            <div class="guide-title">📋 How this works</div>
+            <div class="guide-steps">
+              <span><strong>1.</strong> Describe what you want + what you notice</span>
+              <span>→</span>
+              <span><strong>2.</strong> Get your plan</span>
+              <span>→</span>
+              <span><strong>3.</strong> Run it, track results, evolve</span>
+              <span>·</span>
+              <span>Step 4 is an advanced AI deep dive</span>
+            </div>
+          </div>
+
+          <!-- example buttons -->
+          <div class="example-bar">
+            <span class="example-label">Try an example:</span>
+            <button class="chip example-chip" type="button" data-example="pencil">✏️ Pencil pressure control</button>
+            <button class="chip example-chip" type="button" data-example="public-speaking">🎤 Public speaking nerves</button>
+          </div>
+
+          <div class="step-progress" id="step-progress" aria-label="Trainer steps">
+            <button class="step-dot active" type="button" data-step="1" aria-current="step">1 · Describe</button>
+            <span class="step-line"></span>
+            <button class="step-dot" type="button" data-step="2" disabled>2 · Plan</button>
+            <span class="step-line"></span>
+            <button class="step-dot" type="button" data-step="3" disabled>3 · Evolve</button>
+            <span class="step-line"></span>
+            <button class="step-dot" type="button" data-step="4">4 · Deep dive <span class="advanced-tag">advanced</span></button>
+          </div>
+
+          <section class="wizard-step active" id="wizard-step-1" data-step="1">
+          <div class="trainer-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="section-label">Step 1</p>
+                  <h3>What do you want to adapt to?</h3>
+                </div>
+                <span class="save-badge" id="session-save-status">● Auto-saved</span>
+              </div>
+              <form id="session-form" class="compact-form">
+                <div class="compact-row">
+                  <label class="c-label">
+                    Name it
+                    <input id="target-name" type="text" maxlength="80" placeholder="e.g. pencil, guitar, stairs, audience, a math concept">
+                  </label>
+                  <label class="c-label">
+                    Type
+                    <select id="target-domain">
+                      <option value="object">Physical object (e.g. tool, material)</option>
+                      <option value="environment">Environment (e.g. room, terrain)</option>
+                      <option value="concept">Idea / mental model (e.g. a skill, theory)</option>
+                      <option value="tool">Tool / instrument (e.g. software, device)</option>
+                      <option value="social">People / social setting (e.g. conversation)</option>
+                    </select>
+                  </label>
+                </div>
+                <label class="c-label">
+                  What do you want to improve?
+                  <textarea id="target-goal" rows="2" placeholder="e.g. smoother control, less shaking, clearer understanding"></textarea>
+                </label>
+                <div class="compact-row triple">
+                  <label class="c-label">
+                    Your skill level (1-10)
+                    <input id="skill-level" type="number" min="1" max="10" step="1" placeholder="3">
+                  </label>
+                  <label class="c-label">
+                    What keeps going wrong?
+                    <input id="historical-patterns" type="text" placeholder="e.g. I grip too hard when focusing">
+                  </label>
+                  <label class="c-label">
+                    What have you tried?
+                    <input id="previous-attempts" type="text" placeholder="e.g. tried relaxing my hand">
+                  </label>
+                </div>
+              </form>
+              <div class="session-summary" id="session-summary"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="section-label">Step 2</p>
+                  <h3>Write down what you notice</h3>
+                </div>
+                <span class="save-badge" id="capture-save-status">● Auto-saved</span>
+              </div>
+              <form id="capture-form" class="compact-form compact-capture">
+                <div class="compact-row capture-row">
+                  <label class="c-label">
+                    What do you see / feel / hear?
+                    <textarea id="observed-properties" rows="2" placeholder="Texture, sound, pressure, resistance, shape..."></textarea>
+                  </label>
+                  <label class="c-label">
+                    What seems good or bad?
+                    <textarea id="evaluation" rows="2" placeholder="What feels stable, weak, risky, or hard to control?"></textarea>
+                  </label>
+                  <label class="c-label">
+                    Describe it in plain words
+                    <textarea id="description" rows="2" placeholder="What is this thing and how does it behave?"></textarea>
+                  </label>
+                  <label class="c-label">
+                    What did you try?
+                    <textarea id="test-performed" rows="2" placeholder="One small test you did"></textarea>
+                  </label>
+                  <label class="c-label">
+                    What happened?
+                    <textarea id="test-result" rows="2" placeholder="What changed, improved, or got worse?"></textarea>
+                  </label>
+                  <label class="c-label">
+                    Where / when?
+                    <textarea id="environment" rows="2" placeholder="Location, lighting, time pressure, mood, noise..."></textarea>
+                  </label>
+                  <label class="c-label">
+                    Numbers or signals?
+                    <textarea id="measured-signals" rows="2" placeholder="Vibration, heat, wobble, tension, speed, error count..."></textarea>
+                  </label>
+                  <label class="c-label">
+                    What kind of problem?
+                    <input id="failure-type" type="text" placeholder="e.g. I'm not sensing it clearly, my body can't do it yet, the thing has limits...">
+                  </label>
+                </div>
+              </form>
+              <div id="capture-score" class="compact-score"></div>
+            </section>
+          </div>
+
+          <div class="step-actions">
+            <button class="primary-button" type="button" data-next-step="2">Next: Get your plan →</button>
+          </div>
+          </section>
+
+          <section class="wizard-step" id="wizard-step-2" data-step="2">
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">Step 2</p>
+                <h3>Get your adaptation plan</h3>
+              </div>
+              <div class="step-3-actions">
+                <span class="save-badge" id="ai-save-status">● Ready</span>
+                <button class="primary-button" type="button" id="generate-full">⚡ Generate my plan</button>
+              </div>
+            </div>
+            <div class="trainer-grid">
+              <div id="assessment-output" class="generated-output"></div>
+              <div>
+                <textarea id="roadmap-editor" class="roadmap-editor" rows="14" placeholder="Your step-by-step plan will appear here."></textarea>
+                <div class="roadmap-actions">
+                  <button class="ghost-button" type="button" id="save-roadmap-template">💾 Save plan</button>
+                  <button class="ghost-button" type="button" id="copy-complete-output">📋 Copy everything</button>
+                  <button class="ghost-button" type="button" id="clear-session">🗑️ Start over</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="step-actions">
+              <button class="ghost-button" type="button" data-prev-step="1">← Back</button>
+              <button class="primary-button" type="button" data-next-step="3">Next: Track & evolve →</button>
+            </div>
+          </section>
+          </section>
+
+          <section class="wizard-step" id="wizard-step-3" data-step="3">
+          <section class="panel adaptation-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">Step 3</p>
+                <h3>The wheel spins with your data</h3>
+              </div>
+              <span class="phase-badge" id="phase-badge">⚡ First Hit</span>
+            </div>
+            <p class="input-note" style="margin:0 0 16px">Every time you run the plan, log your measured result. The engine reads the trend, updates your adaptation phase, and tells you the exact next move — like Mahoraga's wheel turning until the target stops being a threat.</p>
+            <div id="adaptation-empty" class="empty-state">Define a target to start the wheel.</div>
+            <div class="adaptation-layout" id="adaptation-layout">
+              <div class="adaptation-left">
+                <div class="adaptation-metrics" id="adaptation-metrics"></div>
+                <div id="progress-sparkline"></div>
+                <div class="next-step" id="next-step"></div>
+              </div>
+              <form id="checkin-form" class="checkin-form" autocomplete="off">
+                <div class="compact-row">
+                  <label class="c-label">Quality 1-10
+                    <input id="ci-quality" type="number" min="0" max="10" step="1" placeholder="5">
+                  </label>
+                  <label class="c-label">Effort 1-10 (lower = easier)
+                    <input id="ci-effort" type="number" min="0" max="10" step="1" placeholder="5">
+                  </label>
+                </div>
+                <div class="compact-row">
+                  <label class="c-label">Stability 1-10
+                    <input id="ci-stability" type="number" min="0" max="10" step="1" placeholder="5">
+                  </label>
+                  <label class="c-label">Discomfort 0-10
+                    <input id="ci-discomfort" type="number" min="0" max="10" step="1" placeholder="2">
+                  </label>
+                </div>
+                <label class="c-label">What did you try / what changed?
+                  <textarea id="ci-note" rows="2" placeholder="e.g. loosened grip, slowed down, changed surface"></textarea>
+                </label>
+                <label class="c-label checkbox-row">
+                  <input type="checkbox" id="ci-context"> This was in a different context (transfer test)
+                </label>
+                <button class="primary-button" type="button" id="log-checkin">🔄 Spin the wheel</button>
+              </form>
+            </div>
+            <div id="checkin-list" class="checkin-list"></div>
+
+            <div class="step-actions">
+              <button class="ghost-button" type="button" data-prev-step="2">← Back</button>
+              <button class="primary-button" type="button" data-next-step="4">Next: Deep dive →</button>
+            </div>
+          </section>
+          </section>
+
+          <section class="wizard-step" id="wizard-step-4" data-step="4">
+          <section class="panel deep-analysis-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">Step 4 · Advanced</p>
+                <h3>Deep analysis (AI-powered)</h3>
+              </div>
+              <div class="deep-actions">
+                <span class="deep-badge" id="deep-badge">AI Analysis ready</span>
+                <button class="primary-button" type="button" id="run-deep-analysis">🔍 Run deep analysis</button>
+              </div>
+            </div>
+            <p class="input-note" style="margin:0 0 12px">9 AI agents, each with its own lens and personality, analyze the same situation — then one synthesis merges them into a single evolution roadmap.</p>
+            <div class="deep-mode-bar">
+              <span class="deep-mode-label">Agent mode:</span>
+              <button class="chip deep-mode-chip active" type="button" data-deep-mode="auto">Auto (server decides)</button>
+              <button class="chip deep-mode-chip" type="button" data-deep-mode="batch">⚡ Fast · ~2 calls</button>
+              <button class="chip deep-mode-chip" type="button" data-deep-mode="full">🔬 Full · 9 agents · ~10 calls</button>
+              <span class="deep-cost" id="deep-cost"></span>
+            </div>
+            <div id="deep-analysis-output">
+              <div class="empty-state">Save your observations first to unlock deep analysis.</div>
+            </div>
+          </section>
+          </section>
+        </section>
+
+        <section class="view" id="templates-view" aria-labelledby="templates-title">
+          <header class="view-header">
+            <div>
+              <p class="section-label">Template Memory</p>
+              <h2 id="templates-title">Roadmaps and Reusable Invariants</h2>
+            </div>
+            <button class="ghost-button" type="button" id="clear-templates">Clear Templates</button>
+          </header>
+          <div class="template-grid" id="template-list"></div>
+        </section>
+
+        <section class="view" id="sources-view" aria-labelledby="sources-title">
+          <header class="view-header">
+            <div>
+              <p class="section-label">Source Map</p>
+              <h2 id="sources-title">Markdown Knowledge Base</h2>
+            </div>
+          </header>
+          <div class="source-grid" id="source-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="background-modal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="background-title">
+        <div class="panel-heading">
+          <div>
+            <p class="section-label">Background</p>
+            <h2 id="background-title">What This MAS Tool Does</h2>
+          </div>
+          <button class="ghost-button" type="button" id="close-background">Close</button>
+        </div>
+        <div class="modal-content">
+          <p>This tool helps you adapt to anything — a tool, an environment, a skill, or a social situation. It works like a personal coach in three simple steps:</p>
+          <ol>
+            <li><strong>Describe:</strong> Name your target and write down what you notice — what you see, feel, hear, what keeps going wrong, and what you tried.</li>
+            <li><strong>Plan:</strong> One click turns your observations into a step-by-step adaptation roadmap.</li>
+            <li><strong>Evolve:</strong> After each practice run, log your measured result. The system tracks your trend, updates your adaptation phase (from First Hit to Immunity), and tells you the exact next move.</li>
+            <li><strong>Deep dive (advanced):</strong> Optionally run 9 AI agents — each with a different thinking personality — and merge them into one synthesis.</li>
+          </ol>
+          <p>Steps 1-3 run locally, no external AI required. Step 4 uses Google Gemini when the server has an API key. Save a plan to Template Memory to reuse it later.</p>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="loading-overlay" hidden>
+      <div class="wheel-spin-modal">
+        <div class="wheel-container">
+          <svg class="wheel-svg" viewBox="0 0 120 120" aria-hidden="true">
+            <defs>
+              <linearGradient id="wg1" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#48d6b5"/>
+                <stop offset="100%" stop-color="#83a8ff"/>
+              </linearGradient>
+            </defs>
+            <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(72,214,181,0.15)" stroke-width="3"/>
+            <circle class="wheel-arc" cx="60" cy="60" r="50" fill="none" stroke="url(#wg1)" stroke-width="3"
+              stroke-dasharray="314" stroke-dashoffset="240" stroke-linecap="round"
+              transform="rotate(-90 60 60)"/>
+            <g class="wheel-spokes" transform="translate(60,60)">
+              <line x1="0" y1="-45" x2="0" y2="45" stroke="rgba(72,214,181,0.3)" stroke-width="1"/>
+              <line x1="-45" y1="0" x2="45" y2="0" stroke="rgba(72,214,181,0.3)" stroke-width="1"/>
+              <line x1="-32" y1="-32" x2="32" y2="32" stroke="rgba(72,214,181,0.3)" stroke-width="1"/>
+              <line x1="32" y1="-32" x2="-32" y2="32" stroke="rgba(72,214,181,0.3)" stroke-width="1"/>
+            </g>
+            <text x="60" y="62" text-anchor="middle" fill="#eef4ff" font-size="10" font-weight="800" font-family="sans-serif">SPIN</text>
+          </svg>
+        </div>
+        <p class="wheel-status" id="loading-text">Spinning the wheel...</p>
+        <div class="wheel-pulse"></div>
+      </div>
+    </div>
+    <!-- Classic scripts, shared global scope. Load order matters. -->
+    <script src="js/utils.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/graph.js"></script>
+    <script src="js/adaptation.js"></script>
+    <script src="js/assessment.js"></script>
+    <script src="js/session.js"></script>
+    <script src="js/templates.js"></script>
+    <script src="js/backup.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/main.js"></script>
+  <a href="../hub/index.html" data-chain-link="hub" title="Project Hub" style="position:fixed;bottom:14px;right:14px;z-index:2147483000;display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:999px;background:rgba(20,16,16,.88);color:#f3ede4;font:600 12px/1 'Segoe UI',system-ui,sans-serif;text-decoration:none;border:1px solid rgba(255,255,255,.2);box-shadow:0 6px 18px rgba(0,0,0,.4);backdrop-filter:blur(8px);">☰ Project Hub</a>
+</body>
+</html>

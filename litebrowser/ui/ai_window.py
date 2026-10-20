@@ -54,6 +54,9 @@ class AIWindow(QMainWindow):
         self._external_context_label = "Workspace-wide"
         self._pending_screenshot_b64 = ""
         self._query_pending = False
+        self._closing = False
+        self._privacy_locked = False
+        self._discarded_queries = set()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="litebrowser-ai")
         # detect_ollama_models runs `ollama list` with a 2 s timeout on the GUI
         # thread (v6.4 froze startup when Ollama was hung). Detect lazily on the
@@ -67,13 +70,14 @@ class AIWindow(QMainWindow):
                 models = ai_service.detect_ollama_models()
             except Exception:
                 models = []
-            self._ollama_models_ready.emit(models)
+            if not self._closing:
+                self._ollama_models_ready.emit(models)
 
         self._executor.submit(_detect_models)
         self.setWindowTitle(f"AI Workspace - {app_version.APP_NAME}")
         self.setWindowIcon(QIcon(os.path.join(self.app_dir, "icon.png")))
         self.resize(1180, 780)
-        self.setMinimumSize(760 if embedded else 880, 520 if embedded else 620)
+        self.setMinimumSize(0 if embedded else 880, 0 if embedded else 620)
         if not self.embedded:
             win_titlebar.apply_dark_titlebar(self, enabled=True)
 
@@ -91,8 +95,7 @@ class AIWindow(QMainWindow):
         hero_layout.setSpacing(8)
 
         brand_row = QHBoxLayout()
-        brand_row.addWidget(components.page_header("AI Assistant", "Ask one assistant across Browser, Personal, Library, and this workspace"))
-        brand_row.addStretch(1)
+        brand_row.addWidget(components.page_header("AI Assistant", "Ask one assistant across Browser, Personal, Library, and this workspace"), 1)
         hero_layout.addLayout(brand_row)
 
         settings_row = QHBoxLayout()
@@ -155,6 +158,13 @@ class AIWindow(QMainWindow):
             "The content is labelled untrusted context, so the assistant reads it but never follows it."
         )
         badge_row.addWidget(self.chk_browser_context)
+        self.chk_research_context = QCheckBox("Use research desk")
+        self.chk_research_context.setChecked(False)
+        self.chk_research_context.setToolTip(
+            "Include the active research workspace's tabs and linked notes, tasks, saved links, and flashcards.\n"
+            "Linked note and task text may be sent to the selected provider when you ask a question."
+        )
+        badge_row.addWidget(self.chk_research_context)
         self.chk_show_context = QCheckBox("Show sources")
         self.chk_show_context.setChecked(True)
         badge_row.addWidget(self.chk_show_context)
@@ -273,6 +283,7 @@ class AIWindow(QMainWindow):
             body.setSizes([left, center, right])
         self.chk_show_context.setVisible(not tiny)
         self.chk_browser_context.setVisible(not narrow)
+        self.chk_research_context.setVisible(not narrow)
         self.btn_to_note.setVisible(not narrow)
         self.btn_to_task.setVisible(not narrow)
         self.btn_save_set.setVisible(not tiny)
@@ -286,6 +297,7 @@ class AIWindow(QMainWindow):
         self._refresh_model_value()
         self.chk_show_context.setChecked(bool(data.get("show_sources", True)))
         self.chk_browser_context.setChecked(bool(data.get("read_browser", True)))
+        self.chk_research_context.setChecked(bool(data.get("read_research", False)))
         self._on_provider_change()
 
     def _on_ollama_models_ready(self, models):
@@ -316,6 +328,7 @@ class AIWindow(QMainWindow):
             "openrouter_api_key": self.ed_api_key.text().strip(),
             "show_sources": self.chk_show_context.isChecked(),
             "read_browser": self.chk_browser_context.isChecked(),
+            "read_research": self.chk_research_context.isChecked(),
         }
         if provider == "openrouter":
             payload["openrouter_model"] = self.ed_model.text().strip() or "openai/gpt-4o-mini"
@@ -324,6 +337,16 @@ class AIWindow(QMainWindow):
         elif provider == "llama_cpp":
             payload["llama_cpp_url"] = self.ed_model.text().strip() or "http://127.0.0.1:8080/completion"
         return payload
+
+    def _research_context_for_ask(self):
+        if not self.chk_research_context.isChecked():
+            return None
+        try:
+            from litebrowser.services import tab_sets
+
+            return tab_sets.build_research_context(self.base_dir)
+        except (OSError, ValueError, RuntimeError):
+            return None
 
     def _save_settings(self):
         prefs.save_ai_settings(self.base_dir, self._collect_settings_payload())
@@ -401,8 +424,23 @@ class AIWindow(QMainWindow):
         context_label, context = self._external_context_label, self._external_context
         self._external_context_label = "Workspace-wide"
         self._external_context = ""
-        if self.chk_browser_context.isChecked() and context_label == "Workspace-wide":
-            self._ask_with_browser(question, context)
+        research = self._research_context_for_ask()
+        if research:
+            context = "\n\n".join(part for part in (context, research.get("text", "")) if part)
+            context_label = (
+                f"{context_label} + research: {research['title']}"
+                if context_label != "Workspace-wide"
+                else f"Research: {research['title']}"
+            )
+            self.lbl_context_scope.setText(
+                f"Context: research desk “{research['title']}” · {self.cmb_provider.currentText()}"
+            )
+            if self.chk_show_context.isChecked():
+                self.txt_context.setPlainText(context)
+        if self.chk_browser_context.isChecked() and (
+            context_label == "Workspace-wide" or research is not None
+        ):
+            self._ask_with_browser(question, context, context_label)
             return
         self.run_assistant_query(question, context_label, context)
 
@@ -435,7 +473,9 @@ class AIWindow(QMainWindow):
             lines.append(f"{marker}{title or url} — {url}")
         return lines
 
-    def _ask_with_browser(self, question: str, extra_context: str = ""):
+    def _ask_with_browser(
+        self, question: str, extra_context: str = "", context_label: str = "Workspace-wide"
+    ):
         """Attach the *visible text* of the page being read, plus every open tab.
 
         The read happens in the page (JavaScript innerText), so the assistant is
@@ -443,7 +483,23 @@ class AIWindow(QMainWindow):
         """
         browser = self._host_browser()
         if browser is None or browser.page() is None:
-            self.run_assistant_query(question, "Workspace-wide", extra_context)
+            self.run_assistant_query(question, context_label, extra_context)
+            return
+        try:
+            profile = browser.page().profile()
+            if profile is None or profile.isOffTheRecord():
+                self.lbl_context_scope.setText("Context: private page excluded")
+                self.run_assistant_query(
+                    question, context_label + " (private page excluded)", extra_context
+                )
+                return
+        except (AttributeError, RuntimeError):
+            # An unknown profile is treated as private; never send a page whose
+            # isolation state cannot be verified.
+            self.lbl_context_scope.setText("Context: page privacy could not be verified")
+            self.run_assistant_query(
+                question, context_label + " (page privacy unverified)", extra_context
+            )
             return
         tabs = self._browser_tab_lines()
         self.lbl_context_scope.setText("Context: reading the browser…")
@@ -461,9 +517,14 @@ class AIWindow(QMainWindow):
             if tabs:
                 parts.append("[Open tabs in this window]\n" + "\n".join(tabs))
             if not page_text and not tabs:
-                self.run_assistant_query(question, "Workspace-wide", extra_context)
+                self.run_assistant_query(question, context_label, extra_context)
                 return
-            self.run_assistant_query(question, "Browser page + open tabs", "\n\n".join(parts))
+            label = "Browser page + open tabs"
+            if "[Untrusted local research workspace:" in extra_context:
+                label += " + research"
+            elif context_label != "Workspace-wide":
+                label += " + " + context_label
+            self.run_assistant_query(question, label, "\n\n".join(parts))
 
         browser.page().runJavaScript(
             "(function(){try{return (document.body && document.body.innerText) || '';}catch(e){return '';}})();",
@@ -516,6 +577,8 @@ class AIWindow(QMainWindow):
         extra_context: str = "",
         screenshot_b64: str = "",
     ):
+        if getattr(self, "_closing", False):
+            return
         if self._query_pending:
             self.txt_answer.setPlainText("Another request is still running — please wait for it to finish.")
             return
@@ -523,6 +586,7 @@ class AIWindow(QMainWindow):
         screenshot_b64 = screenshot_b64 or self._pending_screenshot_b64
         self._pending_screenshot_b64 = ""
         self.lbl_vision.setText("Vision: attached" if screenshot_b64 else "Vision: none")
+        self._privacy_locked = False
         self._last_question = question
         self._prompt_history.append(question)
         self._prompt_history = self._prompt_history[-20:]
@@ -542,11 +606,12 @@ class AIWindow(QMainWindow):
             10,
             screenshot_b64,
         )
+        self._active_query = future
         # Capture the provider label now: the user may switch the combo while
         # the query runs, and the answer must credit who produced it.
         provider_label = self.cmb_provider.currentText()
         future.add_done_callback(
-            lambda done, label=context_label, prov=provider_label: self.query_finished.emit(done, label, prov)
+            lambda done, label=context_label, prov=provider_label: self.query_finished.emit(done, label, prov) if not self._closing else None
         )
 
     def _start_thinking_pulse(self):
@@ -572,6 +637,13 @@ class AIWindow(QMainWindow):
             self._thinking_timer.stop()
 
     def _finish_assistant_query(self, future, context_label: str, provider_label: str = ""):
+        if getattr(self, "_closing", False):
+            return
+        if future in getattr(self, "_discarded_queries", set()):
+            self._discarded_queries.discard(future)
+            return
+        if getattr(self, "_privacy_locked", False):
+            return
         self._stop_thinking_pulse()
         self._query_pending = False
         self.btn_ask.setEnabled(True)
@@ -607,6 +679,28 @@ class AIWindow(QMainWindow):
         self._external_context = context_text or ""
         self.ed_question.setText(question or "")
         self.run_assistant_query(question or "Summarize this context", self._external_context_label, self._external_context)
+
+    def relock(self):
+        """Discard late answers and visible private context, not persisted data."""
+        self._privacy_locked = True
+        future = getattr(self, "_active_query", None)
+        if future is not None:
+            self._discarded_queries.add(future)
+            future.cancel()
+        self._active_query = None
+        self._query_pending = False
+        self._stop_thinking_pulse()
+        self.btn_ask.setEnabled(True)
+        self.btn_reindex.setEnabled(True)
+        try:
+            self._auto_save_set()
+        except OSError:
+            # Locking must not fail because the disk is full. Keep the prompt
+            # history for the normal save path, but clear visible private data.
+            pass
+        else:
+            self._prompt_history = []
+        self._clear_thread()
 
     def _clear_thread(self):
         """Empty the in-memory thread, session list, and visible answer panes."""
@@ -659,15 +753,37 @@ class AIWindow(QMainWindow):
         title = self._last_question[:60] or "AI note"
         body = "# " + title + "\n\n" + self._last_answer
         note = personal_service.create_note(self.base_dir, title, body)
-        QMessageBox.information(self, "AI Assistant", "Saved answer to note: " + note["title"])
+        linked_to = self._link_to_active_research("note", note.get("id", ""))
+        message = "Saved answer to note: " + note["title"]
+        if linked_to:
+            message += f"\nLinked to research workspace: {linked_to}"
+        QMessageBox.information(self, "AI Assistant", message)
 
     def create_task_from_answer(self):
         if not self._last_answer:
             QMessageBox.information(self, "AI Assistant", "Ask something first.")
             return
         title = self._last_question[:80] or "AI follow-up"
-        life_service.add_task(self.base_dir, title, bucket="work")
-        QMessageBox.information(self, "AI Assistant", "Created a task from the current answer.")
+        task = life_service.add_task(self.base_dir, title, bucket="work")
+        linked_to = self._link_to_active_research("task", task.get("id", ""))
+        message = "Created a task from the current answer."
+        if linked_to:
+            message += f"\nLinked to research workspace: {linked_to}"
+        QMessageBox.information(self, "AI Assistant", message)
+
+    def _link_to_active_research(self, entity_type: str, entity_id: str) -> str:
+        """Attach an explicitly saved AI output to the active research desk."""
+        try:
+            from litebrowser.services import tab_sets
+
+            workspace = tab_sets.get_active_research_workspace(self.base_dir)
+            if workspace and tab_sets.add_research_reference(
+                self.base_dir, workspace["id"], entity_type, entity_id
+            ):
+                return str(workspace.get("title") or "")
+        except (OSError, ValueError, RuntimeError):
+            return ""
+        return ""
 
     def get_current_ai_state(self):
         return [
@@ -691,6 +807,14 @@ class AIWindow(QMainWindow):
             return
         tab_sets.add_tab_set(self.base_dir, "ai", name or default, tabs)
         QMessageBox.information(self, "AI session", "Current AI session saved.")
+
+    def shutdown(self):
+        if self._closing:
+            return
+        self._closing = True
+        for timer in self.findChildren(QTimer):
+            timer.stop()
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     def closeEvent(self, event):
         try:

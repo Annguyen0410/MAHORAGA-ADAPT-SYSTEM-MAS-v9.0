@@ -86,63 +86,63 @@
 </head>
 <body>
   <h1>Mei Window Bridge</h1>
-  <p>Bê nguyên workspace browser khác (Chrome / Opera GX) sang Mei. Mỗi cửa sổ = một màn hình, giữ riêng từng screen rồi chia lại trong Mei — hoặc gửi thẳng tab và đoạn đang bôi đen sang Mei khi Mei đang mở.</p>
+  <p>Bring your Chrome / Opera GX workspace into Mei. Keep each window as a separate screen, or send the current tab and highlighted text directly while Mei is open.</p>
 
   <div class="card">
-    <div class="small"><span class="step">①</span> Nối với Mei (một lần)</div>
+    <div class="small"><span class="step">①</span> Connect to Mei (once)</div>
     <div class="row">
       <input id="pairingInput" type="text" placeholder="MEI1|127.0.0.1|18444|token…">
-      <button id="connectBtn" class="secondary compact">Nối</button>
+      <button id="connectBtn" class="secondary compact">Connect</button>
     </div>
     <div id="bridgeStatus" class="status"></div>
   </div>
 
   <div class="card">
-    <div class="small"><span class="step">②</span> Gửi thẳng sang Mei</div>
+    <div class="small"><span class="step">②</span> Send directly to Mei</div>
     <div class="row">
-      <button id="sendTabBtn" class="primary wide">Gửi tab này sang Mei</button>
+      <button id="sendTabBtn" class="primary wide">Send this tab to Mei</button>
     </div>
     <div class="row">
       <select id="selectionMode">
-        <option value="note">Ghi chú (Clippings)</option>
-        <option value="card">Thẻ ôn tập</option>
-        <option value="saved_page">Trang đã lưu</option>
+        <option value="note">Note (Clippings)</option>
+        <option value="card">Flashcard</option>
+        <option value="saved_page">Saved page</option>
       </select>
-      <button id="sendSelectionBtn" class="secondary compact">Gửi đoạn bôi đen</button>
+      <button id="sendSelectionBtn" class="secondary compact">Send selection</button>
     </div>
     <div class="row">
-      <input id="tagsInput" type="text" placeholder="Thẻ, cách nhau bằng dấu phẩy (networking, ôn thi)">
+      <input id="tagsInput" type="text" placeholder="Tags, separated by commas (networking, exam prep)">
     </div>
     <div id="sendStatus" class="status"></div>
   </div>
 
   <div class="card">
-    <div class="small">Một cửa sổ hiện tại (xuất file)</div>
+    <div class="small">Current window (file export)</div>
     <label for="labelInput">Batch label</label>
     <input id="labelInput" type="text" placeholder="Example: Work Window">
     <div class="row">
-      <button id="captureBtn" class="primary">Chụp cửa sổ này</button>
+      <button id="captureBtn" class="primary">Capture this window</button>
       <button id="copyBtn" class="secondary">Copy JSON</button>
     </div>
     <div class="row">
-      <button id="downloadBtn" class="ghost">Tải JSON cửa sổ</button>
-      <button id="refreshBtn" class="ghost">Nạp lại</button>
+      <button id="downloadBtn" class="ghost">Download window JSON</button>
+      <button id="refreshBtn" class="ghost">Refresh</button>
     </div>
     <div id="status" class="status"></div>
   </div>
 
   <div class="card">
-    <div class="small">Tất cả màn hình — đa cửa sổ (xuất file)</div>
-    <button id="captureAllBtn" class="primary wide">Chụp TẤT CẢ cửa sổ</button>
+    <div class="small">All screens — multiple windows (file export)</div>
+    <button id="captureAllBtn" class="primary wide">Capture ALL windows</button>
     <div class="row">
-      <button id="downloadAllJsonBtn" class="secondary">Tải JSON tất cả</button>
-      <button id="downloadAllZipBtn" class="ghost">Tải ZIP tất cả</button>
+      <button id="downloadAllJsonBtn" class="secondary">Download all JSON</button>
+      <button id="downloadAllZipBtn" class="ghost">Download all ZIP</button>
     </div>
   </div>
 
   <div class="card">
-    <div class="small">Payload xuất file (dùng khi chưa nối được bridge)</div>
-    <textarea id="payloadOutput" placeholder="Chụp cửa sổ để sinh JSON payload..."></textarea>
+    <div class="small">Export payload (use when the bridge is unavailable)</div>
+    <textarea id="payloadOutput" placeholder="Capture a window to generate a JSON payload..."></textarea>
   </div>
 
   <script src="zip.js"></script>

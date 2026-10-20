@@ -330,7 +330,7 @@ input[type="search"]:focus {
 .tile-label {
   position: relative;
   /* Two lines maximum, balanced across them: "MAS — Mahoraga Adapt System" and
-     "Bí Mật — PersonalFrequency" otherwise stretched their whole grid row. */
+     "MAS — Mahoraga Adapt System" otherwise stretched their whole grid row. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -533,8 +533,15 @@ def build_new_tab_html(base_dir, app_dir=None, search_engine="Google", mode=None
     eyebrow, headline = cafe_greeting()
     if not prefs.get_new_tab_greeting(base_dir):
         eyebrow, headline = "Mei", "Your calm starting point."
-    steam_html = '<span class="steam"><i></i><i></i><i></i></span>' if prefs.get_new_tab_steam(base_dir) else ''
+    reduce_motion = prefs.reduced_motion_enabled(base_dir)
+    steam_html = (
+        '<span class="steam"><i></i><i></i><i></i></span>'
+        if prefs.get_new_tab_steam(base_dir) and not reduce_motion
+        else ''
+    )
     css = _NEW_TAB_CSS
+    if reduce_motion:
+        css += "\n*,:before,:after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }\n"
     for token, value in _resolve_theme_tokens(mode, accent).items():
         css = css.replace(token, value)
 

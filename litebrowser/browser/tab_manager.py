@@ -459,6 +459,7 @@ class TabManager:
         browser.titleChanged.connect(lambda title, b=browser: self.on_title_changed(title, b))
         browser.iconChanged.connect(lambda icon, b=browser: self.on_icon_changed(icon, b))
         browser.loadFinished.connect(lambda ok, b=browser: self._on_load_finished_wire(ok, b))
+        browser.loadStarted.connect(lambda b=browser: self.window.on_load_started(b))
         # Load progress → the thin accent bar under the toolbar (v6.5: the app
         # had zero loadProgress feedback between navigation start and finish).
         browser.loadProgress.connect(
@@ -775,6 +776,8 @@ class TabManager:
         self._refresh_hibernate_timers(active_index=i)
         self.window.update_urlbar(browser.url(), browser)
         self.window.update_zoom_label()
+        self.window.sync_navigation(browser)
+        self.window.on_load_progress(1 if browser.property("mei_loading") else 100, browser)
         self._enforce_background_hibernation(active_index=i)
 
     def _apply_hibernated_visual(self, item):

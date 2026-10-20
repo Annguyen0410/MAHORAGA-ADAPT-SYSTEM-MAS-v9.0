@@ -6,6 +6,7 @@ import email
 import hmac
 import ipaddress
 import json
+import math
 import os
 import re
 import threading
@@ -19,7 +20,9 @@ from urllib.parse import parse_qs, urlparse
 
 from litebrowser.core import app_paths, app_version, prefs
 from litebrowser.core.log import get_logger
-from litebrowser.core.profile_lock import profile_locked
+from litebrowser.core.profile_lock import profile_locked, profile_transaction
+from litebrowser.core.storage_utils import safe_child_path, write_json
+from urllib.parse import unquote
 
 _log = get_logger("android_bridge")
 from litebrowser.services import (
@@ -107,17 +110,42 @@ class BridgeHTTPServer(ThreadingHTTPServer):
     # dribbles bytes (slowloris) used to pin a thread forever — one thread per
     # request with no timeout meant unbounded thread accumulation (v6.4).
     timeout = 30
+    daemon_threads = True
+    block_on_close = False
+    request_queue_size = 16
 
     def __init__(self, profile_dir: str, server_address, RequestHandlerClass):
         self.profile_dir = profile_dir
+        self._slots = threading.BoundedSemaphore(16)
         super().__init__(server_address, RequestHandlerClass)
+
+    def get_request(self):
+        connection, address = super().get_request()
+        connection.settimeout(self.timeout)
+        return connection, address
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
 
 PAIRING_PREFIX = "MEI1"
 PAIRING_MAX_TOKEN_CHARS = 512
 #: A host that carries any of these cannot be rebuilt into a URL, so it is not a
 #: host. Shared, character for character, with the extension's parser.
-PAIRING_HOST_JUNK_RE = re.compile(r"[\s/\\|,]")
+PAIRING_HOST_JUNK_RE = re.compile(r"[\s/\\|,?#@%]")
 
 
 def _utc_iso_z() -> str:
@@ -161,15 +189,22 @@ def parse_pairing_code(code: str) -> dict[str, str] | None:
     digit port inside the real TCP range, and a non-empty host and token. A code
     that survives here is a code that survives there.
     """
-    parts = (code or "").strip().split("|")
+    if not isinstance(code, str):
+        return None
+    parts = code.strip().split("|")
     if len(parts) != 4 or parts[0] != PAIRING_PREFIX:
         return None
     host, port, token = parts[1].strip(), parts[2].strip(), parts[3].strip()
-    if not host or PAIRING_HOST_JUNK_RE.search(host):
+    if not host or len(host) > 253 or PAIRING_HOST_JUNK_RE.search(host):
         return None
-    if not port.isdigit() or not (1 <= int(port) <= 65535):
+    if ":" in host:
+        if not re.fullmatch(r"(?:[0-9A-Fa-f]*:){2,}[0-9A-Fa-f.]*", host.strip("[]")):
+            return None
+    elif not re.fullmatch(r"[A-Za-z0-9.-]+", host):
         return None
-    if not token or len(token) > PAIRING_MAX_TOKEN_CHARS:
+    if not re.fullmatch(r"[0-9]{1,5}", port) or not (1 <= int(port) <= 65535):
+        return None
+    if not token or len(token) > PAIRING_MAX_TOKEN_CHARS or re.search(r"[\r\n\x00]", token):
         return None
     return {"host": host, "port": port, "token": token}
 
@@ -207,6 +242,10 @@ def _auth_ok(profile_dir: str, auth_header: str | None) -> bool:
 def _permit(bucket: dict[str, deque[float]], address: str, limit: int) -> bool:
     now = time.monotonic()
     with _rate_lock:
+        if len(bucket) > 512:
+            for key in list(bucket):
+                if not bucket[key] or now - bucket[key][-1] >= 60:
+                    del bucket[key]
         window = bucket[address]
         while window and now - window[0] >= 60:
             window.popleft()
@@ -226,18 +265,22 @@ def _client_allowed(profile_dir: str, address: str) -> bool:
     return ip.is_loopback or ip.is_private or ip.is_link_local
 
 
-def _payload_is_safe(value: Any, key: str = "") -> bool:
-    """Recursively bound payload size; base64 image fields get a larger budget."""
+def _payload_is_safe(value: Any, key: str = "", depth: int = 0) -> bool:
+    """Bound nesting, field size, and numeric values before touching any store."""
+    if depth > 20:
+        return False
     if isinstance(value, str):
         limit = MAX_IMAGE_B64_CHARS if key in _LONG_FIELD_KEYS else MAX_FIELD_CHARS
         return len(value) <= limit
     if isinstance(value, dict):
         return len(value) <= 128 and all(
-            isinstance(k, str) and len(k) <= 128 and _payload_is_safe(item, k) for k, item in value.items()
+            isinstance(k, str) and len(k) <= 128 and _payload_is_safe(item, k, depth + 1) for k, item in value.items()
         )
     if isinstance(value, list):
-        return len(value) <= 256 and all(_payload_is_safe(item) for item in value)
-    return value is None or isinstance(value, (bool, int, float))
+        return len(value) <= 256 and all(_payload_is_safe(item, depth=depth + 1) for item in value)
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return value is None or isinstance(value, (bool, int))
 
 
 def _tags_suffix(tags: Any) -> str:
@@ -262,17 +305,13 @@ def _card_tags(tags: Any) -> str:
 
 def _safe_vault_target_dir(base_dir: str, relative_target: str) -> str | None:
     """Resolve relative_target under SafeVault; reject traversal."""
-    vault = os.path.abspath(prefs.vault_path(base_dir))
     rel = (relative_target or "").strip().replace("\\", "/").strip("/")
     if not rel:
         return None
     segments = [p for p in rel.split("/") if p and p != "."]
     if ".." in segments:
         return None
-    full = os.path.abspath(os.path.join(vault, *segments))
-    if not (full == vault or full.startswith(vault + os.sep)):
-        return None
-    return full
+    return safe_child_path(base_dir, "SafeVault/" + "/".join(segments)) or None
 
 
 def _safe_vault_filename(name: str) -> str:
@@ -286,23 +325,23 @@ def _safe_vault_filename(name: str) -> str:
             raw = (stem[:120].rstrip(" .") or "upload") + dot + ext
         else:
             raw = raw[:120].rstrip(" .") or "upload"
+    if raw.split(".", 1)[0].upper() in {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]}:
+        raw = "_" + raw
     return raw
 
 
 def _upload_dir(base_dir: str, relative_target: str) -> str | None:
     """Resolve an upload target under SafeVault/files; reject traversal."""
-    vault = os.path.abspath(prefs.vault_path(base_dir))
-    files_root = os.path.join(vault, "files")
+    files_root = safe_child_path(base_dir, "SafeVault/files")
+    if not files_root:
+        return None
     rel = (relative_target or "").strip().replace("\\", "/").strip("/")
     if not rel:
         rel = "Inbox"
     segments = [p for p in rel.split("/") if p and p != "."]
     if ".." in segments:
         return None
-    full = os.path.abspath(os.path.join(files_root, *segments))
-    if not (full == files_root or full.startswith(files_root + os.sep)):
-        return None
-    return full
+    return safe_child_path(files_root, "/".join(segments)) or None
 
 
 def _unique_path(directory: str, name: str) -> str:
@@ -321,6 +360,7 @@ def _unique_path(directory: str, name: str) -> str:
         suffix += 1
 
 
+@profile_transaction
 def dispatch_ingest(profile_dir: str, envelope: dict[str, Any]) -> dict[str, Any]:
     """
     Run one ingest envelope; returns Android-shaped body (HTTP 200 with ok true/false).
@@ -350,6 +390,9 @@ def dispatch_ingest(profile_dir: str, envelope: dict[str, Any]) -> dict[str, Any
     p = payload if isinstance(payload, dict) else {}
 
     try:
+        text_fields = ("title", "url", "category", "bucket", "filename", "mime_type", "relative_target", "as", "front", "label", "id", "summary")
+        if any(key in p and p[key] is not None and not isinstance(p[key], str) for key in text_fields):
+            raise ValueError("Text fields must be strings")
         if action == "create_note":
             category = (p.get("category") or "").strip()
             title = (p.get("title") or "").strip()
@@ -468,8 +511,7 @@ def dispatch_ingest(profile_dir: str, envelope: dict[str, Any]) -> dict[str, Any
                 "caption": cap_s,
                 "stub": "metadata_only_no_binary",
             }
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(json.dumps(meta, ensure_ascii=False, indent=2))
+            write_json(path, meta)
             history_service.log_event(
                 profile_dir,
                 "mobile-upload",
@@ -494,15 +536,17 @@ def dispatch_ingest(profile_dir: str, envelope: dict[str, Any]) -> dict[str, Any
             if not isinstance(image_b64, str) or not image_b64.strip():
                 raise ValueError("create_drawing requires image_base64")
             try:
-                image_bytes = base64.b64decode(image_b64.strip(), validate=False)
+                image_bytes = base64.b64decode(image_b64.strip(), validate=True)
             except ValueError as exc:
                 raise ValueError("image_base64 is not valid base64") from exc
-            if not image_bytes:
-                raise ValueError("image_base64 decoded to empty content")
+            if not image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError("Drawing content must be a PNG image")
             if len(image_bytes) > MAX_IMAGE_BYTES:
                 raise ValueError("image_base64 too large")
             safe_title = _safe_vault_filename(title)
-            draw_dir = os.path.join(prefs.vault_path(profile_dir), "files", "Drawings")
+            draw_dir = _upload_dir(profile_dir, "Drawings")
+            if not draw_dir:
+                raise ValueError("Drawing folder points outside the profile")
             os.makedirs(draw_dir, exist_ok=True)
             path = _unique_path(draw_dir, f"{safe_title}-{int(time.time())}.png")
             with open(path, "wb") as f:
@@ -596,8 +640,8 @@ def dispatch_ingest(profile_dir: str, envelope: dict[str, Any]) -> dict[str, Any
             url = (p.get("url") or "").strip()
             label = (p.get("label") or "").strip()
             if not url and app_id:
-                # Resolve: deployed URL từ chain.json → nếu chưa deploy, dùng bản
-                # local (file://) của app trên máy desktop. Không hardcode URL nào.
+                # Resolve the deployed URL from chain.json, falling back to the
+                # desktop's local file:// app. No hard-coded URLs.
                 if app_id in _CHAIN_APP_IDS:
                     # Prefer the deployed chain URL, including the packaged
                     # fallback map when the beside-the-EXE manifest has blank
@@ -615,7 +659,14 @@ def dispatch_ingest(profile_dir: str, envelope: dict[str, Any]) -> dict[str, Any
             if not url:
                 raise ValueError("open_app requires url, or a chain app id in " + ",".join(_CHAIN_APP_IDS))
             if not url.startswith(("http://", "https://", "file://")):
-                raise ValueError("open_app url must be http(s) or file://")
+                raise ValueError("open_app url must be http(s) or a bundled local app")
+            parsed_url = urlparse(url)
+            if parsed_url.scheme in ("http", "https") and (not parsed_url.hostname or parsed_url.username or parsed_url.password):
+                raise ValueError("Invalid app URL")
+            if parsed_url.scheme == "file":
+                local_apps = {app_paths.project_hub_url(), *[app_paths.bundled_site_url(key) for key in _CHAIN_APP_IDS if key != "hub"]}
+                if unquote(url) not in {unquote(value) for value in local_apps if value}:
+                    raise ValueError("Only bundled app files can be opened remotely")
             open_request.push_open_request(
                 profile_dir,
                 {
@@ -629,7 +680,7 @@ def dispatch_ingest(profile_dir: str, envelope: dict[str, Any]) -> dict[str, Any
                 "ok": True,
                 "action": action,
                 "received_at": received,
-                "result": {"url": url, "kind": app_id or "url", "note": "desktop sẽ mở trong vài giây"},
+                "result": {"url": url, "kind": app_id or "url", "note": "The desktop will open this in a few seconds"},
                 "error": None,
             }
 
@@ -687,8 +738,8 @@ def desk_for_phone(profile_dir: str, day: str = "") -> dict:
     """
     The desk as the phone reads it — the other direction of the bridge.
 
-    Ingest actions let the phone *write* into Mei. This is the answer to “hôm nay
-    học gì?”: the same four blocks Home opens on (``desk_service.build_desk``),
+    Ingest actions let the phone *write* into Mei. This answers “what should I
+    study today?”: the same four blocks Home opens on (``desk_service.build_desk``),
     trimmed to what fits a small screen — one line per row, plus the four numbers
     a home-screen widget can print. Read-only: no store is written, nothing is
     created, so calling it in a loop costs nothing but JSON parsing.
@@ -878,6 +929,7 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
 
     def _send_json(self, status: int, obj: dict) -> None:
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.close_connection = True
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -909,11 +961,23 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
 
     def _content_length(self) -> int | None:
         try:
-            raw = self.headers.get("Content-Length")
-            if raw is None or not raw.isdigit():
+            values = self.headers.get_all("Content-Length", [])
+            raw = values[0] if len(values) == 1 else None
+            if raw is None or not re.fullmatch(r"[0-9]{1,12}", raw):
                 return None
             return int(raw)
         except ValueError:
+            return None
+
+    def _read_body(self, length):
+        try:
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                self._send_json(400, _json_error("bad_request", "Incomplete request body"))
+                return None
+            return raw
+        except (OSError, TimeoutError):
+            self._send_json(408, _json_error("request_timeout", "Request body timed out"))
             return None
 
     def _body_too_large(self) -> bool:
@@ -967,7 +1031,10 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
             # same token as every other call, and a junk ?day= falls back to today
             # instead of raising inside the desk builder.
             day = parse_qs(urlparse(self.path).query).get("day", [""])[0]
-            self._send_json(200, {"ok": True, **desk_for_phone(profile_dir, day)})
+            try:
+                self._send_json(200, {"ok": True, **desk_for_phone(profile_dir, day)})
+            except (OSError, ValueError, TypeError):
+                self._send_json(500, _json_error("service_failure", "The desk could not be read; local data was not changed"))
             return
 
         if path == "/api/mobile/capabilities":
@@ -1020,7 +1087,9 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
             if length > MAX_UPLOAD_BYTES:
                 self._send_json(413, _json_error("payload_too_large", "Upload exceeds 25 MB"))
                 return
-            raw = self.rfile.read(length)
+            raw = self._read_body(length)
+            if raw is None:
+                return
             with profile_locked(profile_dir):
                 out = _handle_upload(profile_dir, self.headers.get("Content-Type", ""), raw)
                 if out.get("ok"):
@@ -1035,10 +1104,12 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
             self._send_json(413, _json_error("payload_too_large", "JSON body exceeds 10 MB"))
             return
 
-        raw = self.rfile.read(length)
+        raw = self._read_body(length)
+        if raw is None:
+            return
         try:
             data = json.loads(raw.decode("utf-8") if raw else "{}")
-        except json.JSONDecodeError:
+        except (ValueError, UnicodeError, RecursionError):
             self._send_json(400, _json_error("bad_request", "Invalid JSON body"))
             return
 

@@ -2,6 +2,7 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from litebrowser.core import prefs
 from litebrowser.services import (
@@ -87,6 +88,40 @@ class TestLinkService(unittest.TestCase):
 
         self.assertEqual(flashcard_service.delete_cards_for_note(self.base, note["id"]), 1)
         self.assertEqual(link_service.links_for(self.base, "note", note["id"])["total"], 0)
+
+    def test_failed_note_move_rolls_back_raw_references(self):
+        note = personal_service.create_note(self.base, "Move", "original")
+        card = flashcard_service.add_card(self.base, "Q", "A", source_note_id=note["id"])
+        link_service.add_link(self.base, "note", note["id"], "flashcard", card["id"])
+        paths = [os.path.join(self.base, name) for name in ("entity_links.json", "flashcards.json", "prefs.json")]
+        before = {}
+        for path in paths:
+            with open(path, "rb") as handle:
+                before[path] = handle.read()
+        with mock.patch.object(flashcard_service, "save_cards", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                personal_service.update_note(self.base, note["id"], "new body", category="Work")
+        self.assertEqual(personal_service.read_note(self.base, note["id"])["content"], "original")
+        for path in paths:
+            with open(path, "rb") as handle:
+                self.assertEqual(handle.read(), before[path])
+        self.assertFalse(os.path.isfile(personal_service._note_path(self.base, "Work/Move.md")))
+
+    def test_failed_reference_rollback_retains_both_note_files(self):
+        note = personal_service.create_note(self.base, "Move", "original")
+        card = flashcard_service.add_card(self.base, "Q", "A", source_note_id=note["id"])
+        link_service.add_link(self.base, "note", note["id"], "flashcard", card["id"])
+        original_write = personal_service.write_text_atomic
+        def write(path, text):
+            if os.path.basename(path) == "entity_links.json":
+                raise OSError("rollback disk failure")
+            return original_write(path, text)
+        with mock.patch.object(flashcard_service, "save_cards", side_effect=OSError("disk full")), mock.patch.object(personal_service, "write_text_atomic", side_effect=write):
+            with self.assertRaisesRegex(OSError, "both note copies"):
+                personal_service.update_note(self.base, note["id"], "new body", category="Work")
+        self.assertEqual(personal_service.read_note(self.base, note["id"])["content"], "original")
+        self.assertEqual(personal_service.read_note(self.base, "Work/Move.md")["content"], "new body")
+        self.assertEqual(link_service.load_links(self.base)[0]["from_id"].replace(os.sep, "/"), "Work/Move.md")
 
     def test_links_travel_in_backups_and_sync(self):
         note = personal_service.create_note(self.base, "A", "")

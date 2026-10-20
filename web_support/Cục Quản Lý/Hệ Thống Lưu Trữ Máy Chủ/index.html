@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal File Catalog</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">Local Metadata Catalog</p>
+                <h1>Personal File Catalog — Ân Nguyễn</h1>
+                <p class="hero-text">
+                    Track metadata for notes, PDFs, code, documents, archives and audio.
+                    This catalog records names, types and sizes only — it does not upload, store or back up file contents.
+                </p>
+            </div>
+            <div class="hero-side">
+                <a class="back-link" href="../index.html">Back to Management Hub</a>
+                <div class="hero-badges">
+                    <span>10 GB planning target</span>
+                    <span>Multiple formats</span>
+                    <span>Search, filter, sort</span>
+                </div>
+            </div>
+        </header>
+
+        <section class="stats-grid">
+            <article class="stat-card emphasis">
+                <span class="stat-label">Target remaining</span>
+                <strong id="remainingDisplay">10.00 GB</strong>
+                <small id="storageHealth">The catalog is empty and ready.</small>
+            </article>
+            <article class="stat-card">
+                <span class="stat-label">Cataloged size</span>
+                <strong id="usedDisplay">0 GB</strong>
+                <small>Updated when catalog entries are added or removed.</small>
+            </article>
+            <article class="stat-card">
+                <span class="stat-label">Total entries</span>
+                <strong id="countDisplay">0</strong>
+                <small>Number of files listed in the catalog.</small>
+            </article>
+            <article class="stat-card">
+                <span class="stat-label">Planning target</span>
+                <strong id="limitDisplay">10.00 GB</strong>
+                <small>A planning limit, not allocated browser storage.</small>
+            </article>
+        </section>
+
+        <section class="command-grid">
+            <article class="panel upload-panel">
+                <div class="panel-heading">
+                    <h2>Add to Catalog</h2>
+                    <p>Catalog notes, documents, source code, audio, archives, data and media. Originals remain on your device.</p>
+                </div>
+                <label class="dropzone" id="dropzone">
+                    <input id="fileInput" type="file" multiple>
+                    <strong>Drop files here or click to select</strong>
+                    <span>.md .txt .pdf .docx .zip .rar .7z .mp3 .midi .mid .flm .wav .js .py .html .css .json .csv .png .jpg .mp4 ...</span>
+                </label>
+                <div class="storage-bar"><div class="storage-fill" id="storageFill"></div></div>
+                <p class="storage-caption" id="storageCaption">0% of the planning target cataloged.</p>
+                <div class="allowed-grid">
+                    <span>Markdown / TXT</span>
+                    <span>PDF / DOCX / XLSX</span>
+                    <span>MP3 / MIDI / FLM / WAV</span>
+                    <span>ZIP / RAR / 7Z</span>
+                    <span>Code / Script / Config</span>
+                    <span>JSON / CSV / XML</span>
+                </div>
+            </article>
+
+            <article class="panel insight-panel">
+                <div class="panel-heading">
+                    <h2>Catalog Overview</h2>
+                    <p>See the breakdown of cataloged documents, code and media.</p>
+                </div>
+                <div class="insight-list" id="categoryStats"></div>
+                <div class="summary-stack">
+                    <div class="mini-card">
+                        <span>Largest file</span>
+                        <strong id="largestFile">None yet</strong>
+                    </div>
+                    <div class="mini-card">
+                        <span>Last added</span>
+                        <strong id="latestUpload">None yet</strong>
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        <section class="panel">
+            <div class="toolbar">
+                <input id="searchInput" type="search" placeholder="Search by file name or extension">
+                <select id="categoryFilter">
+                    <option value="all">All categories</option>
+                    <option value="document">Documents</option>
+                    <option value="audio">Audio</option>
+                    <option value="code">Code</option>
+                    <option value="archive">Archives</option>
+                    <option value="image">Images</option>
+                    <option value="video">Video</option>
+                    <option value="data">Data</option>
+                    <option value="other">Other</option>
+                </select>
+                <select id="sortFilter">
+                    <option value="latest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="largest">Largest size</option>
+                    <option value="smallest">Smallest size</option>
+                    <option value="name">Name A–Z</option>
+                </select>
+            </div>
+            <div class="results-meta" id="resultsMeta">Showing 0 entries.</div>
+            <div id="fileList" class="file-list"></div>
+        </section>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

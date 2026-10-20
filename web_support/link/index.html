@@ -1,0 +1,2262 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="chain-app" content="linklumina">
+    <script src="chain.js"></script>
+    <meta name="description"
+        content="LinkLumina - Visual Bookmark Manager. Save, organize, and discover links with a beautiful living interface.">
+    <meta name="theme-color" content="#0a0808">
+    <title>LinkLumina - Visual Bookmark Manager</title>
+
+    <!-- Preload critical assets -->
+    <link rel="preload" href="styles.css" as="style">
+
+    <!-- Google Fonts: Outfit (vendored locally for offline + instant load) -->
+    <link rel="preload" href="vendor/outfit.css" as="style">
+    <link href="vendor/outfit.css" rel="stylesheet">
+
+    <!-- Tailwind CSS (CDN: dev only; for production use PostCSS/CLI: https://tailwindcss.com/docs/installation) -->
+    <script>
+        (function () {
+            var origWarn = console.warn;
+            console.warn = function (msg) {
+                if (typeof msg === 'string' && (msg.indexOf('cdn.tailwindcss.com') !== -1 || msg.indexOf('Multiple instances of Three.js') !== -1))
+                    return;
+                origWarn.apply(console, arguments);
+            };
+            window.__suppressTailwindAndThreeWarnings = true;
+        })();
+    </script>
+    <script src="vendor/tailwind.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="vendor/lucide.min.js"></script>
+    <!-- ExcelJS, Chart.js, 3d-force-graph: loaded on demand (lazy) to keep initial load light -->
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body class="min-h-screen overflow-x-hidden mobile-safe-area">
+    <!-- Animated Living Background -->
+    <canvas id="livingBackgroundCanvas" class="fixed inset-0 -z-50"></canvas>
+    <!-- Fallback/Overlay (optional) -->
+    <div id="background" class="fixed inset-0 -z-40 overflow-hidden pointer-events-none opacity-20"></div>
+
+    <!-- Main Container -->
+    <div class="relative z-10">
+        <!-- Floating Pill Dock Container -->
+        <div class="sticky top-4 md:top-6 z-50 flex flex-col w-full max-w-6xl mx-auto px-4 pointer-events-none transition-all duration-500 pill-dock-wrapper"
+            id="pillDock">
+
+            <!-- Header -->
+            <header
+                class="glass-header pointer-events-auto rounded-2xl md:rounded-3xl border border-white/10 shadow-2xl transition-all duration-300 mb-2 relative z-50">
+                <div class="w-full max-w-[95%] mx-auto px-4 py-4 md:py-6">
+                    <div class="flex items-center justify-between gap-4">
+                        <div class="flex items-center gap-3 shrink-0">
+                            <div
+                                class="w-8 h-8 md:w-10 md:h-10 rounded-lg brand-gradient-br flex items-center justify-center shadow-brand">
+                                <i data-lucide="sparkles" class="w-4 h-4 md:w-5 md:h-5 text-white"></i>
+                            </div>
+                            <h1
+                                class="text-xl md:text-3xl font-bold text-brand-gradient truncate max-w-[150px] md:max-w-none">
+                                LinkLumina
+                            </h1>
+                        </div>
+                        <div class="flex items-center gap-2 md:gap-3 shrink-0">
+                            <div class="flex items-center gap-1 md:gap-2">
+                                <!-- Theme Toggle -->
+                                <button id="themeToggleBtn" onclick="ThemeManager.toggle()"
+                                    class="glass-button p-2 md:px-4 md:py-2 rounded-lg hover:bg-white/15 transition-all text-white mr-1"
+                                    title="Switch Theme">
+                                    <i data-lucide="moon" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                </button>
+
+                                <!-- Quick Save Main Button -->
+                                <button id="headerQuickSaveBtn" onclick="openQuickSave()"
+                                    class="glass-button p-2 md:px-4 md:py-2 rounded-lg hover:bg-red-500/20 transition-all text-red-400"
+                                    title="Quick Save (Ctrl+S)">
+                                    <i data-lucide="zap" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                </button>
+
+                                <!-- Select Mode (Visible) -->
+                                <button id="selectModeBtn"
+                                    class="glass-button p-2 md:px-4 md:py-2 rounded-lg hover:bg-white/15 transition-all text-white"
+                                    title="Select Multiple Links">
+                                    <i data-lucide="check-square" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                </button>
+
+                                <!-- More Actions Menu -->
+                                <div class="relative z-[9999]">
+                                    <button id="moreMenuBtn"
+                                        class="glass-button p-2 md:px-3 md:py-2 rounded-lg hover:bg-white/15 transition-all text-white"
+                                        title="More Tools & Options">
+                                        <i data-lucide="more-vertical" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                    </button>
+
+                                    <!-- Dropdown -->
+                                    <div id="moreMenuDropdown"
+                                        class="hidden absolute right-0 mt-2 w-64 glass-card border border-white/10 rounded-xl shadow-2xl z-[9999] overflow-hidden transform origin-top-right transition-all animate-fadeIn"
+                                        style="background: rgba(15, 10, 10, 0.90); backdrop-filter: blur(40px);">
+                                        <div class="p-2 space-y-1">
+                                            <!-- Section: View -->
+                                            <div
+                                                class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                                View</div>
+                                            <button id="compactModeMenuBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="layout-grid" class="w-4 h-4 text-red-400"></i>
+                                                <span class="flex-1">Dense View</span>
+                                            </button>
+
+                                            <div class="h-px bg-white/10 my-1"></div>
+
+                                            <!-- Section: Tools -->
+                                            <div
+                                                class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                                Tools</div>
+                                            <button id="featureHubBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i>
+                                                <span class="flex-1">Feature Hub</span>
+                                                <span
+                                                    class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-red-500 to-amber-400 text-white">NEW</span>
+                                            </button>
+                                            <button id="analyticsBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="bar-chart-3" class="w-4 h-4 text-blue-400"></i>
+                                                Analytics
+                                            </button>
+                                            <button id="neuralWebBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="share-2" class="w-4 h-4 text-red-400"></i> Neural Web
+                                            </button>
+
+                                            <div class="h-px bg-white/10 my-1"></div>
+
+                                            <!-- Section: Data -->
+                                            <div
+                                                class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                                Data</div>
+                                            <button id="storageBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="database" class="w-4 h-4 text-green-400"></i> Storage
+                                                Info
+                                            </button>
+                                            <button id="syncBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="refresh-cw" class="w-4 h-4 text-cyan-400"></i> Cloud
+                                                Sync
+                                            </button>
+                                            <button id="importBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="upload" class="w-4 h-4"></i> Import File
+                                            </button>
+                                            <button id="exportCsvBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="file-spreadsheet" class="w-4 h-4 text-green-400"></i>
+                                                Export
+                                                CSV
+                                            </button>
+                                            <button id="exportJsonBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="database-backup" class="w-4 h-4 text-blue-400"></i>
+                                                Export
+                                                JSON (Backup)
+                                            </button>
+                                            <button id="exportZipBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="folder-archive" class="w-4 h-4 text-amber-400"></i>
+                                                Export
+                                                ZIP (Folder Backup)
+                                            </button>
+                                            <button onclick="document.getElementById('importJsonInput').click()"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="upload-cloud" class="w-4 h-4 text-red-400"></i>
+                                                Import
+                                                Backup
+                                            </button>
+
+                                            <div class="h-px bg-white/10 my-1"></div>
+
+                                            <!-- Section: Actions -->
+                                            <button id="randomLinkBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="dice-5" class="w-4 h-4 text-red-400"></i> Link
+                                                Roulette
+                                            </button>
+                                            <button id="findDuplicatesBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="copy-check" class="w-4 h-4"></i> Find Duplicates
+                                            </button>
+                                            <button id="keyboardShortcutsBtn"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="keyboard" class="w-4 h-4"></i> Shortcuts
+                                            </button>
+                                            <button onclick="window.LawEngine.renderModal()"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="scale" class="w-4 h-4 text-red-400"></i> Cognitive
+                                                Laws
+                                            </button>
+                                            <button onclick="openDecisionModal()"
+                                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm text-gray-200 transition-colors">
+                                                <i data-lucide="zap" class="w-4 h-4 text-red-500"></i> Log Strategic
+                                                Decision
+                                            </button>
+
+                                            <!-- Hidden but present for logic -->
+                                            <button id="importBrowserBtn" class="hidden"></button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <input type="file" id="importFile" accept=".json,.xlsx,.xls,.csv,.zip" class="hidden">
+                                <input type="file" id="importJsonInput" accept=".json,.zip" class="hidden">
+                                <input type="file" id="importBrowserFile" accept=".html" class="hidden">
+                            </div>
+                            <button id="addLinkBtn"
+                                class="glass-button p-3 md:px-6 md:py-3 rounded-lg brand-gradient hover:opacity-95 transition-all duration-300 shadow-brand hover:scale-105 active:scale-95 text-white font-medium flex items-center">
+                                <i data-lucide="plus" class="w-5 h-5 md:mr-2"></i>
+                                <span class="hidden md:inline">Add Link</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Tab Navigation -->
+            <nav
+                class="glass-header pointer-events-auto rounded-xl md:rounded-2xl border border-white/10 shadow-2xl overflow-hidden transition-all duration-300 mobile-tab-nav">
+                <div class="w-full max-w-[95%] mx-auto px-4 flex items-center justify-between">
+                    <div class="flex items-center gap-1 overflow-x-auto py-2 scrollbar-hide flex-1">
+                        <button
+                            class="tab-btn active px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2"
+                            data-tab="links">
+                            <i data-lucide="link" class="w-4 h-4"></i>
+                            Links
+                        </button>
+                        <button
+                            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2"
+                            data-tab="prompts">
+                            <i data-lucide="message-square" class="w-4 h-4"></i>
+                            Prompts
+                        </button>
+                        <button
+                            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2"
+                            data-tab="notes">
+                            <i data-lucide="file-text" class="w-4 h-4"></i>
+                            Notes
+                        </button>
+                        <button
+                            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2"
+                            data-tab="colors">
+                            <i data-lucide="palette" class="w-4 h-4"></i>
+                            Colors
+                        </button>
+                        <button
+                            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2"
+                            data-tab="files">
+                            <i data-lucide="folder" class="w-4 h-4"></i>
+                            Files
+                        </button>
+                        <button
+                            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2"
+                            data-tab="timeline">
+                            <i data-lucide="git-branch" class="w-4 h-4"></i>
+                            Timeline
+                        </button>
+                        <button
+                            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2"
+                            data-tab="transcript">
+                            <i data-lucide="file-audio" class="w-4 h-4"></i>
+                            Transcript
+                        </button>
+                        <button
+                            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2"
+                            data-tab="tools">
+                            <i data-lucide="wrench" class="w-4 h-4"></i>
+                            Tools
+                        </button>
+
+                        <div class="h-6 w-px bg-white/10 mx-1 shrink-0 hidden sm:block"></div>
+                    </div>
+
+                    <!-- Grid Density Slider (Global) -->
+                    <div id="gridDensityControl"
+                        class="flex items-center gap-3 px-3 border-l border-white/10 ml-4 hidden md:flex">
+                        <i data-lucide="zoom-in" class="w-4 h-4 text-gray-400"></i>
+                        <input type="range" id="gridDensitySlider" min="200" max="600" value="300" step="10"
+                            class="range-slider max-w-[150px]" title="Adjust Card Size">
+                    </div>
+                </div>
+            </nav>
+        </div>
+
+        <!-- Tab Content Sections -->
+        <!-- Links Tab (default) -->
+        <div id="linksTab" class="tab-content flex h-[calc(100dvh-180px)] overflow-hidden relative">
+            <!-- Mobile sidebar overlay (tap to close) -->
+            <div id="sidebarOverlay" class="mobile-sidebar-overlay fixed inset-0 bg-black/50 z-40 md:hidden hidden"
+                aria-hidden="true"></div>
+            <!-- Sidebar -->
+            <aside id="folderSidebar"
+                class="w-64 bg-gray-900/90 md:bg-black/20 backdrop-blur-md border-r border-white/10 flex flex-col hidden md:flex transition-all duration-300 relative shrink-0 overflow-hidden">
+
+                <div class="flex-1 overflow-y-auto scrollbar-hide">
+                    <!-- Library Accordion -->
+                    <div class="border-b border-white/10">
+                        <div class="p-4 flex justify-between items-center bg-black/10 cursor-pointer hover:bg-white/5 transition-colors"
+                            onclick="document.getElementById('libraryAccordion').classList.toggle('hidden'); this.querySelector('.chevron').classList.toggle('-rotate-90')">
+                            <h3
+                                class="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                                <i data-lucide="chevron-down"
+                                    class="w-4 h-4 chevron transition-transform duration-200"></i>
+                                Library
+                            </h3>
+                            <button id="addFolderBtn" onclick="event.stopPropagation()"
+                                class="p-1 hover:bg-white/10 rounded-lg transition-colors text-red-400 hover:text-red-300"
+                                title="New Folder">
+                                <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div id="libraryAccordion" class="py-2 space-y-1">
+                            <div id="folderList" class="space-y-1">
+                                <!-- Folders injected here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Filters Accordion -->
+                    <div class="">
+                        <div class="p-4 flex justify-between items-center bg-black/10 cursor-pointer hover:bg-white/5 transition-colors border-b border-white/10"
+                            onclick="document.getElementById('filtersAccordion').classList.toggle('hidden'); this.querySelector('.chevron').classList.toggle('-rotate-90')">
+                            <h3
+                                class="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                                <i data-lucide="chevron-down"
+                                    class="w-4 h-4 chevron transition-transform duration-200 -rotate-90"></i>
+                                Filters
+                            </h3>
+                        </div>
+                        <div id="filtersAccordion" class="py-2 px-3 hidden">
+                            <h4 class="text-xs font-bold text-gray-500 uppercase mt-2 mb-2 flex items-center gap-1">
+                                Categories</h4>
+                            <div id="categoryFilters" class="flex flex-col gap-1 pb-1 text-xs mb-4">
+                                <!-- Categories injected here -->
+                            </div>
+
+                            <h4 class="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-1">Tags</h4>
+                            <!-- Tag Cloud (Vertical Flow) -->
+                            <div id="tagFilters"
+                                class="flex flex-col gap-1 max-h-[300px] overflow-y-auto overflow-x-hidden p-2 bg-white/5 rounded-xl border border-white/5 transition-colors custom-scrollbar mb-4 empty:hidden shadow-inner text-xs">
+                                <!-- Tags will be dynamically inserted here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+            <!-- Sidebar Resizer -->
+            <div id="sidebarResizer" class="hidden md:block hover:bg-red-500/50"></div>
+
+            <!-- Main Content Area -->
+            <main class="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-hide relative w-full">
+                <!-- Mobile Sidebar Toggle -->
+                <button id="toggleSidebarBtn"
+                    class="md:hidden absolute top-6 left-4 z-20 p-2 glass-button rounded-lg text-white/70 hover:text-white bg-black/40">
+                    <i data-lucide="menu" class="w-5 h-5"></i>
+                </button>
+
+                <!-- Section Header -->
+                <div class="flex items-center justify-between mb-6 ml-12 md:ml-0">
+                    <h2 id="sectionTitle"
+                        class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400">
+                        All Links</h2>
+                </div>
+                <!-- Search Bar -->
+                <div class="w-full max-w-[95%] lg:max-w-[90%] mx-auto px-0 md:px-4 py-8 md:py-12">
+                    <div class="glass-card search-card max-w-2xl mx-auto mb-8 hover:border-white/20 transition-all duration-300 relative">
+                        <div class="relative">
+                            <i data-lucide="search"
+                                class="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"></i>
+                            <input type="text" id="searchInput"
+                                placeholder="Search title, URL, tags… try tag:react or #ai (Ctrl+K / /)"
+                                class="w-full pl-12 pr-20 py-3 bg-transparent border-none outline-none text-base text-white placeholder-gray-400 focus:placeholder-gray-500 transition-colors">
+                            <button id="searchTipsBtn"
+                                class="absolute right-11 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                                title="Search tips & operators">
+                                <i data-lucide="help-circle" class="w-4 h-4"></i>
+                            </button>
+                            <button id="clearSearch"
+                                class="absolute right-4 top-1/2 transform -translate-y-1/2 hidden text-gray-400 hover:text-white transition-colors">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                            <!-- Live suggestions (recent / tags / categories / quick filters) -->
+                            <div id="searchSuggestions" class="search-suggestions hidden"></div>
+                            <!-- Operator cheat-sheet popover -->
+                            <div id="searchTipsPopover" class="search-tips hidden"></div>
+                        </div>
+                        <!-- Active query chips (editable tokens) -->
+                        <div id="searchChips" class="search-chips hidden"></div>
+                    </div>
+
+                    <!-- Category Filters and Controls -->
+                    <div class="mb-6">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
+                            <h2 class="text-lg font-semibold text-gray-300 shrink-0">
+                                <span id="linkCount">0</span> <span class="text-gray-500">links</span>
+                            </h2>
+                            <div class="flex flex-wrap items-center gap-2 md:gap-3 w-full md:w-auto">
+                                <div class="flex items-center gap-1 md:gap-2 shrink-0">
+                                    <!-- View Mode Segmented Control -->
+                                    <div class="view-seg flex items-center gap-0.5 p-1 rounded-xl glass-card border border-white/10 shrink-0">
+                                        <button id="viewGridBtn"
+                                            class="seg-btn active"
+                                            data-view="grid" title="Grid View">
+                                            <i data-lucide="grid" class="w-4 h-4"></i>
+                                        </button>
+                                        <button id="viewListBtn"
+                                            class="seg-btn"
+                                            data-view="list" title="List View">
+                                            <i data-lucide="list" class="w-4 h-4"></i>
+                                        </button>
+                                        <button id="viewTimelineBtn"
+                                            class="seg-btn"
+                                            data-view="timeline" title="Timeline View">
+                                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                                        </button>
+                                        <button id="viewGalleryBtn"
+                                            class="seg-btn"
+                                            data-view="gallery" title="Gallery View">
+                                            <i data-lucide="image" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                    <button id="showFavoritesBtn"
+                                        class="glass-button p-2 rounded-lg hover:bg-white/15 transition-all text-white"
+                                        title="Show Favorites">
+                                        <i data-lucide="star" class="w-4 h-4"></i>
+                                    </button>
+                                    <!-- Bulk actions moved to the floating action bar -->
+                                </div>
+                                <!-- Smart Filter & Sort - Full width on mobile/wrap -->
+                                <div class="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
+                                    <select id="filterSelect"
+                                        class="glass-button flex-1 md:flex-none px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500 max-w-[50%] md:max-w-none">
+                                        <option value="all">All Links</option>
+                                        <option value="recent">📅 Recently Added</option>
+                                        <option value="frequent">🔥 Most Visited</option>
+                                        <option value="personal">👤 Personal</option>
+                                        <option value="unused">🕸️ Unused</option>
+                                        <option value="potential">💎 Unvisited</option>
+                                        <option value="work">🎓 Work</option>
+                                        <option value="broken">🔴 Broken</option>
+                                        <option value="healthy">🟢 Healthy</option>
+                                    </select>
+                                    <select id="sortSelect"
+                                        class="glass-button flex-1 md:flex-none px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500 max-w-[50%] md:max-w-none">
+                                        <option value="newest">Newest</option>
+                                        <option value="oldest">Oldest</option>
+                                        <option value="lastvisited">🕘 Recently Visited</option>
+                                        <option value="title">A-Z</option>
+                                        <option value="visits">Popular</option>
+                                        <option value="category">Category</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Filters + Insights (single compact row) -->
+                        <div class="flex items-center justify-between mb-3">
+                            <button type="button" id="toggleAdvancedFilters"
+                                class="text-xs text-gray-500 hover:text-red-400 flex items-center gap-1.5 px-3 py-1.5 rounded-lg glass-button transition-all">
+                                <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i> Filters
+                            </button>
+                            <button id="openAnalyticsBtn"
+                                class="text-xs text-red-400/80 hover:text-red-400 flex items-center gap-1.5 px-3 py-1.5 rounded-lg glass-button transition-all">
+                                <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i> Insights
+                            </button>
+                        </div>
+                        <div id="advancedFiltersBar"
+                            class="hidden flex-wrap items-center gap-2 mb-3 text-sm glass-card p-3 animate-fadeIn">
+                            <span class="text-gray-500">Date:</span>
+                            <input type="date" id="filterDateFrom"
+                                class="px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs max-w-[130px]">
+                            <span class="text-gray-500">–</span>
+                            <input type="date" id="filterDateTo"
+                                class="px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs max-w-[130px]">
+                            <span class="text-gray-500 ml-2">Min visits:</span>
+                            <input type="number" id="filterVisitMin" min="0" placeholder="0"
+                                class="w-16 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs">
+                            <button type="button" id="clearAdvancedFilters"
+                                class="px-2 py-1 rounded bg-red-500/20 text-red-300 text-xs hover:bg-red-500/30">Clear</button>
+                            <span class="w-px h-5 bg-white/10 mx-1 hidden md:block"></span>
+                            <button type="button" id="saveFilterPresetBtn" title="Save current filter"
+                                class="glass-button px-3 py-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white flex items-center gap-1.5 text-xs">
+                                <i data-lucide="bookmark-plus" class="w-3.5 h-3.5"></i> Save preset
+                            </button>
+                            <select id="filterPresetSelect" title="Load filter preset"
+                                class="glass-button px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:outline-none focus:ring-2 focus:ring-red-500">
+                                <option value="">Presets</option>
+                            </select>
+                        </div>
+
+
+                    </div>
+
+                    <!-- Links Grid View -->
+                    <div id="linksGrid"
+                        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-8 md:gap-10">
+                        <!-- Links will be dynamically inserted here -->
+                    </div>
+
+                    <!-- Links List View -->
+                    <div id="linksList" class="hidden space-y-2">
+                        <!-- List view will be rendered here -->
+                    </div>
+
+                    <!-- Links Timeline View -->
+                    <div id="linksTimeline" class="hidden">
+                        <!-- Timeline view will be rendered here -->
+                    </div>
+
+                    <!-- Links Gallery View -->
+                    <div id="linksGallery"
+                        class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                        <!-- Gallery view will be rendered here -->
+                    </div>
+
+                    <!-- Empty State -->
+                    <div id="emptyState" class="hidden text-center py-20">
+                        <div class="empty-state-icon mb-6">
+                            <i data-lucide="bookmark" class="w-20 h-20 mx-auto text-gray-600"></i>
+                        </div>
+                        <p class="text-2xl font-semibold text-gray-300 mb-2">No links found</p>
+                        <p class="text-gray-500 mb-6">Add your first link to get started!</p>
+                        <button onclick="document.getElementById('addLinkBtn').click()"
+                            class="px-6 py-3 rounded-lg brand-gradient hover:opacity-95 transition-all duration-300 text-white font-medium shadow-brand">
+                            <i data-lucide="plus" class="inline-block w-4 h-4 mr-2"></i>
+                            Create Your First Link
+                        </button>
+                    </div>
+                </div>
+        </div>
+    </div> <!-- End linksTab -->
+
+    <!-- Prompts Tab -->
+    <div id="promptsTab" class="tab-content hidden h-[calc(100dvh-180px)] overflow-hidden flex flex-col">
+        <div class="w-full max-w-[95%] mx-auto px-4 py-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-white">Prompts Library</h2>
+                <button id="addPromptBtnTab" class="glass-button px-4 py-2 rounded-lg brand-gradient text-white">
+                    <i data-lucide="plus" class="inline w-4 h-4 mr-2"></i>Add Prompt
+                </button>
+            </div>
+            <div id="promptsTabList"
+                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                <!-- Prompts will be rendered here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Notes Tab -->
+    <div id="notesTab" class="tab-content hidden h-[calc(100dvh-180px)] overflow-hidden flex flex-col">
+        <div class="w-full max-w-[95%] mx-auto px-4 py-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-white">📝 Notes</h2>
+                <div class="flex items-center gap-2">
+                    <button id="openTranslateModalBtn" type="button"
+                        class="glass-button px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white border border-white/10 flex items-center gap-2"
+                        title="Translate (4 panels: top locked, bottom editable)">
+                        <i data-lucide="languages" class="w-4 h-4"></i>
+                        <span>Translate</span>
+                    </button>
+                    <button id="addNoteBtn"
+                        class="glass-button px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-teal-500 text-white">
+                        <i data-lucide="plus" class="inline w-4 h-4 mr-2"></i>Add Note
+                    </button>
+                </div>
+            </div>
+            <div id="notesGrid"
+                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                <!-- Notes will be rendered here -->
+            </div>
+            <div id="notesEmpty" class="text-center py-20">
+                <i data-lucide="file-text" class="w-16 h-16 mx-auto text-gray-600 mb-4"></i>
+                <p class="text-xl text-gray-300 mb-2">No notes yet</p>
+                <p class="text-gray-500">Create your first note!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Translate Modal (4 panels: draggable height, all four resize together) -->
+    <div id="translateModal"
+        class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div class="glass-card w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <i data-lucide="languages" class="w-5 h-5 text-cyan-400"></i>
+                    Translate
+                </h2>
+                <div class="flex items-center gap-2">
+                    <select id="translateLangFrom"
+                        class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm">
+                        <option value="en">English</option>
+                        <option value="vi">Vietnamese</option>
+                        <option value="ja">日本語</option>
+                        <option value="ko">한국어</option>
+                        <option value="zh">中文</option>
+                        <option value="fr">Français</option>
+                        <option value="es">Español</option>
+                    </select>
+                    <span class="text-gray-500">→</span>
+                    <select id="translateLangTo"
+                        class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm">
+                        <option value="vi">Vietnamese</option>
+                        <option value="en">English</option>
+                        <option value="ja">日本語</option>
+                        <option value="ko">한국어</option>
+                        <option value="zh">中文</option>
+                        <option value="fr">Français</option>
+                        <option value="es">Español</option>
+                    </select>
+                    <button type="button" id="translateDoBtn"
+                        class="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white text-sm font-medium flex items-center gap-2">
+                        <i data-lucide="languages" class="w-4 h-4"></i> Translate
+                    </button>
+                    <button type="button" id="translateLockBtn"
+                        class="px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-sm font-medium flex items-center gap-2"
+                        title="The top two panels only lock when you press this button">
+                        <i data-lucide="lock" class="w-4 h-4" id="translateLockIcon"></i>
+                        <span id="translateLockLabel">Lock top 2 panels</span>
+                    </button>
+                    <button type="button" id="translateModalClose"
+                        class="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="translateModalBody" class="translate-modal-body flex flex-col overflow-hidden shrink-0">
+                <div class="p-4 flex-1 min-h-0 overflow-hidden grid grid-cols-2 gap-4 grid-translate-4"
+                    style="grid-template-rows: 1fr 1fr;">
+                    <div class="flex flex-col min-h-0">
+                        <label class="text-xs font-medium text-gray-400 mb-1" id="translateTopOriginalLabel">Original
+                            (type or paste, then Translate)</label>
+                        <textarea id="translateTopOriginal"
+                            class="flex-1 min-h-0 p-3 rounded-lg bg-white/5 border border-white/10 text-gray-300 text-sm resize-none font-mono focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                            placeholder="Type or paste text, then hit Translate."></textarea>
+                    </div>
+                    <div class="flex flex-col min-h-0">
+                        <label class="text-xs font-medium text-gray-400 mb-1" id="translateTopTranslatedLabel">Translation</label>
+                        <textarea id="translateTopTranslated"
+                            class="flex-1 min-h-0 p-3 rounded-lg bg-white/5 border border-white/10 text-gray-400 text-sm resize-none font-mono focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                            placeholder="—"></textarea>
+                    </div>
+                    <div class="flex flex-col min-h-0">
+                        <label class="text-xs font-medium text-cyan-400 mb-1">Edit original (changes apply here)</label>
+                        <textarea id="translateBottomOriginal"
+                            class="flex-1 min-h-0 p-3 rounded-lg bg-white/5 border border-cyan-500/30 text-white text-sm resize-none font-mono focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                            placeholder="Edit the original, then re-translate below..."></textarea>
+                    </div>
+                    <div class="flex flex-col min-h-0">
+                        <label class="text-xs font-medium text-cyan-400 mb-1">Edit translation (changes apply here)</label>
+                        <textarea id="translateBottomTranslated"
+                            class="flex-1 min-h-0 p-3 rounded-lg bg-white/5 border border-cyan-500/30 text-white text-sm resize-none font-mono focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                            placeholder="Edit the translation here..."></textarea>
+                    </div>
+                </div>
+                <div id="translateResizeHandle"
+                    class="translate-resize-handle flex items-center justify-center cursor-n-resize select-none hover:bg-cyan-500/20 active:bg-cyan-500/30 transition-colors"
+                    title="Drag to resize the 4 panels">
+                    <i data-lucide="grip-horizontal" class="w-4 h-4 text-cyan-400"></i>
+                </div>
+            </div>
+            <div class="p-4 border-t border-white/10 flex items-center justify-between shrink-0">
+                <button type="button" id="translateAgainBtn"
+                    class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm flex items-center gap-2">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i> Re-translate (updates bottom translation from bottom original)
+                </button>
+                <button type="button" id="translateCopyTranslatedBtn"
+                    class="px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-sm flex items-center gap-2">
+                    <i data-lucide="copy" class="w-4 h-4"></i> Copy translation (bottom 2 panels)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tool Add/Edit Modal (minimal: name, short desc, link) -->
+    <div id="toolModal"
+        class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div class="glass-card w-full max-w-md rounded-xl overflow-hidden">
+            <div class="p-4 border-b border-white/10 flex items-center justify-between">
+                <h3 id="toolModalTitle" class="text-lg font-semibold text-white">Add tool</h3>
+                <button type="button" id="closeToolModal"
+                    class="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-3">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Name</label>
+                    <input type="text" id="toolName" maxlength="120" placeholder="Tool name"
+                        class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Short description</label>
+                    <input type="text" id="toolDesc" maxlength="200" placeholder="Short description"
+                        class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Link</label>
+                    <input type="url" id="toolUrl" maxlength="2048" placeholder="https://..."
+                        class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Thumbnail image (URL)</label>
+                    <input type="url" id="toolImg" maxlength="2048" placeholder="https://.../image.png (optional)"
+                        class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                </div>
+            </div>
+            <div class="p-4 border-t border-white/10 flex justify-end gap-2">
+                <button type="button" id="cancelToolBtn"
+                    class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 text-sm">Cancel</button>
+                <button type="button" id="saveToolBtn"
+                    class="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Snippets Tab -->
+    <div id="snippetsTab" class="tab-content hidden h-[calc(100dvh-180px)] overflow-hidden flex flex-col">
+        <div class="w-full max-w-[95%] mx-auto px-4 py-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-white">💻 Code Snippets</h2>
+                <button id="addSnippetBtn"
+                    class="glass-button px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white">
+                    <i data-lucide="plus" class="inline w-4 h-4 mr-2"></i>Add Snippet
+                </button>
+            </div>
+            <div id="snippetsGrid" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+                <!-- Snippets will be rendered here -->
+            </div>
+            <div id="snippetsEmpty" class="text-center py-20">
+                <i data-lucide="code" class="w-16 h-16 mx-auto text-gray-600 mb-4"></i>
+                <p class="text-xl text-gray-300 mb-2">No code snippets yet</p>
+                <p class="text-gray-500">Save your reusable code!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Colors Tab -->
+    <div id="colorsTab" class="tab-content hidden h-[calc(100dvh-180px)] overflow-hidden flex flex-col">
+        <div class="w-full max-w-[95%] mx-auto px-4 py-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-white">🎨 Color Palette</h2>
+                <button id="addColorBtn" class="glass-button px-4 py-2 rounded-lg brand-gradient text-white">
+                    <i data-lucide="plus" class="inline w-4 h-4 mr-2"></i>Add Color
+                </button>
+            </div>
+            <div id="colorsGrid"
+                class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-4">
+                <!-- Colors will be rendered here -->
+            </div>
+            <div id="colorsEmpty" class="text-center py-20">
+                <i data-lucide="palette" class="w-16 h-16 mx-auto text-gray-600 mb-4"></i>
+                <p class="text-xl text-gray-300 mb-2">No colors saved</p>
+                <p class="text-gray-500">Build your color palette!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Todos Tab -->
+    <div id="todosTab" class="tab-content hidden h-[calc(100dvh-180px)] overflow-hidden flex flex-col">
+        <div class="w-full max-w-[95%] mx-auto px-4 py-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-white">✅ Quick Todos</h2>
+                <button id="addTodoBtn"
+                    class="glass-button px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-500 text-white">
+                    <i data-lucide="plus" class="inline w-4 h-4 mr-2"></i>Add Todo
+                </button>
+            </div>
+            <div class="max-w-2xl mx-auto">
+                <div id="todosList" class="space-y-2">
+                    <!-- Todos will be rendered here -->
+                </div>
+                <div id="todosEmpty" class="text-center py-20">
+                    <i data-lucide="check-square" class="w-16 h-16 mx-auto text-gray-600 mb-4"></i>
+                    <p class="text-xl text-gray-300 mb-2">No todos yet</p>
+                    <p class="text-gray-500">Add tasks to stay organized!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Files Tab -->
+    <div id="filesTab" class="tab-content hidden h-[calc(100dvh-180px)] overflow-hidden flex flex-col">
+        <div class="w-full max-w-[95%] mx-auto px-4 py-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-white">📁 File Storage</h2>
+                <button id="addFileBtn" class="glass-button px-4 py-2 rounded-lg brand-gradient text-white">
+                    <i data-lucide="upload" class="inline w-4 h-4 mr-2"></i>Upload File
+                </button>
+            </div>
+            <div id="filesGrid"
+                class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
+                <!-- Files will be rendered here -->
+            </div>
+            <div id="filesEmpty" class="text-center py-20">
+                <i data-lucide="folder" class="w-16 h-16 mx-auto text-gray-600 mb-4"></i>
+                <p class="text-xl text-gray-300 mb-2">No files uploaded</p>
+                <p class="text-gray-500">Store images, PDFs, and documents!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tools Tab (Product Hunt style: name, short desc, link – minimal storage for 10k+) -->
+    <div id="toolsTab" class="tab-content hidden h-[calc(100dvh-180px)] overflow-hidden flex flex-col">
+        <div class="w-full max-w-[95%] mx-auto px-4 py-3 flex flex-col flex-1 min-h-0">
+            <!-- Compact toolbar: title + filters + hide-duplicates toggle -->
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2 shrink-0">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i data-lucide="wrench" class="w-5 h-5 text-red-400"></i>
+                    Tools
+                    <span id="toolsStats" class="text-xs font-normal text-gray-500"></span>
+                </h2>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <select id="toolsTopicFilter" title="Filter by topic/category"
+                        class="px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm max-w-[150px] focus:ring-2 focus:ring-red-500">
+                        <option value="">All topics</option>
+                    </select>
+                    <select id="toolsSort" title="Sort"
+                        class="px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:ring-2 focus:ring-red-500">
+                        <option value="newest">Newest</option>
+                        <option value="popular">Most popular</option>
+                        <option value="name">A-Z</option>
+                    </select>
+                    <input type="text" id="toolsSearch" placeholder="Search name or description..." maxlength="200"
+                        class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm w-44 focus:ring-2 focus:ring-red-500 focus:border-red-500 placeholder-gray-500">
+                    <label class="flex items-center gap-1.5 cursor-pointer text-xs text-gray-400 hover:text-red-300 select-none"
+                        title="Hide tools that already exist as saved links">
+                        <input type="checkbox" id="toolsHideDups"
+                            class="rounded border-white/20 bg-white/5 text-amber-500 focus:ring-amber-500 h-3.5 w-3.5">
+                        Hide duplicates
+                    </label>
+                    <button id="addToolBtn" type="button"
+                        class="glass-button px-3 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-white text-sm font-medium flex items-center gap-1.5">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Add tool
+                    </button>
+                </div>
+            </div>
+
+            <!-- Product Hunt: collapsible import panel (compact) -->
+            <div class="mb-2 rounded-xl bg-red-500/10 border border-red-500/20 shrink-0">
+                <button type="button" id="phPanelToggle"
+                    class="w-full px-3 py-2 flex items-center justify-between gap-2 text-left hover:bg-white/5 rounded-xl transition-colors">
+                    <span class="text-xs font-semibold text-red-300 flex items-center gap-2">
+                        <i data-lucide="trending-up" class="w-4 h-4"></i>
+                        Product Hunt import
+                    </span>
+                    <span class="flex items-center gap-2">
+                        <span id="phLastFetch" class="text-[11px] text-gray-500"></span>
+                        <i data-lucide="chevron-down" id="phPanelChevron" class="w-4 h-4 text-gray-400 transition-transform duration-200"></i>
+                    </span>
+                </button>
+                <div id="phPanelBody" class="hidden px-3 pb-3 pt-1 space-y-2">
+                    <p class="text-[11px] text-gray-400 leading-relaxed">Create an app at <a
+                            href="https://www.producthunt.com/v2/oauth/applications" target="_blank" rel="noopener"
+                            class="text-red-400 hover:underline">Product Hunt → OAuth Applications</a>, scroll to
+                        <strong class="text-red-300">Developer Token</strong> → <strong>Create Token</strong>, then paste it below. No API Key or API Secret needed.</p>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <form onsubmit="return false" class="contents">
+                        <input type="password" id="phTokenInput" placeholder="Paste Developer Token (from Create Token)" autocomplete="new-password"
+                            maxlength="200"
+                            class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm w-64 focus:ring-2 focus:ring-red-500 focus:border-red-500 placeholder-gray-500">
+                        </form>
+                        <select id="phFirstCount"
+                            class="px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:ring-2 focus:ring-red-500">
+                            <option value="20">20 posts</option>
+                            <option value="50" selected>50 posts</option>
+                            <option value="100">100 posts</option>
+                        </select>
+                        <button type="button" id="phFetchBtn"
+                            class="glass-button px-3 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-white text-xs font-medium flex items-center gap-1.5">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i> Fetch new tools
+                        </button>
+                        <button type="button" id="phDeepBtn" title="Deep-scan Product Hunt history — up to 5,000 older posts (first install)"
+                            class="glass-button px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-white text-xs font-medium flex items-center gap-1.5">
+                            <i data-lucide="history" class="w-3.5 h-3.5"></i> Deep scan 5,000
+                        </button>
+                        <button type="button" id="phDupBtn"
+                            class="hidden glass-button px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-medium flex items-center gap-1.5"
+                            title="Tools matching a saved link">
+                            <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i> Matches <span>0</span>
+                        </button>
+                        <button type="button" id="phDupDeleteBtn"
+                            class="hidden glass-button px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/40 border border-red-500/40 text-red-300 text-xs font-medium flex items-center gap-1.5"
+                            title="Delete all tools matching a saved link">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete matches
+                        </button>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs text-gray-400 hover:text-red-300 select-none">
+                            <input type="checkbox" id="phAuto6am"
+                                class="rounded border-white/20 bg-white/5 text-red-500 focus:ring-red-500 h-3.5 w-3.5">
+                            Auto-update daily (if data older than 24h)
+                        </label>
+                    </div>
+                    <div id="phDupList" class="hidden p-3 rounded-lg bg-amber-500/5 border border-amber-500/20 max-h-48 overflow-y-auto"></div>
+                </div>
+            </div>
+            <div id="toolsListContainer" class="flex-1 overflow-y-auto scrollbar-hide relative min-h-[200px]">
+                <div id="toolsGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 p-1"></div>
+                <div id="toolsSentinel" class="hidden flex items-center justify-center py-6 text-gray-500">
+                    <div class="animate-spin w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full"></div>
+                </div>
+            </div>
+            <div id="toolsEmpty" class="hidden text-center py-12 text-gray-500">
+                <i data-lucide="wrench" class="w-12 h-12 mx-auto mb-2 opacity-50"></i>
+                <p>No tools yet. Click &quot;Add tool&quot; to save one.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timeline Tab (Cognitive Timeline) -->
+    <div id="timelineTab" class="tab-content hidden h-[calc(100dvh-180px)] overflow-hidden flex flex-col">
+        <div class="w-full max-w-[95%] mx-auto px-4 py-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                    <i data-lucide="git-branch" class="w-6 h-6 text-red-400"></i>
+                    Cognitive Timeline
+                </h2>
+                <div class="flex items-center gap-2">
+                    <button id="timelineViewToggle" onclick="toggleTimelineView()"
+                        class="glass-button px-4 py-2 rounded-lg text-white flex items-center gap-2">
+                        <i data-lucide="share-2" class="w-4 h-4"></i> Graph View
+                    </button>
+                    <button id="addTimelineEventBtn"
+                        class="glass-button px-4 py-2 rounded-lg brand-gradient text-white flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Add Event
+                    </button>
+                </div>
+            </div>
+
+            <!-- Timeline Grid/Graph Container -->
+            <div id="timelineContainer" class="flex flex-col h-full">
+                <!-- Wrapper for Graph (will be moved here by JS if needed, or rendered here) -->
+                <!-- Ideally, renderTimelineTab should respect this structure -->
+            </div>
+
+            <!-- Analytics Dashboard -->
+            <div id="timelineAnalytics"></div>
+
+            <!-- Split Handle -->
+            <div id="timelineSplitHandle" class="w-full hover:bg-red-500/50 hidden" title="Drag to resize graph">
+            </div>
+
+            <!-- Timeline List -->
+            <div id="timelineGrid" class="grid grid-cols-1 gap-4">
+                <!-- Timeline events will be rendered here -->
+            </div>
+        </div>
+    </div>
+
+    <div id="transcriptTab" class="tab-content hidden h-[calc(100dvh-180px)] overflow-hidden flex flex-col">
+        <div class="w-full max-w-[95%] mx-auto px-4 py-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div class="glass-card p-5 md:p-6 border border-red-500/20 bg-gradient-to-br from-red-500/10 via-black/20 to-amber-500/5">
+                <div class="flex flex-col gap-6">
+                    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                        <div class="max-w-3xl">
+                            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/15 text-red-200 text-xs font-semibold tracking-wide uppercase mb-3">
+                                <i data-lucide="file-audio" class="w-3.5 h-3.5"></i>
+                                Social Video Transcript
+                            </div>
+                            <h2 class="text-2xl md:text-3xl font-bold text-white leading-tight">Transcripts for social videos, right in the app</h2>
+                            <p class="text-sm md:text-base text-gray-400 mt-3">Paste a YouTube, Facebook, Instagram, TikTok, or Douyin link, then fetch the transcript — a best-effort grab of the captions/text the page exposes.</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 min-w-[220px]">
+                            <p class="text-xs uppercase tracking-[0.2em] text-gray-500 mb-1">Status</p>
+                            <p id="transcriptTabStatusBadge" class="text-sm text-gray-300">Ready to fetch</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-6">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-2">Video URL</label>
+                                <input id="transcriptTabUrlInput" type="url" placeholder="https://youtube.com/watch?v=..."
+                                    class="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500">
+                            </div>
+                            <div class="flex flex-wrap gap-3">
+                                <button id="transcriptTabFetchBtn" type="button"
+                                    class="px-5 py-3 rounded-xl brand-gradient text-white font-medium flex items-center gap-2 shadow-brand">
+                                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                                    Transcript
+                                </button>
+                                <button id="transcriptTabCopyBtn" type="button"
+                                    class="px-5 py-3 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white flex items-center gap-2"
+                                    disabled>
+                                    <i data-lucide="copy" class="w-4 h-4"></i>
+                                    Copy
+                                </button>
+                                <button id="transcriptTabSaveBtn" type="button"
+                                    class="px-5 py-3 rounded-xl bg-red-500/20 hover:bg-red-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-red-100 flex items-center gap-2"
+                                    disabled>
+                                    <i data-lucide="save" class="w-4 h-4"></i>
+                                    Save To Link
+                                </button>
+                            </div>
+                            <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
+                                <div id="transcriptTabMeta" class="text-xs text-gray-500 mb-3">No transcript yet.</div>
+                                <textarea id="transcriptTabOutput"
+                                    class="w-full min-h-[360px] md:min-h-[440px] rounded-xl bg-black/30 border border-white/10 text-gray-100 p-4 resize-y focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    placeholder="Transcript will appear here..."></textarea>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
+                                <h3 class="text-white font-semibold mb-3 flex items-center gap-2">
+                                    <i data-lucide="bookmark-plus" class="w-4 h-4 text-red-300"></i>
+                                    Save transcript to an existing link
+                                </h3>
+                                <select id="transcriptTabLinkSelect"
+                                    class="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-red-500">
+                                    <option value="">Select a link to save the transcript...</option>
+                                </select>
+                                <p class="text-xs text-gray-500 mt-2">The transcript is appended to the notes of the link you choose.</p>
+                            </div>
+
+                            <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
+                                <h3 class="text-white font-semibold mb-3 flex items-center gap-2">
+                                    <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
+                                    Tips
+                                </h3>
+                                <ul class="space-y-2 text-sm text-gray-400">
+                                    <li>Paste the original video link, not a redirect/share shortlink.</li>
+                                    <li>If the transcript is too short, try another link or the original video.</li>
+                                    <li>YouTube usually works better when the video has captions/subtitles.</li>
+                                </ul>
+                            </div>
+
+                            <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
+                                <h3 class="text-white font-semibold mb-3 flex items-center gap-2">
+                                    <i data-lucide="shield-alert" class="w-4 h-4 text-red-300"></i>
+                                    Current limits
+                                </h3>
+                                <p class="text-sm text-gray-400">This is a best-effort transcript, not a dedicated speech-to-text backend. It relies on the captions/content the page lets us read.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast"
+        class="fixed top-24 right-4 z-50 glass-card px-6 py-4 shadow-2xl transform translate-x-full transition-transform duration-300">
+        <div class="flex items-center gap-3">
+            <i id="toastIcon" data-lucide="check-circle" class="w-5 h-5"></i>
+            <p id="toastMessage" class="text-white font-medium"></p>
+        </div>
+    </div>
+
+    <!-- Bulk Operation Progress Bar -->
+    <div id="bulkProgress" class="fixed top-0 left-0 right-0 z-[9999] hidden pointer-events-none">
+        <div class="h-1 bg-white/10">
+            <div id="bulkProgressFill" class="h-full brand-gradient transition-all duration-200 ease-out"
+                style="width: 0%"></div>
+        </div>
+        <div class="flex justify-center mt-2">
+            <div
+                class="glass-card px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 border border-white/15">
+                <i data-lucide="sparkles" class="w-4 h-4 text-red-400 animate-glow-pulse"></i>
+                <span id="bulkProgressLabel" class="text-sm text-white font-medium">Processing…</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Link Modal -->
+    <div id="addLinkModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="modalOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="p-4 md:p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 id="modalTitle" class="text-2xl font-bold text-white">Add New Link</h2>
+                    <button id="closeModal" class="text-gray-400 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+
+                <form id="addLinkForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">URL *</label>
+                        <input type="url" id="linkUrl" required
+                            class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500/50 transition-all text-base"
+                            placeholder="https://example.com">
+                        <p class="text-xs text-gray-500 mt-1">Enter a valid web address</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Title</label>
+                        <input type="text" id="linkTitle"
+                            class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500/50 transition-all"
+                            placeholder="Link title (optional)">
+                        <p class="text-xs text-gray-500 mt-1">Leave empty to use domain name</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Category</label>
+                        <select id="linkCategory"
+                            class="w-full px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-red-500">
+                            <!-- Options filled by script from LINK_CATEGORIES -->
+                            <option value="General">General</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Tags (comma-separated)</label>
+                        <input type="text" id="linkTags"
+                            class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500/50 transition-all"
+                            placeholder="web, design, ui">
+                        <div id="tagSuggestions" class="mt-2 flex flex-wrap gap-2 hidden"></div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Notes (optional)</label>
+                        <textarea id="linkNotes" rows="3"
+                            class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500/50 transition-all resize-none"
+                            placeholder="Add any notes or description about this link..."></textarea>
+                    </div>
+
+                    <div class="rounded-xl border border-red-500/20 bg-red-500/5 p-4 space-y-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <label class="block text-sm font-medium text-white mb-1">Video Transcript</label>
+                                <p class="text-xs text-gray-400">Paste a video link from YouTube, TikTok, Instagram, Facebook, Douyin... then fetch the transcript. The result appears in the modal and can be saved to notes.</p>
+                            </div>
+                            <button type="button" id="openTranscriptBtn"
+                                class="shrink-0 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-200 transition-all flex items-center gap-2">
+                                <i data-lucide="file-text" class="w-4 h-4"></i>
+                                Transcript
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Cover Image</label>
+                        <div id="imageDropZone"
+                            class="border-2 border-dashed border-white/20 rounded-lg p-8 text-center cursor-pointer hover:border-red-500/50 transition-all duration-300 relative overflow-hidden group">
+                            <div class="absolute inset-0 transition-all duration-300 image-drop-overlay">
+                            </div>
+                            <input type="file" id="imageInput" accept="image/*" class="hidden">
+                            <div id="imagePreview" class="hidden mb-4 relative z-10">
+                                <div class="relative">
+                                    <img id="previewImg" src="" alt="Preview"
+                                        class="max-w-full max-h-64 mx-auto rounded-lg shadow-2xl">
+                                    <button type="button" id="removeImageBtn"
+                                        class="absolute top-2 right-2 p-2 rounded-full bg-red-500/80 hover:bg-red-500 text-white backdrop-blur-sm transition-all"
+                                        title="Remove image">
+                                        <i data-lucide="x" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="dropZoneContent" class="relative z-10">
+                                <i data-lucide="upload"
+                                    class="w-12 h-12 mx-auto mb-2 text-gray-400 group-hover:text-red-400 transition-colors"></i>
+                                <p class="text-gray-400 mb-1 group-hover:text-gray-300 transition-colors">Drag and
+                                    drop
+                                    an image here</p>
+                                <p class="text-sm text-gray-500">or click to select (max 50MB)</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 pt-4">
+                        <button type="submit" id="submitBtn"
+                            class="flex-1 px-6 py-3 rounded-lg brand-gradient hover:opacity-95 transition-all duration-300 text-white font-medium shadow-brand hover:scale-105 active:scale-95">
+                            <span id="submitText">Add Link</span>
+                            <span id="submitLoading" class="hidden">
+                                <i data-lucide="loader-2" class="inline-block w-4 h-4 animate-spin mr-2"></i>
+                                <span id="submitLoadingText">Adding...</span>
+                            </span>
+                        </button>
+                        <button type="button" id="cancelBtn"
+                            class="px-6 py-3 rounded-lg bg-white/5 hover:bg-white/10 transition-all duration-200 text-white hover:scale-105 active:scale-95">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Strategic Decision Modal -->
+    <div id="decisionModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="decisionOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all duration-300 scale-95 opacity-0"
+            id="decisionModalContent">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="zap" class="w-6 h-6 text-red-500"></i>
+                        Log Strategic Decision
+                    </h2>
+                    <button class="text-gray-400 hover:text-white transition-colors" id="closeDecisionModal">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Decision Title (What?)</label>
+                        <input type="text" id="decisionTitle" placeholder="e.g., Switch to Next.js"
+                            class="w-full px-4 py-2 rounded-lg bg-black/40 border border-white/10 text-white focus:border-red-500 focus:outline-none transition-colors">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Reasoning (Why?)</label>
+                        <textarea id="decisionReasoning" rows="3"
+                            placeholder="Explain the logic behind this decision..."
+                            class="w-full px-4 py-2 rounded-lg bg-black/40 border border-white/10 text-white focus:border-red-500 focus:outline-none transition-colors"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Context Factors
+                            (Considerations)</label>
+                        <textarea id="decisionContext" rows="2"
+                            placeholder="Key factors, constraints, or alternatives considered (comma separated)..."
+                            class="w-full px-4 py-2 rounded-lg bg-black/40 border border-white/10 text-white focus:border-red-500 focus:outline-none transition-colors"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Expected Outcome</label>
+                        <input type="text" id="decisionOutcome" placeholder="What do you expect to happen?"
+                            class="w-full px-4 py-2 rounded-lg bg-black/40 border border-white/10 text-white focus:border-red-500 focus:outline-none transition-colors">
+                    </div>
+
+                    <!-- Advisory Section -->
+                    <div id="decisionAdvisory"
+                        class="hidden p-3 rounded-lg bg-white/5 border border-white/10 transition-all">
+                        <h4 class="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
+                            <i data-lucide="history" class="w-3 h-3"></i> Past Related Decisions
+                        </h4>
+                        <div id="decisionAdvisoryList" class="space-y-2"></div>
+                    </div>
+
+                    <div class="flex justify-end gap-3 pt-4 border-t border-white/10">
+                        <button id="cancelDecisionBtn"
+                            class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+                            Cancel
+                        </button>
+                        <button id="saveDecisionBtn"
+                            class="px-6 py-2 rounded-lg bg-red-500 text-black font-bold hover:bg-red-400 transition-all flex items-center gap-2">
+                            <i data-lucide="save" class="w-4 h-4"></i> Save Decision
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Folder Modal -->
+    <div id="createFolderModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="createFolderOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-md transform transition-all duration-300 scale-95 opacity-0"
+            id="createFolderModalContent">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="folder-plus" class="w-5 h-5 text-red-400"></i>
+                        Create New Folder
+                    </h2>
+                    <button class="text-gray-400 hover:text-white transition-colors" id="closeCreateFolderModal">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Folder Name</label>
+                        <input type="text" id="newFolderName" placeholder="My New Folder"
+                            class="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white focus:border-red-500 focus:outline-none transition-colors"
+                            autofocus>
+                    </div>
+
+                    <div class="flex justify-end gap-3 pt-4">
+                        <button id="cancelCreateFolderBtn"
+                            class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+                            Cancel
+                        </button>
+                        <button id="confirmCreateFolderBtn"
+                            class="px-6 py-2 rounded-lg brand-gradient text-white font-bold hover:opacity-95 transition-all flex items-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Create
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="contextMenu" class="hidden fixed z-[100] glass-card p-1 min-w-[180px] shadow-2xl border border-white/20">
+        <div id="contextMenuItems" class="space-y-0.5">
+            <!-- Items injected dynamically -->
+        </div>
+    </div>
+
+    <!-- Add/Edit Prompt Modal -->
+    <div id="promptModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="promptModalOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 id="promptModalTitle" class="text-2xl font-bold text-white">Add New Prompt</h2>
+                    <button id="closePromptModal" class="text-gray-400 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+
+                <form id="promptForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Prompt Title</label>
+                        <input type="text" id="promptTitle" required
+                            class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500/50 transition-all"
+                            placeholder="Enter prompt title...">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Prompt Content</label>
+                        <textarea id="promptContent" rows="6" required
+                            class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500/50 transition-all resize-none"
+                            placeholder="Enter your prompt content..."></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Category</label>
+                        <select id="promptCategory"
+                            class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-red-500">
+                            <option value="General">General</option>
+                            <option value="AI">AI</option>
+                            <option value="Development">Development</option>
+                            <option value="Writing">Writing</option>
+                            <option value="Research">Research</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="flex gap-3 pt-4">
+                        <button type="submit"
+                            class="flex-1 px-6 py-3 rounded-lg brand-gradient hover:opacity-95 transition-all duration-300 text-white font-medium">
+                            Save Prompt
+                        </button>
+                        <button type="button" id="cancelPromptBtn"
+                            class="px-6 py-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-white">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Save Modal (Single URL + Bulk) — Ctrl+S -->
+    <div id="quickSaveModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="quickSaveOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="zap" class="w-5 h-5 text-red-400"></i>
+                        Quick Save <span class="text-sm font-normal text-gray-400">(Ctrl+S)</span>
+                    </h2>
+                    <button id="closeQuickSave" class="text-gray-400 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+
+                <!-- Folder Selection -->
+                <div class="mb-6 p-4 rounded-xl bg-white/5 border border-white/10 flex flex-col md:flex-row gap-4">
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Save to Folder</label>
+                        <select id="quickSaveFolderSelect"
+                            class="w-full px-4 py-2.5 rounded-lg bg-black/40 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
+                            <option value="">-- No Folder --</option>
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Or Create New Folder</label>
+                        <input type="text" id="quickSaveNewFolder" placeholder="New Folder Name"
+                            class="w-full px-4 py-2.5 rounded-lg bg-black/40 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
+                    </div>
+                </div>
+
+                <!-- Single URL: one-click save with auto-fetch metadata -->
+                <div class="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Save one link</label>
+                    <div class="flex gap-2 mb-2">
+                        <input type="url" id="quickSaveUrl" placeholder="https://example.com"
+                            class="flex-1 px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 font-mono text-sm">
+                        <button type="button" id="quickSaveFetchBtn" title="Fetch title & favicon"
+                            class="glass-button px-4 py-2.5 rounded-lg text-white shrink-0 flex items-center gap-2">
+                            <i data-lucide="download" class="w-4 h-4"></i> Fetch
+                        </button>
+                        <button type="button" id="quickSaveOneBtn" title="Save this link"
+                            class="px-4 py-2.5 rounded-lg brand-gradient text-white font-medium shrink-0 flex items-center gap-2">
+                            <i data-lucide="check" class="w-4 h-4"></i> Save
+                        </button>
+                    </div>
+                    <div id="quickSaveOnePreview"
+                        class="hidden mt-2 p-3 rounded-lg bg-black/20 border border-white/5 flex items-center gap-3">
+                        <img id="quickSaveFavicon" src="" alt="" class="w-8 h-8 rounded hidden">
+                        <div class="min-w-0 flex-1">
+                            <div id="quickSaveTitle" class="text-white font-medium truncate">—</div>
+                            <div id="quickSaveDescription" class="text-gray-400 text-xs truncate">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-sm text-gray-400 mb-2">Or paste multiple URLs (one per line)</div>
+                <form id="quickSaveForm" class="space-y-4">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-300">URLs (one per line)</label>
+                            <span id="quickSaveCount" class="text-xs text-red-400 font-medium">0 links</span>
+                        </div>
+                        <textarea id="quickSaveUrls" rows="5"
+                            class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500/50 transition-all resize-none font-mono text-sm"
+                            placeholder="https://example.com
+https://github.com/user/repo
+https://youtube.com/watch?v=...
+https://twitter.com/username
+
+Paste multiple URLs here, one per line..."></textarea>
+                        <p class="text-xs text-gray-500 mt-2">Tip: Paste multiple URLs at once. Each URL will be
+                            saved
+                            as a separate link with auto-generated tags.</p>
+                    </div>
+                    <div id="quickSavePreview"
+                        class="hidden p-4 rounded-lg bg-white/5 border border-white/10 max-h-48 overflow-y-auto">
+                        <h4 class="text-sm font-medium text-gray-300 mb-2">Preview:</h4>
+                        <div id="quickSavePreviewList" class="space-y-2"></div>
+                    </div>
+                    <div class="flex gap-3">
+                        <button type="submit" id="quickSaveSubmitBtn"
+                            class="flex-1 px-6 py-3 rounded-lg brand-gradient hover:opacity-95 transition-all duration-300 text-white font-medium flex items-center justify-center gap-2">
+                            <i data-lucide="save" class="w-4 h-4"></i>
+                            <span id="quickSaveSubmitText">Save Links</span>
+                        </button>
+                        <button type="button" id="cancelQuickSave"
+                            class="px-6 py-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-white">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Storage & Settings Modal -->
+    <div id="storageModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="storageModalOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="database" class="w-6 h-6"></i>
+                        Storage & Settings
+                    </h2>
+                    <button id="closeStorageModal" class="text-gray-400 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+
+                <!-- Storage Stats -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                    <div class="p-4 rounded-lg bg-white/5 border border-white/10">
+                        <h3 class="text-gray-400 text-sm mb-1">Total Links</h3>
+                        <p class="text-3xl font-bold text-white" id="storageTotalLinks">0</p>
+                    </div>
+                    <div class="p-4 rounded-lg bg-white/5 border border-white/10">
+                        <h3 class="text-gray-400 text-sm mb-1">With Images</h3>
+                        <p class="text-3xl font-bold text-red-400" id="storageLinksWithImages">0</p>
+                    </div>
+                    <div class="p-4 rounded-lg bg-white/5 border border-white/10">
+                        <h3 class="text-gray-400 text-sm mb-1">Total Prompts</h3>
+                        <p class="text-3xl font-bold text-red-400" id="storageTotalPrompts">0</p>
+                    </div>
+                    <div class="p-4 rounded-lg bg-white/5 border border-white/10">
+                        <h3 class="text-gray-400 text-sm mb-1">Storage Used</h3>
+                        <div class="flex items-end gap-2">
+                            <p class="text-3xl font-bold text-blue-400" id="storageSize">0 KB</p>
+                            <span class="text-sm text-gray-500 mb-1">/ 10 GB</span>
+                        </div>
+                        <div class="w-full h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+                            <div id="storageBar" class="h-full bg-blue-500 transition-all duration-500"
+                                style="width: 0%"></div>
+                        </div>
+                        <p class="text-xs text-right text-gray-500 mt-1" id="storagePercentage">0%</p>
+                    </div>
+                </div>
+
+                <!-- Settings & Actions -->
+                <div class="space-y-8">
+                    <!-- Data Management -->
+                    <section>
+                        <h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                            <i data-lucide="hard-drive" class="w-5 h-5 text-red-400"></i> Data Management
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <button id="exportBtn"
+                                class="p-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 hover:border-red-500/50 transition-all text-left group">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <div
+                                        class="p-2 rounded bg-green-500/20 text-green-300 group-hover:bg-green-500 group-hover:text-white transition-colors">
+                                        <i data-lucide="file-spreadsheet" class="w-5 h-5"></i>
+                                    </div>
+                                    <span class="font-medium text-white">Export to Excel</span>
+                                </div>
+                                <p class="text-xs text-gray-400">Download all links as .xlsx file</p>
+                            </button>
+
+                            <button id="exportJsonBtn"
+                                class="p-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 hover:border-red-500/50 transition-all text-left group">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <div
+                                        class="p-2 rounded bg-blue-500/20 text-blue-300 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                                        <i data-lucide="file-json" class="w-5 h-5"></i>
+                                    </div>
+                                    <span class="font-medium text-white">Full Backup (JSON)</span>
+                                </div>
+                                <p class="text-xs text-gray-400">Export everything including settings</p>
+                            </button>
+
+                            <button id="exportZipBtn"
+                                class="p-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 hover:border-red-500/50 transition-all text-left group">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <div
+                                        class="p-2 rounded bg-amber-500/20 text-amber-300 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                                        <i data-lucide="folder-archive" class="w-5 h-5"></i>
+                                    </div>
+                                    <span class="font-medium text-white">Backup ZIP (Folder)</span>
+                                </div>                                 <p class="text-xs text-gray-400">images/ + data/*.json — links, notes, colors, files, transcripts, tools each in their own file</p>
+                            </button>
+
+                            <button id="importBtn"
+                                class="p-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 hover:border-red-500/50 transition-all text-left group relative">
+                                <input type="file" id="importFileStorage" accept=".json,.xlsx,.xls,.csv,.zip" class="hidden">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <div
+                                        class="p-2 rounded bg-red-500/20 text-red-300 group-hover:bg-red-500 group-hover:text-white transition-colors">
+                                        <i data-lucide="upload" class="w-5 h-5"></i>
+                                    </div>
+                                    <span class="font-medium text-white">Import Data</span>
+                                </div>
+                                <p class="text-xs text-gray-400">Restore from JSON or Excel</p>
+                            </button>
+
+                            <button id="importBrowserBtn"
+                                class="p-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 hover:border-red-500/50 transition-all text-left group">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <div
+                                        class="p-2 rounded bg-red-500/20 text-red-300 group-hover:bg-red-500 group-hover:text-white transition-colors">
+                                        <i data-lucide="bookmark" class="w-5 h-5"></i>
+                                    </div>
+                                    <span class="font-medium text-white">Browser Import</span>
+                                </div>
+                                <p class="text-xs text-gray-400">Import from Chrome/Firefox/Edge</p>
+                            </button>
+                        </div>
+                        <div class="mt-4 p-4 rounded-lg bg-white/5 border border-white/10 flex items-center justify-between gap-3 flex-wrap">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <i data-lucide="database-backup" class="w-5 h-5 text-blue-400 shrink-0"></i>
+                                <div class="min-w-0">
+                                    <p class="text-sm text-gray-300 font-medium">Automatic Backup</p>
+                                    <p class="text-xs text-gray-500">Data is saved locally and a backup file is downloaded automatically after each change.</p>
+                                    <p class="text-xs text-blue-300 mt-1">Last backup: <span id="lastBackupDate">Never</span></p>
+                                </div>
+                            </div>
+                            <button id="backupNowBtn"
+                                class="px-4 py-2 rounded-lg brand-gradient text-white font-medium text-sm shrink-0 flex items-center gap-2">
+                                <i data-lucide="download" class="w-4 h-4"></i> Backup Now
+                            </button>
+                        </div>
+                    </section>
+
+                    <!-- Advanced Actions -->
+                    <section>
+                        <h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                            <i data-lucide="settings" class="w-5 h-5 text-gray-400"></i> Optimization & Maintenance
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <button id="optimizeStorageBtn"
+                                class="p-3 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-sm flex items-center gap-2">
+                                <i data-lucide="image-minus" class="w-4 h-4"></i> Remove Old Images
+                            </button>
+                            <button id="clearImagesBtn"
+                                class="p-3 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-sm flex items-center gap-2">
+                                <i data-lucide="image-off" class="w-4 h-4"></i> Clear All Images
+                            </button>
+                            <button id="checkLinkHealthBtn"
+                                class="p-3 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-sm flex items-center gap-2">
+                                <i data-lucide="activity" class="w-4 h-4"></i> Check Link Health
+                            </button>
+                        </div>
+                    </section>
+
+                    <!-- Prompts Config -->
+                    <section>
+                        <h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                            <i data-lucide="message-square" class="w-5 h-5 text-red-400"></i> AI Prompts
+                        </h3>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Custom System Prompt</label>
+                            <textarea id="storagePrompt" rows="3"
+                                class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                placeholder="Define how the AI should behave..."></textarea>
+                        </div>
+                        <div id="promptsList" class="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2">
+                            <!-- Prompts rendered here -->
+                        </div>
+                        <button id="addPromptBtn"
+                            class="w-full mt-2 py-2 rounded-lg border border-dashed border-white/20 text-gray-400 hover:text-white hover:border-white/40 hover:bg-white/5 transition-all text-sm flex items-center justify-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Add Custom Prompt
+                        </button>
+                    </section>
+
+                    <!-- Danger Zone -->
+                    <section class="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+                        <h3 class="text-sm font-bold text-red-400 mb-4 uppercase tracking-wider">Danger Zone</h3>
+                        <div class="flex gap-4">
+                            <button id="exportBackupBtn" class="hidden">Legacy Backup</button> <!-- Hidden legacy -->
+                            <button id="clearAllDataBtn"
+                                class="px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500 hover:text-white text-red-400 text-sm font-medium transition-colors flex items-center gap-2">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i> Wipe All Data
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Browser Import Modal -->
+    <div id="browserImportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="browserImportOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="bookmark-plus" class="w-6 h-6"></i>
+                        Import Browser Bookmarks
+                    </h2>
+                    <button id="closeBrowserImport" class="text-gray-400 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <div class="p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
+                        <h3 class="text-sm font-semibold text-blue-300 mb-2">How to Export Bookmarks:</h3>
+                        <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                            <li><strong>Chrome/Edge:</strong> Bookmarks → Bookmark Manager → ⋮ → Export bookmarks
+                            </li>
+                            <li><strong>Firefox:</strong> Library → Bookmarks → Show All Bookmarks → Import and
+                                Backup →
+                                Export</li>
+                            <li><strong>Safari:</strong> File → Export Bookmarks</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Select Bookmarks HTML
+                            File</label>
+                        <input type="file" id="browserBookmarksFile" accept=".html,.htm"
+                            class="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-red-500 file:text-white hover:file:bg-red-600">
+                    </div>
+                    <div id="browserImportProgress" class="hidden">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-300">Importing...</span>
+                            <span id="browserImportProgressText" class="text-sm text-gray-400">0%</span>
+                        </div>
+                        <div class="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div id="browserImportProgressBar" class="h-full brand-gradient transition-all duration-300"
+                                style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <button type="button" id="startBrowserImport"
+                            class="flex-1 px-6 py-3 rounded-lg brand-gradient hover:opacity-95 transition-all duration-300 text-white font-medium">
+                            Import Bookmarks
+                        </button>
+                        <button type="button" id="cancelBrowserImport"
+                            class="px-6 py-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-white">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics Dashboard Modal -->
+    <div id="analyticsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="analyticsOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="bar-chart-3" class="w-6 h-6"></i>
+                        Analytics Dashboard
+                    </h2>
+                    <button id="closeAnalytics" class="text-gray-400 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+                <div id="analyticsContent">
+                    <!-- Analytics will be rendered here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div id="shortcutsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="shortcutsOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-lg">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="keyboard" class="w-6 h-6"></i>
+                        Keyboard Shortcuts
+                    </h2>
+                    <button id="closeShortcuts" class="text-gray-400 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                        <span class="text-gray-300">Quick Save (Bulk)</span>
+                        <kbd class="px-3 py-1 rounded bg-red-500/20 text-red-300 text-sm font-mono">Ctrl +
+                            S</kbd>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                        <span class="text-gray-300">Search Focus</span>
+                        <kbd class="px-3 py-1 rounded bg-red-500/20 text-red-300 text-sm font-mono">Ctrl +
+                            K</kbd>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                        <span class="text-gray-300">Add New Link</span>
+                        <kbd class="px-3 py-1 rounded bg-red-500/20 text-red-300 text-sm font-mono">Ctrl +
+                            N</kbd>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                        <span class="text-gray-300">Random Link</span>
+                        <kbd class="px-3 py-1 rounded bg-red-500/20 text-red-300 text-sm font-mono">Ctrl +
+                            R</kbd>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                        <span class="text-gray-300">Show Shortcuts</span>
+                        <kbd class="px-3 py-1 rounded bg-red-500/20 text-red-300 text-sm font-mono">?</kbd>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                        <span class="text-gray-300">Close Modal</span>
+                        <kbd class="px-3 py-1 rounded bg-red-500/20 text-red-300 text-sm font-mono">Esc</kbd>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Duplicates Modal -->
+    <div id="duplicatesModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="duplicatesOverlay"></div>
+        <div class="glass-card relative z-10 w-full max-w-3xl max-h-[80vh] overflow-hidden">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="copy-check" class="w-6 h-6"></i>
+                        Duplicate Links Finder
+                    </h2>
+                    <button id="closeDuplicates" class="text-gray-400 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+                <div id="duplicatesContent" class="max-h-[60vh] overflow-y-auto">
+                    <!-- Duplicates will be rendered here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Command Palette (Arc Reactor) -->
+    <div id="commandPalette" class="fixed inset-0 z-[100] hidden">
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onclick="closeCommandPalette()">
+        </div>
+
+        <!-- Palette Window -->
+        <div class="relative w-full max-w-2xl mx-auto mt-[10vh] px-4">
+            <div class="glass-card overflow-hidden shadow-2xl shadow-red-500/20 transform transition-all">
+                <!-- Search Input -->
+                <div class="relative border-b border-white/10">
+                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+                    <input type="text" id="commandInput"
+                        class="w-full pl-12 pr-4 py-4 bg-transparent text-white text-lg placeholder-gray-500 focus:outline-none"
+                        placeholder="Type a command or search..." autocomplete="off">
+                    <div class="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                        <span class="text-xs text-gray-500 px-1.5 py-0.5 rounded border border-white/10">esc</span>
+                    </div>
+                </div>
+
+                <!-- Results List -->
+                <div id="commandResults" class="max-h-[60vh] overflow-y-auto py-2 scrollbar-hide">
+                    <!-- Results will be injected here -->
+                    <div class="px-4 py-8 text-center text-gray-500 text-sm">
+                        Start typing to search...
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div
+                    class="bg-white/5 px-4 py-2 border-t border-white/5 flex items-center justify-between text-xs text-gray-500">
+                    <div class="flex items-center gap-3">
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-white/10 text-gray-300">↑↓</kbd> navigate</span>
+                        <span><kbd class="px-1.5 py-0.5 rounded bg-white/10 text-gray-300">enter</kbd> select</span>
+                    </div>
+                    <span>LinkLumina OS v2.0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Modal -->
+    <div id="syncModal" class="fixed inset-0 z-50 hidden">
+        <div id="syncModalOverlay" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="glass-card max-w-md w-full">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="refresh-cw" class="w-6 h-6 text-red-400"></i>
+                        Device Sync
+                    </h2>
+                    <button id="closeSyncModal" class="text-gray-400 hover:text-white">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+
+                <!-- Sync Status -->
+                <div id="syncStatus" class="mb-6 p-4 rounded-lg bg-white/5 border border-white/10">
+                    <div class="flex items-center gap-3">
+                        <div id="syncStatusIcon" class="w-3 h-3 rounded-full bg-gray-500"></div>
+                        <span id="syncStatusText" class="text-gray-300">Not connected</span>
+                    </div>
+                </div>
+
+                <!-- Create Room -->
+                <div class="mb-6">
+                    <h3 class="text-sm font-medium text-gray-400 mb-2">Create New Sync Room</h3>
+                    <button id="createRoomBtn"
+                        class="w-full glass-button px-4 py-3 rounded-lg brand-gradient hover:opacity-95 text-white font-medium">
+                        Generate Room Code
+                    </button>
+                    <div id="roomCodeDisplay" class="hidden mt-4 p-4 rounded-lg bg-white/10 text-center">
+                        <span class="text-gray-400 text-sm">Your Room Code:</span>
+                        <div class="text-3xl font-mono font-bold text-red-400 tracking-widest mt-2" id="generatedCode">
+                            ------</div>
+                        <button id="copyRoomCode" class="mt-2 text-sm text-gray-400 hover:text-white">
+                            <i data-lucide="copy" class="w-4 h-4 inline"></i> Copy
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Join Room -->
+                <div class="mb-6">
+                    <h3 class="text-sm font-medium text-gray-400 mb-2">Or Join Existing Room</h3>
+                    <div class="flex gap-2">
+                        <input type="text" id="joinRoomCode"
+                            class="flex-1 px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 uppercase tracking-widest text-center font-mono"
+                            placeholder="XXXXXX" maxlength="6">
+                        <button id="joinRoomBtn"
+                            class="px-6 py-3 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-medium">
+                            Join
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Disconnect -->
+                <button id="disconnectSyncBtn"
+                    class="hidden w-full glass-button px-4 py-3 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/20">
+                    Disconnect Sync
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supabase SDK (ES Module - Client Created Inline) -->
+    <script type="module">
+        import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+        // Create client directly here
+        const SUPABASE_URL = 'https://cwyqtklixcwkhrvflyeh.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_MaIjHNDMaCqHIg6QxQYveA_ohVu3_vF';
+
+        window.supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.supabaseReady = true;
+        console.log('✅ Supabase client ready:', window.supabaseClient);
+    </script>
+
+    <!-- Script loaded at the end with other modules -->
+    <!-- Knowledge Hub Modules -->
+    <!-- Neural Web (Knowledge Graph) Container -->
+    <div id="neuralWeb" class="fixed inset-0 z-[100] hidden bg-black overflow-hidden">
+        <!-- Controls -->
+        <div class="absolute top-4 right-4 z-[101] flex flex-col items-end gap-2">
+            <div class="glass-panel px-4 py-2 rounded-full flex items-center gap-3 text-sm text-gray-300">
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#ef4444]"></span> Links</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#10b981]"></span> Notes</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#38bdf8]"></span> Tags</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#f59e0b]"></span> Cats</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#8b5cf6]"></span> Folders</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#fb923c]"></span> Tools</div>
+                <div class="border-l border-white/20 pl-3 hidden md:block">Click: open / focus</div>
+            </div>
+            <div class="flex items-center gap-2">
+                <div id="neuralStats" class="glass-panel px-3 py-1.5 rounded-full text-xs text-gray-400"></div>
+                <button id="neuralAllBtn" type="button" title="Full view — show all links (no sampling limit)"
+                    class="p-2 rounded-full bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 transition-all backdrop-blur-md border border-amber-500/30">
+                    <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                </button>
+                <button id="neuralFocusBtn" type="button" title="Zoom into the Tools + topics cluster"
+                    class="p-2 rounded-full bg-orange-500/20 hover:bg-orange-500/40 text-orange-300 transition-all backdrop-blur-md border border-orange-500/30">
+                    <i data-lucide="orbit" class="w-4 h-4"></i>
+                </button>
+                <button id="neuralFewerBtn" type="button" title="Fewer links (smoother)"
+                    class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-md">
+                    <i data-lucide="minus" class="w-4 h-4"></i>
+                </button>
+                <button id="neuralMoreBtn" type="button" title="More links (more detail)"
+                    class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-md">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                </button>
+                <button onclick="closeNeuralWeb()"
+                    class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-md">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+        </div>
+        <!-- Search Node Overlay -->
+        <div class="absolute top-4 left-4 z-[101]">
+            <div class="glass-panel px-4 py-2 rounded-lg flex items-center gap-2">
+                <i data-lucide="search" class="w-4 h-4 text-gray-400"></i>
+                <input type="text" id="neuralSearch"
+                    class="bg-transparent border-none outline-none text-white text-sm w-48 placeholder-gray-500"
+                    placeholder="Search node...">
+            </div>
+        </div>
+        <!-- Graph Canvas -->
+        <div id="neuralGraph" class="w-full h-full"></div>
+        <!-- Tool detail popup (instead of opening a tab right away) -->
+        <div id="neuralToolPopup"
+            class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-[102] w-[360px] max-w-[92vw] glass-card rounded-xl overflow-hidden border border-orange-500/30"
+            style="animation: ssIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;">
+            <div id="neuralToolPopupImg" class="h-32 w-full bg-gray-800/60"></div>
+            <div class="p-3">
+                <div class="flex items-center gap-2">
+                    <span id="neuralToolPopupCat" class="w-2 h-2 rounded-full shrink-0" style="background:#f59e0b"></span>
+                    <h3 id="neuralToolPopupName" class="text-sm font-semibold text-white truncate flex-1"></h3>
+                    <button type="button" onclick="closeNeuralToolPopup()"
+                        class="p-1 rounded text-gray-400 hover:text-white hover:bg-white/10">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <p id="neuralToolPopupDesc" class="text-xs text-gray-400 mt-1 line-clamp-3 leading-relaxed"></p>
+                <div id="neuralToolPopupTopics" class="flex flex-wrap gap-1 mt-2"></div>
+                <div class="flex items-center gap-2 mt-3">
+                    <button type="button" id="neuralToolPopupOpen"
+                        class="flex-1 px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-medium flex items-center justify-center gap-1.5">
+                        <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Open website
+                    </button>
+                    <button type="button" id="neuralToolPopupPH"
+                        class="px-3 py-1.5 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 text-xs font-medium flex items-center gap-1.5">
+                        <i data-lucide="flame" class="w-3.5 h-3.5"></i> PH
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FAB: Add Link (mobile only, Links tab) -->
+    <button id="mobileFabAddLink" type="button" onclick="openModal(null)" aria-label="Add Link"
+        class="mobile-fab hidden fixed z-[85] right-6 bottom-24 w-14 h-14 rounded-full brand-gradient shadow-brand flex items-center justify-center text-white hover:opacity-95 active:scale-95 transition-all">
+        <i data-lucide="plus" class="w-7 h-7"></i>
+    </button>
+
+    <!-- Floating Action Bar (Batch Selection) -->
+    <div id="floatingActionBar"
+        class="fixed left-0 right-0 z-[90] hidden transform transition-all duration-300 mobile-floating-bar">
+        <div
+            class="glass-panel relative px-4 py-3 rounded-t-2xl md:rounded-full md:mx-auto md:max-w-[95%] flex items-center gap-2 md:gap-6 shadow-2xl shadow-red-500/20 border border-white/20">
+            <div class="flex items-center gap-2 md:gap-3 border-r border-white/10 pr-3 md:pr-6 shrink-0">
+                <span id="selectedCount" class="text-white font-bold text-lg">0</span>
+                <span class="text-gray-400 text-sm">Selected</span>
+            </div>
+            <div id="floatingBarActions"
+                class="flex items-center gap-2 overflow-x-auto scrollbar-hide flex-1 min-w-0 py-1">
+                <button id="batchSelectAllBtn" onclick="selectAllLinks()"
+                    class="p-2 rounded-lg hover:bg-white/10 text-white flex items-center gap-2 transition-all shrink-0"
+                    title="Select / Deselect All">
+                    <i data-lucide="list-checks" class="w-5 h-5 text-cyan-400"></i>
+                    <span class="text-sm">Select All</span>
+                </button>
+                <button id="batchMoveBtn"
+                    class="p-2 rounded-lg hover:bg-white/10 text-white flex items-center gap-2 transition-all"
+                    title="Move to Tag Folder">
+                    <i data-lucide="folder-input" class="w-5 h-5 text-blue-400"></i>
+                    <span class="text-sm">Move to Tag</span>
+                </button>
+                <button id="batchMagicEnchantBtn" onclick="bulkMagicEnhance()"
+                    class="p-2 rounded-lg hover:bg-white/10 text-white flex items-center gap-2 transition-all"
+                    title="Magic Enhance: Tags + Category + Description + Image (one click)">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-red-400"></i>
+                    <span class="text-sm">Magic Enhance</span>
+                </button>
+                <button id="batchFavoriteBtn" onclick="bulkFavoriteAll()"
+                    class="p-2 rounded-lg hover:bg-white/10 text-white flex items-center gap-2 transition-all"
+                    title="Favorite all selected">
+                    <i data-lucide="star" class="w-5 h-5 text-red-400"></i>
+                    <span class="text-sm">Favorite</span>
+                </button>
+                <button id="batchCategoryBtn" onclick="bulkSetCategory()"
+                    class="p-2 rounded-lg hover:bg-white/10 text-white flex items-center gap-2 transition-all"
+                    title="Change category for all selected">
+                    <i data-lucide="folder" class="w-5 h-5 text-red-400"></i>
+                    <span class="text-sm">Category</span>
+                </button>
+                <button id="batchBulkEditBtn" onclick="openBulkEditModal()"
+                    class="p-2 rounded-lg hover:bg-white/10 text-white flex items-center gap-2 transition-all"
+                    title="Bulk edit category + tags">
+                    <i data-lucide="pencil" class="w-5 h-5 text-cyan-400"></i>
+                    <span class="text-sm">Bulk Edit</span>
+                </button>
+                <button id="batchDeleteBtn"
+                    class="p-2 rounded-lg hover:bg-white/10 text-white flex items-center gap-2 transition-all"
+                    title="Delete Selected">
+                    <i data-lucide="trash-2" class="w-5 h-5 text-red-400"></i>
+                    <span class="text-sm">Delete</span>
+                </button>
+                <div class="w-px h-6 bg-white/10 mx-2"></div>
+                <button id="batchMoreBtn"
+                    class="mobile-only-batch p-2 rounded-lg hover:bg-white/10 text-white md:hidden flex items-center gap-1 shrink-0"
+                    title="More actions">
+                    <i data-lucide="more-horizontal" class="w-5 h-5"></i>
+                </button>
+                <button id="exitSelectModeBtn"
+                    class="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-all shrink-0 min-touch">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <!-- Mobile batch More dropdown (above bar) -->
+            <div id="floatingBarMoreDropdown"
+                class="hidden absolute bottom-full left-2 right-2 md:left-auto md:right-auto md:min-w-[280px] mb-2 py-2 px-3 glass-card rounded-xl border border-white/20 max-h-[50vh] overflow-y-auto z-10">
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    <button type="button"
+                        class="batch-more-action px-3 py-2.5 rounded-lg hover:bg-white/10 text-left flex items-center gap-2"
+                        data-action="move"><i data-lucide="folder-input" class="w-4 h-4 text-blue-400"></i>
+                        Move</button>
+                    <button type="button"
+                        class="batch-more-action px-3 py-2.5 rounded-lg hover:bg-white/10 text-left flex items-center gap-2"
+                        data-action="magic"><i data-lucide="sparkles" class="w-4 h-4 text-purple-500"></i> Magic
+                        Enhance</button>
+                    <button type="button"
+                        class="batch-more-action px-3 py-2.5 rounded-lg hover:bg-white/10 text-left flex items-center gap-2"
+                        data-action="favorite"><i data-lucide="star" class="w-4 h-4 text-red-400"></i>
+                        Favorite</button>
+                    <button type="button"
+                        class="batch-more-action px-3 py-2.5 rounded-lg hover:bg-white/10 text-left flex items-center gap-2"
+                        data-action="category"><i data-lucide="folder" class="w-4 h-4 text-red-400"></i>
+                        Category</button>
+                    <button type="button"
+                        class="batch-more-action px-3 py-2.5 rounded-lg hover:bg-white/10 text-left flex items-center gap-2"
+                        data-action="bulkedit"><i data-lucide="pencil" class="w-4 h-4 text-cyan-400"></i> Bulk
+                        Edit</button>
+                    <button type="button"
+                        class="batch-more-action px-3 py-2.5 rounded-lg hover:bg-red-500/20 text-red-400 text-left flex items-center gap-2 col-span-2"
+                        data-action="delete"><i data-lucide="trash-2" class="w-4 h-4"></i> Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch Move Modal -->
+    <div id="batchMoveModal" class="fixed inset-0 z-[100] hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="batchMoveOverlay"></div>
+        <div
+            class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-2xl shadow-2xl p-6">
+            <h3 class="text-xl font-bold text-white mb-4">Move to Tag Folder</h3>
+            <p class="text-gray-400 text-sm mb-4">Select a tag to add to the selected items.</p>
+
+            <div class="relative mb-4">
+                <i data-lucide="tag" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+                <input type="text" id="batchTagInput"
+                    class="w-full bg-white/5 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-red-500 transition-colors"
+                    placeholder="Enter tag name...">
+            </div>
+
+            <div id="existingTagsList" class="flex flex-wrap gap-2 mb-6 max-h-40 overflow-y-auto custom-scrollbar">
+                <!-- Tags populated here -->
+            </div>
+
+            <div class="flex justify-end gap-3">
+                <button id="cancelBatchMove"
+                    class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all">Cancel</button>
+                <button id="confirmBatchMove"
+                    class="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-medium transition-all">Move</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Edit Modal (category + tags for selected) -->
+    <div id="bulkEditModal" class="fixed inset-0 z-[100] hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="bulkEditOverlay"></div>
+        <div
+            class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-2xl shadow-2xl p-6">
+            <h3 class="text-xl font-bold text-white mb-4">Bulk Edit</h3>
+            <p class="text-gray-400 text-sm mb-4">Apply to <span id="bulkEditCount">0</span> selected link(s).</p>
+            <div class="mb-4">
+                <label class="block text-xs text-gray-500 mb-1">Category</label>
+                <select id="bulkEditCategory"
+                    class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-red-500">
+                    <!-- filled by JS from LINK_CATEGORIES -->
+                </select>
+            </div>
+            <div class="mb-6">
+                <label class="block text-xs text-gray-500 mb-1">Tags to add (comma-separated)</label>
+                <input type="text" id="bulkEditTags" placeholder="tag1, tag2"
+                    class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-red-500">
+            </div>
+            <div class="flex justify-end gap-3">
+                <button type="button" id="cancelBulkEdit"
+                    class="px-4 py-2 rounded-lg text-gray-400 hover:bg-white/5">Cancel</button>
+                <button type="button" id="confirmBulkEdit"
+                    class="px-4 py-2 rounded-lg brand-gradient text-white font-medium">Apply</button>
+            </div>
+        </div>
+    </div>
+
+
+    </main>
+    </div>
+
+    <!-- Magic Side-Peek Panel -->
+    <div id="sidePeekPanel"
+        class="fixed top-0 right-0 h-full w-full md:w-[600px] lg:w-[800px] z-[120] transform translate-x-full transition-transform duration-500 ease-in-out glass-header border-l border-white/10 shadow-[-20px_0_50px_rgba(0,0,0,0.5)] flex flex-col">
+        <div class="p-4 border-b border-white/10 flex items-center justify-between shrink-0 bg-black/20">
+            <div class="flex items-center gap-3">
+                <button id="closeSidePeek"
+                    class="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
+                    <i data-lucide="chevron-right" class="w-6 h-6"></i>
+                </button>
+                <div class="min-w-0">
+                    <h2 id="sidePeekTitle" class="text-white font-bold truncate">Link Preview</h2>
+                    <p id="sidePeekUrl" class="text-xs text-gray-400 truncate max-w-[300px]">URL</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <!-- Focus Timer -->
+                <div id="focusTimer"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/30">
+                    <i data-lucide="timer" class="w-4 h-4 text-red-400 anim-pulse"></i>
+                    <span id="timerDisplay" class="text-red-400 font-mono font-bold text-sm">25:00</span>
+                    <button id="toggleTimer" class="p-1 rounded hover:bg-red-500/20 text-red-400">
+                        <i data-lucide="play" class="w-3 h-3"></i>
+                    </button>
+                </div>
+                <button id="openExternal" class="p-2 rounded-lg hover:bg-white/10 text-cyan-400"
+                    title="Open in new tab">
+                    <i data-lucide="external-link" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+        <div class="flex-1 bg-white/5 relative">
+            <div id="sidePeekIframeContainer" class="w-full h-full relative">
+                <div id="sidePeekFallbackBanner"
+                    class="absolute top-0 left-0 right-0 bg-blue-900/40 text-blue-200 text-xs px-4 py-2 flex items-center justify-between border-b border-blue-500/30 backdrop-blur-xl z-20 shadow-lg">
+                    <span class="flex items-center gap-2"><i data-lucide="info" class="w-4 h-4 text-blue-400"></i> Some
+                        websites block embedded previews (CSP). If blank, open in a new tab.</span>
+                    <button onclick="document.getElementById('openExternal').click()"
+                        class="px-3 py-1 bg-blue-500/40 hover:bg-blue-500/60 rounded text-white transition-colors flex items-center gap-1 font-medium"><i
+                            data-lucide="external-link" class="w-3 h-3"></i> Open</button>
+                </div>
+                <iframe id="sidePeekIframe" class="w-full h-full border-none pt-[36px]"
+                    sandbox="allow-scripts allow-forms allow-popups"></iframe>
+            </div>
+            <!-- Blocked Message -->
+            <div id="sidePeekBlocked"
+                class="hidden absolute inset-0 flex flex-col items-center justify-center p-10 text-center bg-black/60 backdrop-blur-md">
+                <i data-lucide="shield-alert" class="w-16 h-16 text-red-500 mb-4"></i>
+                <h3 class="text-xl font-bold text-white mb-2">Preview blocked by this website</h3>
+                <p class="text-gray-400 text-sm mb-6">This site doesn't allow being shown inside another app for security
+                    reasons. You can still use the focus timer above.</p>
+                <button id="sidePeekOpenExternalBtn"
+                    class="px-6 py-2 rounded-lg brand-gradient text-white font-medium">Open in a new tab</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Back to Top FAB -->
+    <button id="backToTopBtn"
+        class="fixed bottom-6 right-6 z-50 p-3 rounded-full glass-button brand-gradient shadow-brand text-white opacity-0 translate-y-10 pointer-events-none transition-all duration-300 hover:scale-110 active:scale-95"
+        aria-label="Back to top">
+        <i data-lucide="arrow-up" class="w-5 h-5"></i>
+    </button>
+
+    <!-- Three.js only (living_bg + timeline/neural load 3d-force-graph on demand) -->
+    <script src="vendor/three.min.js" defer></script>
+
+    <!-- App Modules (Deferred) -->
+    <script src="eventbus.js" defer></script>
+    <script src="modules.js" defer></script>
+    <script src="sync.js" defer></script>
+    <script src="neural.js" defer></script>
+    <script src="folders.js" defer></script>
+    <script src="timeline.js" defer></script>
+    <script src="layout.js" defer></script>
+    <script src="laws.js" defer></script>
+    <script src="contextmenu.js" defer></script>
+    <script src="living_bg.js" defer></script>
+    <script src="migrations.js" defer></script>
+    <script src="features.js" defer></script>
+    <script src="search-engine.js" defer></script>
+    <script src="backup-core.js" defer></script>
+    <script src="script.js" defer></script>
+    <script src="tools.js" defer></script>
+    <script src="analytics.js" defer></script>
+    <script src="sidepeek.js" defer></script>
+    <script src="artifact-features.js" defer></script>
+
+    <!-- Offline support (service worker) -->
+    <script>
+        if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === '127.0.0.1' || location.hostname === 'localhost')) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(function (err) {
+                    console.warn('SW registration failed:', err);
+                });
+            });
+        }
+    </script>
+
+    <!-- Easter Eggs -->
+    <script>
+        // Konami Code
+        let kKeys = [];
+        const konami = "38,38,40,40,37,39,37,39,66,65";
+        document.addEventListener('keydown', (e) => {
+            kKeys.push(e.keyCode);
+            if (kKeys.toString().indexOf(konami) >= 0) {
+                kKeys = [];
+                alert('🚀 Super Secret Mode Activated!');
+                document.documentElement.classList.toggle('debug-mode');
+            }
+        });
+    </script>
+<a href="../hub/index.html" data-chain-link="hub" title="Project Hub" style="position:fixed;bottom:14px;right:14px;z-index:2147483000;display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:999px;background:rgba(20,16,16,.88);color:#f3ede4;font:600 12px/1 'Segoe UI',system-ui,sans-serif;text-decoration:none;border:1px solid rgba(255,255,255,.2);box-shadow:0 6px 18px rgba(0,0,0,.4);backdrop-filter:blur(8px);">☰ Project Hub</a>
+</body>
+
+</html>

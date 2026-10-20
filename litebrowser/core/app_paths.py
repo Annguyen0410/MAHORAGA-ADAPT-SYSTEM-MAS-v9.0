@@ -13,7 +13,7 @@ APP_NAME = "Mei"
 LEGACY_DATA_FOLDER_NAME = "LiteBrowser"
 APP_SCHEMA_VERSION = 2
 
-CUC_QUAN_LY_DISPLAY_NAME = "C\u1ee5c Qu\u1ea3n L\u00fd"
+CUC_QUAN_LY_DISPLAY_NAME = "Management Hub"
 # Canonical folder for the Cục Quản Lý hub. Older builds used the "Bản Đầy Đủ 1"
 # folder; the new hub lives in plain "Cục Quản Lý" (with chain.json / MiroFish /
 # worldmonitor), so legacy folder names below are ONLY used to prune stale entries.
@@ -42,7 +42,7 @@ BUNDLED_SITES = (
     },
     {
         "key": "cucquanly",
-        "display": "Cục Quản Lý",
+        "display": "Management Hub",
         "subtitle": "Management center hub",
         "glyph": "📋",
         # Only the canonical folders are searched now; the legacy "Bản Đầy Đủ 1"
@@ -66,14 +66,14 @@ BUNDLED_SITES = (
     },
     {
         "key": "bimat",
-        "display": "Bí Mật — PersonalFrequency",
+        "display": "PersonalFrequency",
         "subtitle": "Personal frequency & mysteries",
         "glyph": "🔮",
         "folders": ("bimat", "bí mật"),
     },
     {
         "key": "boitoan",
-        "display": "Bói Toán Web",
+        "display": "Fortune & Reflection",
         "subtitle": "Fortune telling & divination",
         "glyph": "🎴",
         "folders": ("boitoan", "Bói Toán Web", "Bói toán 2"),

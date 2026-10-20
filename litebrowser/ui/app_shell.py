@@ -20,6 +20,7 @@ from PyQt5.QtGui import QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QApplication,
     QCompleter,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -68,11 +69,13 @@ class AppShell(QMainWindow):
     def __init__(self, profile_dir: str, app_dir: str = None, window_slot: str = "primary", browser_workspace_id: str | None = None):
         super().__init__()
         self._closing = False
+        self._private_locked = False
         self.profile_dir = prefs.ensure_profile_layout(profile_dir)
         self.app_dir = app_dir or app_paths.project_root()
         self.window_slot = window_slot
         self.browser_workspace_id = browser_workspace_id or workspace_manager.PRIMARY_WORKSPACE_ID
         self._unlocked_spaces = set()
+        security.on_lock(self.profile_dir, self._relock_private_spaces)
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="shell")
         self._update_check_running = False
         self._update_install_running = False
@@ -133,7 +136,7 @@ class AppShell(QMainWindow):
 
         self.omnibar = QLineEdit()
         self.omnibar.setObjectName("ShellOmnibar")
-        self.omnibar.setPlaceholderText("Search the web or run a command  ·  /task  /note  /ask")
+        self.omnibar.setPlaceholderText("Search the web or run a command  ·  /capture  /task  /note")
         # Generated from core.commands: the autocomplete used to be a hand-written
         # list that had drifted six commands behind the registry (/accent,
         # /export, /review, /routines, /template, /theme) with no test able to
@@ -545,6 +548,10 @@ class AppShell(QMainWindow):
         self._execute_shell_palette(entry)
 
     def eventFilter(self, obj, ev):
+        if obj is QApplication.instance() and ev.type() == QEvent.Type.Quit:
+            windows = [window for window in QApplication.topLevelWidgets() if isinstance(window, AppShell) and not window._closing]
+            if not all(window.persist_state() for window in windows):
+                return True
         # Arrow keys / Esc steer the inline feature popup while it is open.
         if obj is getattr(self, "omnibar", None) and getattr(self, "_feature_popup", None) is not None and self._feature_popup.isVisible():
             if ev.type() == QEvent.Type.KeyPress:
@@ -677,6 +684,11 @@ class AppShell(QMainWindow):
             browser_page = getattr(self, "browser_page", None)
             if browser_page is not None and hasattr(browser_page, "refresh_chrome_theme"):
                 browser_page.refresh_chrome_theme()
+            self.personal_page._refresh_calendar()
+            # Profile-wide appearance applies to every open workspace window.
+            for peer in QApplication.topLevelWidgets():
+                if isinstance(peer, AppShell) and peer is not self and peer.profile_dir == self.profile_dir and not peer._closing and getattr(peer, "_qss_key", None) != qss_key:
+                    peer.refresh_shell()
         self.home_page.refresh()
         self.history_page.refresh()
         self.library_page.refresh(self.library_page.ed_search.text().strip())
@@ -695,15 +707,21 @@ class AppShell(QMainWindow):
 
     def _sync_auto_theme_timer(self):
         """Start/stop the auto-theme watcher to match the saved preference."""
-        if prefs.get_auto_theme(self.profile_dir):
-            if getattr(self, "_auto_theme_timer", None) is None or not self._auto_theme_timer.isActive():
+        if prefs.get_auto_theme(self.profile_dir) or prefs.get_pref(self.profile_dir, "appearance_mode", "palette") == "system":
+            if getattr(self, "_auto_theme_timer", None) is None:
                 self._auto_theme_timer = QTimer(self)
-                self._auto_theme_timer.setInterval(5 * 60 * 1000)
-                self._auto_theme_timer.timeout.connect(self.refresh_shell)
-                self._auto_theme_timer.start()
+                self._auto_theme_timer.timeout.connect(self._check_appearance_change)
+            self._auto_theme_timer.setInterval(2000 if prefs.get_pref(self.profile_dir, "appearance_mode", "palette") == "system" else 5 * 60 * 1000)
+            self._auto_theme_timer.start()
         elif getattr(self, "_auto_theme_timer", None) is not None:
             self._auto_theme_timer.stop()
         self.refresh_shell()
+
+    def _check_appearance_change(self):
+        # Poll only the small preference/OS state, not every list and draft.
+        key = (prefs.resolved_auto_theme(self.profile_dir), prefs.get_accent(self.profile_dir))
+        if key != getattr(self, "_qss_key", None):
+            self.refresh_shell()
 
     def _deferred_init(self):
         self.refresh_shell()
@@ -839,8 +857,14 @@ class AppShell(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
-        self.switch_workspace("personal")
+        if not self.switch_workspace("personal"):
+            return
         page = self.personal_page
+        if not page._flush_note_edits():
+            return
+        note = personal_service.create_note(self.profile_dir, time.strftime("Quick capture %Y-%m-%d %H-%M"), "", "Inbox")
+        page._refresh_notes()
+        page.select_note(note["id"])
         if hasattr(page, "_switch_page"):
             page._switch_page("notes")
         if hasattr(page, "note_editor"):
@@ -1059,6 +1083,10 @@ class AppShell(QMainWindow):
         if package_path is None:
             return
 
+        windows = [window for window in QApplication.topLevelWidgets() if isinstance(window, AppShell) and not window._closing]
+        if not all(window.persist_state() for window in windows):
+            self.update_status_text = "Update downloaded. Save your pending edits before installing."
+            return
         self.update_status_text = f"Downloaded {info.latest_version}. Applying update..."
         self.refresh_shell()
         try:
@@ -1079,6 +1107,12 @@ class AppShell(QMainWindow):
         QApplication.instance().quit()
 
     def _refresh_insights(self):
+        if self._private_locked or security.has_passcode(self.profile_dir) and not (security.is_unlocked(self.profile_dir) or self._unlocked_spaces):
+            self.insight_list.clear()
+            self.insight_list.addItem("Unlock Personal to see your private workspace")
+            self.ai_preview.clear()
+            self._insight_cache = None
+            return
         now = time.time()
         if self._insight_cache and (now - self._insight_cache_time) < 10:
             cached_snap, cached_texts = self._insight_cache
@@ -1175,7 +1209,7 @@ class AppShell(QMainWindow):
 
         rail_width = 46 if rail_collapsed else (64 if xtiny else 96 if tiny else 112 if narrow else 126 if compact else 150)
         # A visible Insights panel keeps its width even in the Browser workspace
-        # once the user toggled it on, so "bật insight AI" works while browsing.
+        # once the user toggled it on, so "enable AI insights" works while browsing.
         insight_visible = self.insights.isVisible()
         insight_width = 0 if not insight_visible else (120 if xtiny else 140 if tiny else 160 if narrow else 185 if compact else 205)
         middle_width = max(320, width - rail_width - insight_width - 18)
@@ -1219,15 +1253,16 @@ class AppShell(QMainWindow):
         for key, button in self.nav_buttons.items():
             labels = {"home": ("Home", "◧"), "browser": ("Browser", "↗"), "history": ("History", "◷"), "ai": ("AI", "◈"), "personal": ("Personal", "◍"), "library": ("Library", "▤"), "settings": ("Settings", "⚙")}
             name, glyph = labels.get(key, (key, "◆"))
-            button.setVisible(not rail_collapsed)
+            button.setVisible(True)
+            button.setAccessibleName(name)
             if rail_collapsed or xtiny:
                 button.setText(glyph)
             elif tiny:
-                button.setText(glyph + "  " + name[:4])
+                button.setText(glyph)
             else:
                 button.setText(glyph + "  " + name)
-            button.setMinimumHeight(24 if xtiny else 28 if tiny else 30)
-            button.setMaximumHeight(26 if xtiny else 30 if tiny else 34)
+            button.setMinimumHeight(34)
+            button.setMaximumHeight(40)
 
         self.btn_ai_global.setVisible(not tiny)
         self.ai_preview.setVisible(not narrow)
@@ -1236,14 +1271,12 @@ class AppShell(QMainWindow):
 
     def _save_window_state(self):
         geom = self.geometry()
-        data = prefs.load_prefs(self.profile_dir)
-        data[self._window_prefs_key()] = {
+        prefs.save_pref(self.profile_dir, self._window_prefs_key(), {
             "x": int(geom.x()),
             "y": int(geom.y()),
             "width": int(geom.width()),
             "height": int(geom.height()),
-        }
-        prefs.save_prefs(self.profile_dir, data)
+        })
 
     def set_sleeping_tabs(self, titles):
         self.sleeping_tabs_list.clear()
@@ -1254,16 +1287,38 @@ class AppShell(QMainWindow):
         for title in titles[:12]:
             self.sleeping_tabs_list.addItem(title)
 
+    def _relock_private_spaces(self):
+        self._unlocked_spaces.clear()
+        self._private_locked = True
+        if not hasattr(self, "stack"):
+            return
+        # Save pending local edits before hiding private views in every window.
+        self.personal_page._flush_note_edits()
+        if self.stack.currentWidget() in (self.personal_page, self.ai_page, self.library_page):
+            self.switch_workspace("home")
+        self.insights.hide()
+        self.ai_preview.clear()
+        self._insight_cache = None
+        self.ai_page.relock()
+        self.home_page.refresh()
+        self.history_page.refresh()
+
     def switch_workspace(self, name: str) -> bool:
         if name not in self.workspace_index:
             # Unknown workspace names must not raise inside a UI slot.
             return False
         # Never leave the inline feature list floating over another screen.
         self._hide_feature_popup()
-        if name in ("ai", "personal") and name not in self._unlocked_spaces:
+        current_name = next((key for key, index in self.workspace_index.items() if index == self.stack.currentIndex()), "")
+        if current_name in ("ai", "personal", "library") and name != current_name and not security.is_unlocked(self.profile_dir):
+            self._unlocked_spaces.discard(current_name)
+        if name in ("ai", "personal", "library") and name not in self._unlocked_spaces:
             if not security.ensure_unlocked(self, self.profile_dir, title=f"Open {name.title()}"):
                 return False
             self._unlocked_spaces.add(name)
+            self._private_locked = False
+            self.ai_page._privacy_locked = False
+            self.home_page.refresh()
         previous = self.stack.currentIndex()
         self.stack.setCurrentIndex(self.workspace_index[name])
         for key, button in self.nav_buttons.items():
@@ -1282,8 +1337,8 @@ class AppShell(QMainWindow):
             # explicit "✦ Insights" toggle (insight AI reads the browser page).
             if not getattr(self, "_insights_user_toggled", False):
                 self.insights.hide()
-        elif self.insights.isVisible():
-            self.insights.show()
+        elif self.width() < 1180:
+            self.insights.hide()
         # The insights list reflects the current workspace + browser page, so
         # drop the cache on every workspace switch and rebuild it when visible.
         self._insight_cache = None
@@ -1305,6 +1360,94 @@ class AppShell(QMainWindow):
         self.refresh_shell()
         self.switch_workspace("personal")
         QMessageBox.information(self, "Task", f"Created task: {title}")
+
+    def _quick_capture_context(self) -> dict:
+        """Read optional page context without carrying private-tab data across."""
+        from litebrowser.services import tab_sets
+
+        research = tab_sets.get_active_research_workspace(self.profile_dir)
+        research_title = research.get("title", "") if research else ""
+        browser = self.browser_page.current_browser()
+        if browser is None:
+            return {"research_workspace_title": research_title} if research_title else {}
+        try:
+            profile = browser.page().profile()
+            if profile is None or profile.isOffTheRecord():
+                return {"private": True}
+            return {
+                "title": browser.title() or "",
+                "url": browser.url().toString() or "",
+                "selected_text": browser.selectedText() or "",
+                "research_workspace_title": research_title,
+            }
+        except (AttributeError, RuntimeError):
+            # If privacy state cannot be verified, do not attach page contents.
+            return {"private": True}
+
+    def open_quick_capture(self):
+        """Open the review-first capture flow and save through existing stores."""
+        from litebrowser.services import flashcard_service, tab_sets
+        from litebrowser.ui.dialogs.quick_capture import QuickCaptureDialog
+
+        dialog = QuickCaptureDialog(self.profile_dir, self._quick_capture_context(), self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        payload = dialog.capture_payload
+        if not payload:
+            return
+        kind = payload["kind"]
+        research = tab_sets.get_active_research_workspace(self.profile_dir)
+        reference_type = {"note": "note", "task": "task", "link": "saved_page", "flashcard": "flashcard"}.get(kind)
+        reference_id = ""
+        try:
+            if kind == "note":
+                item = personal_service.create_note(
+                    self.profile_dir,
+                    payload["title"],
+                    payload["content"] or f"# {payload['title']}\n\n",
+                    category=payload["category"],
+                )
+                reference_id = str(item.get("id") or "")
+                self.refresh_shell()
+                if self.switch_workspace("personal"):
+                    self.personal_page.select_note(item["id"])
+            elif kind == "task":
+                item = life_service.add_task(self.profile_dir, payload["title"], notes=payload["notes"] or None)
+                reference_id = str(item.get("id") or "")
+                self.refresh_shell()
+                if self.switch_workspace("personal"):
+                    self.personal_page._switch_page("tasks")
+            elif kind == "link":
+                item = life_service.add_saved_page(self.profile_dir, payload["title"], payload["url"])
+                reference_id = str(item.get("id") or "")
+                self.refresh_shell()
+                self.switch_workspace("library")
+            else:
+                item = flashcard_service.add_card(self.profile_dir, payload["front"], payload["back"])
+                reference_id = str(item.get("id") or "")
+                self.refresh_shell()
+                if self.switch_workspace("personal"):
+                    self.personal_page._switch_page("review")
+        except (OSError, ValueError, RuntimeError) as exc:
+            QMessageBox.warning(self, "Quick capture", f"The capture could not be saved:\n{exc}")
+            return
+        if research and reference_type and reference_id:
+            try:
+                linked = tab_sets.add_research_reference(
+                    self.profile_dir, research["id"], reference_type, reference_id
+                )
+            except (OSError, ValueError, RuntimeError):
+                linked = False
+            if not linked:
+                QMessageBox.warning(
+                    self,
+                    "Quick capture",
+                    f"The {kind} was saved, but could not be linked to research workspace “{research['title']}”.",
+                )
+            else:
+                self.refresh_shell()
+        self._insight_cache = None
+        self._flash_status(f"Saved {kind}")
 
     def _focus_omnibar(self):
         """Ctrl+K: focus AND select existing text so typing replaces it (the
@@ -1376,6 +1519,10 @@ class AppShell(QMainWindow):
 
     def _handle_omnibar_text(self, text: str):
         lowered = self._normalize_omnibar_cmd(text)
+        private_commands = ("/task", "/note", "/capture", "/board", "/review", "/template", "/cafe", "/agent", "/export")
+        if any(self._match_cmd(lowered, cmd) for cmd in private_commands):
+            if not self.switch_workspace("personal"):
+                return
         if lowered in ("/home", "/browser", "/history", "/ai", "/personal", "/library", "/settings"):
             self.switch_workspace(lowered[1:])
             return
@@ -1409,6 +1556,9 @@ class AppShell(QMainWindow):
             return
         if lowered in ("/guide", "/help"):
             dialogs.show_browser_control_center(self.browser_page)
+            return
+        if lowered == "/capture":
+            self.open_quick_capture()
             return
         if lowered == "/ask" or lowered.startswith("/ask "):
             question = text[4:].strip() or "Summarize my current context"
@@ -1564,6 +1714,7 @@ class AppShell(QMainWindow):
                 return
             if arg in theme.PALETTES:
                 prefs.set_shell_theme(self.profile_dir, arg)
+                prefs.save_pref(self.profile_dir, "appearance_mode", "palette")
                 self._qss_key = None  # force the QSS re-polish
                 self.refresh_shell()
                 self._flash_status(f"Theme: {theme.theme_display_name(arg)}")
@@ -1576,7 +1727,7 @@ class AppShell(QMainWindow):
                 accents = ", ".join(sorted(theme.ACCENTS.keys()))
                 QMessageBox.information(self, "Accents", f"Available accents:\n{accents}\n\nUsage: /accent matcha")
                 return
-            if arg in theme.ACCENTS:
+            if theme.valid_accent(arg):
                 prefs.set_accent(self.profile_dir, arg)
                 self._qss_key = None
                 self.refresh_shell()
@@ -1658,6 +1809,11 @@ class AppShell(QMainWindow):
 
     def open_library_item(self, data: dict):
         kind = data.get("kind", "")
+        if kind == "research_workspace":
+            if not self.switch_workspace("browser"):
+                return
+            self.browser_page.restore_tab_set(data.get("id", ""), mode="merge")
+            return
         if kind in ("bookmark", "history", "download", "saved-page", "personal_site"):
             target = data.get("subtitle") or data.get("id") or data.get("target") or ""
             if target.startswith("http") or target.startswith("file://"):
@@ -1666,15 +1822,18 @@ class AppShell(QMainWindow):
                 self.browser_page.navigate()
                 return
         if kind == "note":
-            self.switch_workspace("personal")
+            if not self.switch_workspace("personal"):
+                return
             self.personal_page.select_note(data.get("id", ""))
             return
         if kind in ("task", "event", "board", "board-node"):
-            self.switch_workspace("personal")
+            if not self.switch_workspace("personal"):
+                return
             self.personal_page.open_life_item(kind, data.get("id", ""))
             return
         if kind in ("planner-item", "planner-block", "planner-course"):
-            self.switch_workspace("personal")
+            if not self.switch_workspace("personal"):
+                return
             if kind == "planner-item":
                 self.personal_page.open_plan_item(data.get("id", ""))
             elif kind == "planner-block":
@@ -1683,7 +1842,8 @@ class AppShell(QMainWindow):
                 self.personal_page.open_plan_course(data.get("id", ""))
             return
         if kind == "flashcard":
-            self.switch_workspace("personal")
+            if not self.switch_workspace("personal"):
+                return
             self.personal_page.open_flashcard(data.get("id", ""))
             return
         subtitle = data.get("subtitle", "")
@@ -1702,6 +1862,13 @@ class AppShell(QMainWindow):
         action = action if isinstance(action, dict) else {}
         step = action.get("step", "")
         if step == "study" and action.get("start") and action.get("id"):
+            from litebrowser.services import personal_plan
+            collection = "time_blocks" if action.get("kind") == "planner-block" else "items"
+            if not any(row.get("id") == action["id"] for row in personal_plan.load_plan(self.profile_dir)[collection]):
+                return
+        if not self.switch_workspace("personal"):
+            return
+        if step == "study" and action.get("start") and action.get("id"):
             from litebrowser.services import study_session
             if action.get("kind") == "planner-block":
                 session = study_session.start_for_block(
@@ -1714,13 +1881,11 @@ class AppShell(QMainWindow):
             if session is None:
                 return
             self._insight_cache = None
-            self.switch_workspace("personal")
             self.personal_page._switch_page("plan")
             self.personal_page.refresh_all()
             self._flash_status(f"▶ Studying “{session.get('label', '')}”")
             return
         if step == "capture" and action.get("kind") == "note":
-            self.switch_workspace("personal")
             self.personal_page.select_note(action.get("id", ""))
             return
         if step == "plan" and action.get("kind") == "task" and action.get("id"):
@@ -1729,7 +1894,6 @@ class AppShell(QMainWindow):
             from litebrowser.services import study_flow
             item = study_flow.promote_task(self.profile_dir, action["id"])
             self._insight_cache = None
-            self.switch_workspace("personal")
             self.personal_page._switch_page("plan")
             self.personal_page.refresh_all()
             if item is not None:
@@ -1738,11 +1902,9 @@ class AppShell(QMainWindow):
             self._flash_status(f"Planned “{title}”")
             return
         if step == "review":
-            self.switch_workspace("personal")
             self.personal_page._switch_page("review")
             return
         # "plan" (and the running-pour "study" case) live on the planner page.
-        self.switch_workspace("personal")
         self.personal_page._switch_page("plan")
 
     def _current_ai_scope_label(self):
@@ -1830,7 +1992,7 @@ class AppShell(QMainWindow):
             self._ai_preview_wired = True
 
     def _on_ai_answer_ready_for_preview(self, future, _context_label, _provider_label=""):
-        if self._closing:
+        if self._closing or self._private_locked or future is not getattr(self.ai_page, "_active_query", None):
             return
         try:
             result = future.result()
@@ -1840,22 +2002,55 @@ class AppShell(QMainWindow):
         answer = (result or {}).get("answer") or "No answer."
         self.ai_preview.setText(answer[:220])
 
+    def persist_state(self) -> bool:
+        if not self.personal_page.persist_state():
+            return False
+        try:
+            self.browser_page.persist_state()
+            self.ai_page._auto_save_set()
+            self._save_window_state()
+        except OSError as exc:
+            QMessageBox.warning(self, "Save before closing", f"Close was canceled to protect your session: {exc}")
+            return False
+        return True
+
+    def shutdown(self):
+        if self._closing:
+            return
+        self._closing = True
+        for timer in self.findChildren(QTimer):
+            timer.stop()
+        self.browser_page.shutdown()
+        self.ai_page.shutdown()
+        self.personal_page.shutdown()
+        QApplication.instance().removeEventFilter(self)
+        if getattr(self, "_hotkey_msg_id", None) is not None:
+            try:
+                import ctypes
+                ctypes.windll.user32.UnregisterHotKey(None, self._hotkey_msg_id)
+            except (AttributeError, OSError):
+                pass
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
+    def quit_application(self):
+        """Preflight every open shell before closing any of them."""
+        windows = [window for window in QApplication.topLevelWidgets() if isinstance(window, AppShell) and not window._closing]
+        if not all(window.persist_state() for window in windows):
+            return False
+        for window in windows:
+            window.close()
+        return True
+
     def closeEvent(self, event):
         if self._closing:
             event.accept()
             return
-        self._closing = True
-        # The window manager cascades close events to child widgets; we do not
-        # need to call .close() on them manually, which would recursively fire
-        # their own closeEvent handlers (double session saves, widget teardown).
-        try:
-            self._save_window_state()
-        except Exception:
-            pass
-        try:
-            self._executor.shutdown(wait=False, cancel_futures=True)
-        except Exception:
-            pass
+        # Embedded child windows do not receive closeEvent when their parent
+        # closes. Persist them explicitly, without recursive widget closes.
+        if not self.persist_state():
+            event.ignore()
+            return
+        self.shutdown()
         # Hide the tray icon promptly so quitting does not leave a ghost entry.
         tray = getattr(self, "tray", None)
         if tray is not None:

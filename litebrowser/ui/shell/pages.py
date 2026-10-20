@@ -17,6 +17,8 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QColorDialog,
+    QDialog,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -45,6 +47,7 @@ from litebrowser.services import (
     plugins,
     sync_folder,
     focus_service,
+    flashcard_service,
     google_auth,
     history_service,
     life_service,
@@ -53,9 +56,10 @@ from litebrowser.services import (
     retriever,
     security,
     study_flow,
+    tab_sets,
 )
 from litebrowser.ui import components, dialogs, theme
-from litebrowser.ui.dialogs.common import ghost_button, menu_action, more_menu, primary_button, quiet_button
+from litebrowser.ui.dialogs.common import _stylesheet, ghost_button, menu_action, more_menu, primary_button, quiet_button
 
 
 def _ui_versions() -> dict:
@@ -330,8 +334,8 @@ class HomeDashboardPage(QWidget):
         content = QWidget()
         content.setObjectName("HomeScrollContent")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(18, 18, 18, 16)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(24, 22, 24, 22)
+        content_layout.setSpacing(18)
         self.home_scroll.setWidget(content)
         layout.addWidget(self.home_scroll)
         layout = content_layout
@@ -364,7 +368,7 @@ class HomeDashboardPage(QWidget):
         brand_row.addWidget(self.lbl_today, 0, Qt.AlignVCenter)
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self._tick_clock)
-        self._clock_timer.start(1000)
+        self._clock_timer.start(60000)
         self.lbl_home_version = QLabel(f"v{app_version.APP_VERSION}")
         self.lbl_home_version.setObjectName("HeroBadge")
         brand_row.addWidget(self.lbl_home_version, 0, Qt.AlignVCenter)
@@ -381,12 +385,17 @@ class HomeDashboardPage(QWidget):
         command_row.setSpacing(8)
         self.ed_home_command = QLineEdit()
         self.ed_home_command.setObjectName("HomeCommand")
-        self.ed_home_command.setPlaceholderText("Search, open a link, or type a command such as /task ...")
+        self.ed_home_command.setPlaceholderText("Find something, open a link, or /note your next idea")
+        self.ed_home_command.setAccessibleName("Search or command")
+        self.ed_home_command.setMinimumWidth(0)
+        self.ed_home_command.setMinimumHeight(36)
         command_row.addWidget(self.ed_home_command, 1)
         self.btn_home_command = QPushButton("Go")
         self.btn_home_command.setObjectName("TopAccentButton")
         command_row.addWidget(self.btn_home_command)
         hero_layout.addLayout(command_row)
+        self.btn_home_command.clicked.connect(self._run_home_command)
+        self.ed_home_command.returnPressed.connect(self._run_home_command)
 
         launcher = QWidget()
         launcher.setObjectName("HomeLaunchGrid")
@@ -428,7 +437,7 @@ class HomeDashboardPage(QWidget):
         self.lbl_quick_commands = QLabel("Quick commands")
         self.lbl_quick_commands.setObjectName("MutedLabel")
         cmd_row.addWidget(self.lbl_quick_commands)
-        for cmd, tip in (("/task ", "Create task"), ("/note ", "Create note"), ("/board ", "New board"), ("/focus 25", "Start pour"), ("/hub", "Project Hub"), ("/cql", "Cục Quản Lý")):
+        for cmd, tip in (("/task ", "Create task"), ("/note ", "Create note"), ("/board ", "New board"), ("/focus 25", "Start pour"), ("/hub", "Project Hub"), ("/cql", "Management Hub")):
             chip = components.chip(cmd, checkable=False)
             chip.setToolTip(tip)
             chip.clicked.connect(lambda checked=False, c=cmd, s=shell: self._send_quick_command(c, s))
@@ -445,7 +454,30 @@ class HomeDashboardPage(QWidget):
         layout.addWidget(hero)
 
         layout.addWidget(self._desk_section(), 0)
+        layout.addWidget(self._research_workspace_card(), 0)
+        home_actions = QHBoxLayout()
+        home_actions.setSpacing(8)
+        self.btn_customize_home = components.chip("⚙ Customize Home", checkable=False)
+        self.btn_customize_home.clicked.connect(self._customize_home)
+        home_actions.addWidget(self.btn_customize_home)
 
+        self.btn_home_details = components.chip("Week & recent activity", checkable=True, checked=False)
+        self.btn_home_details.setAccessibleName("Show week and recent activity")
+        home_actions.addWidget(self.btn_home_details)
+        home_actions.addStretch(1)
+        layout.addLayout(home_actions)
+        self._details_panel = QWidget()
+        details_layout = QVBoxLayout(self._details_panel)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        details_layout.setSpacing(16)
+        self._details_panel.hide()
+        self.btn_home_details.toggled.connect(self._details_panel.setVisible)
+        layout.addWidget(self._details_panel)
+        # Keep spare viewport height below the content, not inside desk cards.
+        layout.addStretch(1)
+        # Secondary reporting remains available, but no longer competes with
+        # the one next step when you sit down to study.
+        layout = details_layout
         stats_row = QHBoxLayout()
         stat_specs = [
             (self, "task", "pending tasks"),
@@ -467,7 +499,7 @@ class HomeDashboardPage(QWidget):
         # no chart lib) driven straight from history timestamps.
         self.week_chart = _WeekActivityChart(self)
         self.domain_chart = _DomainWeekChart(self)
-        charts_row = QHBoxLayout()
+        chart_cards = []
         for title_text, subtitle, chart in (
             ("Your Week", "Pages visited per day (last 7 days)", self.week_chart),
             ("Where time goes", "Top domains this week — your digital wellbeing", self.domain_chart),
@@ -479,8 +511,8 @@ class HomeDashboardPage(QWidget):
             card_layout.setSpacing(6)
             card_layout.addWidget(components.section_header(title_text, subtitle))
             card_layout.addWidget(chart, 1)
-            charts_row.addWidget(card, 1)
-        layout.addLayout(charts_row, 1)
+            chart_cards.append(card)
+        layout.addWidget(components.ResponsiveGrid(chart_cards, minimum_width=310, maximum_columns=2))
 
         self.btn_brief_refresh = QPushButton("↻ Refresh")
         self.btn_brief_refresh.clicked.connect(self._refresh_brief)
@@ -502,7 +534,6 @@ class HomeDashboardPage(QWidget):
         brief_layout.addWidget(self.btn_brief_save)
         layout.addWidget(self.brief_card)
 
-        sections = QHBoxLayout()
         self.recent_notes = QListWidget()
         self.recent_notes.setObjectName("CafeList")
         self.recent_tasks = QListWidget()
@@ -512,10 +543,7 @@ class HomeDashboardPage(QWidget):
         notes_card = self._card_with_list("Recent Notes", "From SafeVault", self.recent_notes)
         tasks_card = self._today_card()
         closed_card = self._card_with_list("Recently Closed", "Tabs you closed", self.recent_closed)
-        sections.addWidget(notes_card, 1)
-        sections.addWidget(tasks_card, 1)
-        sections.addWidget(closed_card, 1)
-        layout.addLayout(sections, 1)
+        layout.addWidget(components.ResponsiveGrid([notes_card, tasks_card, closed_card], minimum_width=280, maximum_columns=3))
         layout.addWidget(self._reflect_card())
 
         self.btn_browser, self.btn_ai, self.btn_personal, self.btn_task, self.btn_focus, self.btn_library, self.btn_history, self.btn_settings, self.btn_guide = self._launch_tiles
@@ -531,9 +559,118 @@ class HomeDashboardPage(QWidget):
         self.btn_settings.clicked.connect(lambda: self.shell.switch_workspace("settings"))
         self.btn_guide.clicked.connect(lambda: dialogs.show_browser_control_center(self.shell.browser_page))
         self.recent_closed.itemDoubleClicked.connect(self._open_recent_closed)
+        self.recent_notes.itemDoubleClicked.connect(self._open_agenda_item)
+
+        self._apply_home_preferences()
+
+    def _home_preference(self):
+        default_order = ["next", *[key for key in desk_service.DESK_BLOCKS if key != "next"]]
+        value = prefs.get_pref(self.shell.profile_dir, "home_dashboard", {})
+        if not isinstance(value, dict):
+            value = {}
+        raw_order = value.get("order", [])
+        raw_order = raw_order if isinstance(raw_order, list) else []
+        order = [key for key in raw_order if key in default_order]
+        order.extend(key for key in default_order if key not in order)
+        raw_visible = value.get("visible", default_order)
+        raw_visible = raw_visible if isinstance(raw_visible, list) else default_order
+        visible = [key for key in raw_visible if key in default_order]
+        if not visible:
+            visible = default_order
+        size = value.get("size", "comfortable")
+        if size not in {"compact", "comfortable", "spacious"}:
+            size = "comfortable"
+        return {"order": order, "visible": visible, "size": size}
+
+    def _apply_home_preferences(self):
+        if not getattr(self, "_desk_cards", None):
+            return
+        config = self._home_preference()
+        self._desk_grid._widgets = [self._desk_cards[key]["card"] for key in config["order"]]
+        self._desk_grid._columns = 0
+        self._desk_grid._reflow()
+        for key, widgets in self._desk_cards.items():
+            widgets["card"].setVisible(key in config["visible"])
+            listing = widgets["list"]
+            minimum, maximum = {
+                "compact": (76, 108),
+                "comfortable": (118, 168),
+                "spacious": (176, 248),
+            }[config["size"]]
+            listing.setMinimumHeight(minimum)
+            listing.setMaximumHeight(maximum)
+
+    def _customize_home(self):
+        config = self._home_preference()
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Customize Home")
+        dialog.resize(430, 390)
+        dialog.setStyleSheet(_stylesheet(self.shell))
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Show the cards you use, move them into your preferred order, and choose their reading height. These settings apply to this profile."))
+        listing = QListWidget()
+        listing.setAccessibleName("Home dashboard widgets")
+        listing.setDragDropMode(QListWidget.InternalMove)
+        for key in config["order"]:
+            title = desk_service.BLOCK_TITLES[key]
+            item = QListWidgetItem(title)
+            item.setData(Qt.UserRole, key)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled)
+            item.setCheckState(Qt.Checked if key in config["visible"] else Qt.Unchecked)
+            listing.addItem(item)
+        layout.addWidget(listing, 1)
+        size_combo = QComboBox()
+        for label, value in (("Compact", "compact"), ("Comfortable", "comfortable"), ("Spacious", "spacious")):
+            size_combo.addItem(label, value)
+        size_combo.setCurrentIndex(max(0, size_combo.findData(config["size"])))
+        layout.addWidget(QLabel("Card content height"))
+        layout.addWidget(size_combo)
+        buttons = QHBoxLayout()
+        reset = QPushButton("Reset to default")
+        save = primary_button("Save layout")
+        close = quiet_button("Cancel")
+        buttons.addWidget(reset)
+        buttons.addStretch(1)
+        buttons.addWidget(close)
+        buttons.addWidget(save)
+        layout.addLayout(buttons)
+        reset_requested = [False]
+
+        def reset_layout():
+            prefs.save_pref(self.shell.profile_dir, "home_dashboard", {})
+            reset_requested[0] = True
+            dialog.accept()
+
+        reset.clicked.connect(reset_layout)
+        close.clicked.connect(dialog.reject)
+
+        def save_layout():
+            order = [listing.item(i).data(Qt.UserRole) for i in range(listing.count())]
+            visible = [listing.item(i).data(Qt.UserRole) for i in range(listing.count()) if listing.item(i).checkState() == Qt.Checked]
+            if not visible:
+                QMessageBox.information(dialog, "Customize Home", "Keep at least one Home card visible.")
+                return
+            prefs.save_pref(self.shell.profile_dir, "home_dashboard", {
+                "order": order, "visible": visible, "size": size_combo.currentData(),
+            })
+            dialog.accept()
+            self._apply_home_preferences()
+
+        save.clicked.connect(save_layout)
+        dialog.exec_()
+        if reset_requested[0]:
+            self._apply_home_preferences()
+
+    def _run_home_command(self):
+        text = self.ed_home_command.text().strip()
+        if not text:
+            self.ed_home_command.setFocus()
+            return
+        self._send_quick_command(text, self.shell)
+        self.ed_home_command.clear()
 
     def _tick_clock(self):
-        self.lbl_today.setText(time.strftime("%A, %d %B · %H:%M:%S"))
+        self.lbl_today.setText(time.strftime("%A, %d %B · %H:%M"))
 
     def _toggle_all_features(self, shown: bool):
         """Show/hide the launcher grid + quick commands (collapsed by default)."""
@@ -557,12 +694,114 @@ class HomeDashboardPage(QWidget):
         self.lbl_desk.setWordWrap(True)
         layout.addWidget(self.lbl_desk)
         self._desk_cards = {}
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(10)
         for key in desk_service.DESK_BLOCKS:
-            cards_row.addWidget(self._desk_card(key), 1)
-        layout.addLayout(cards_row, 1)
+            self._desk_card(key)
+        self._desk_grid = components.ResponsiveGrid(
+            [self._desk_cards[key]["card"] for key in ("next", *[value for value in desk_service.DESK_BLOCKS if value != "next"])],
+            minimum_width=260, maximum_columns=4,
+        )
+        self._desk_grid.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        layout.addWidget(self._desk_grid)
         return section
+
+    def _research_workspace_card(self):
+        card = QFrame()
+        card.setObjectName("SectionCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(7)
+        layout.addWidget(components.section_header("Research desk", "Continue a saved line of work across browser, notes, and tasks"))
+        self.lbl_research_workspace = QLabel("No active research workspace")
+        self.lbl_research_workspace.setObjectName("HeroSubtitle")
+        self.lbl_research_workspace.setWordWrap(True)
+        layout.addWidget(self.lbl_research_workspace)
+        self.lbl_research_links = QLabel("")
+        self.lbl_research_links.setObjectName("MutedLabel")
+        self.lbl_research_links.setWordWrap(True)
+        layout.addWidget(self.lbl_research_links)
+        self.research_items = QListWidget()
+        self.research_items.setObjectName("CafeList")
+        self.research_items.setMaximumHeight(94)
+        self.research_items.setToolTip("Double-click a linked item to open it where it lives")
+        self.research_items.itemDoubleClicked.connect(self._open_research_item)
+        layout.addWidget(self.research_items)
+        actions = QHBoxLayout()
+        actions.setSpacing(6)
+        self.btn_research_resume = QPushButton("Resume tabs")
+        self.btn_research_ai = QPushButton("Ask AI with context")
+        self.btn_research_capture = QPushButton("Capture to desk")
+        self.btn_research_manage = quiet_button("Manage")
+        self.btn_research_resume.clicked.connect(self._resume_research_workspace)
+        self.btn_research_ai.clicked.connect(self._ask_research_workspace)
+        self.btn_research_capture.clicked.connect(self.shell.open_quick_capture)
+        self.btn_research_manage.clicked.connect(self._manage_research_workspaces)
+        for button in (self.btn_research_resume, self.btn_research_ai, self.btn_research_capture, self.btn_research_manage):
+            actions.addWidget(button)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+        return card
+
+    def _refresh_research_workspace(self):
+        workspace = tab_sets.get_active_research_workspace(self.shell.profile_dir)
+        self._active_research = workspace
+        active = bool(workspace)
+        self.btn_research_resume.setEnabled(active)
+        self.btn_research_ai.setEnabled(active)
+        self.btn_research_manage.setEnabled(True)
+        if not workspace:
+            self.lbl_research_workspace.setText("No active research workspace. Save one from Browser → Options → Sessions & Spaces.")
+            self.lbl_research_links.clear()
+            self.research_items.clear()
+            self.research_items.addItem(components.hint_list_item("Captures and linked items will appear here", "○"))
+            return
+        counts = [f"{len(workspace.get('tabs', []))} tabs"]
+        self.research_items.clear()
+        reference_kinds = {"notes": "note", "tasks": "task", "saved_pages": "saved-page", "flashcards": "flashcard"}
+        note_map = {str(note.get("id")): note.get("title", "Note") for note in personal_service.list_notes(self.shell.profile_dir)}
+        task_map = {str(task.get("id")): task.get("title", "Task") for task in life_service.load_tasks(self.shell.profile_dir)}
+        page_map = {str(page.get("id")): page.get("title", "Saved page") for page in life_service.load_saved_pages(self.shell.profile_dir)}
+        card_map = {str(card.get("id")): card.get("front", "Flashcard") for card in flashcard_service.load_cards(self.shell.profile_dir)}
+        for field, label, mapping in (
+            ("notes", "notes", note_map), ("tasks", "tasks", task_map),
+            ("saved_pages", "saved links", page_map), ("flashcards", "cards", card_map),
+        ):
+            ids = workspace.get(field, [])
+            if ids:
+                counts.append(f"{len(ids)} {label}")
+                for item_id in ids:
+                    title = mapping.get(item_id)
+                    if not title:
+                        continue
+                    item = QListWidgetItem(f"{label.rstrip('s')}: {str(title)[:140]}")
+                    item.setData(Qt.UserRole, {"kind": reference_kinds[field], "id": item_id})
+                    self.research_items.addItem(item)
+        self.lbl_research_workspace.setText(f"{workspace.get('title', 'Research workspace')}  ·  " + "  ·  ".join(counts))
+        self.lbl_research_links.setText("Double-click a linked item to open it." if self.research_items.count() else "No linked items yet. Capture something to this desk to start the chain.")
+        if not self.research_items.count():
+            self.research_items.addItem(components.hint_list_item("No linked items", "○"))
+
+    def _open_research_item(self, item):
+        payload = item.data(Qt.UserRole) if item is not None else None
+        if isinstance(payload, dict) and payload.get("id"):
+            self.shell.open_library_item(payload)
+
+    def _resume_research_workspace(self):
+        workspace = getattr(self, "_active_research", None)
+        if not workspace or not self.shell.switch_workspace("browser"):
+            return
+        self.shell.browser_page.restore_tab_set(workspace["id"], mode="merge")
+
+    def _ask_research_workspace(self):
+        if not getattr(self, "_active_research", None) or not self.shell.switch_workspace("ai"):
+            return
+        checkbox = getattr(self.shell.ai_page, "chk_research_context", None)
+        if checkbox is not None:
+            checkbox.setChecked(True)
+        self.shell.ai_page.ed_question.setFocus()
+
+    def _manage_research_workspaces(self):
+        if self.shell.switch_workspace("browser"):
+            dialogs.show_tab_sets_dialog(self.shell.browser_page)
 
     def _desk_card(self, key: str):
         card = QFrame()
@@ -582,14 +821,17 @@ class HomeDashboardPage(QWidget):
         layout.addLayout(header_row)
         listing = QListWidget()
         listing.setObjectName("CafeList")
-        listing.setMinimumHeight(150)
+        listing.setMinimumHeight(118)
+        listing.setMaximumHeight(168)
         listing.setToolTip("Double-click a row to open where it lives")
         listing.itemDoubleClicked.connect(self._open_desk_row)
         layout.addWidget(listing, 1)
-        buttons = QHBoxLayout()
+        buttons = QVBoxLayout() if key == "next" else QHBoxLayout()
         buttons.setSpacing(6)
         if key == "next":
             self.btn_desk_continue = QPushButton("▶ Continue")
+            self.btn_desk_continue.setObjectName("TopAccentButton")
+            self.btn_desk_continue.setMinimumWidth(0)
             self.btn_desk_continue.setToolTip("Run the next step of the loop")
             self.btn_desk_continue.clicked.connect(self._run_flow_next)
             buttons.addWidget(self.btn_desk_continue)
@@ -624,7 +866,9 @@ class HomeDashboardPage(QWidget):
                 listing.addItem(components.hint_list_item(block.get("empty") or "Nothing here", "○"))
             if key == "next":
                 action = block.get("flow") or {}
-                self.btn_desk_continue.setText(action.get("label") or "▶ Continue")
+                label = action.get("label") or "▶ Continue"
+                self.btn_desk_continue.setAccessibleName(label)
+                self.btn_desk_continue.setText(label if len(label) <= 28 else label[:25] + "…")
                 self.btn_desk_continue.setEnabled(bool(action))
                 self.btn_desk_continue.setToolTip(action.get("reason") or "The loop is clear")
 
@@ -659,6 +903,8 @@ class HomeDashboardPage(QWidget):
         scrollbar."""
         super().resizeEvent(event)
         width = max(0, self.width())
+        if hasattr(self, "lbl_today"):
+            self.lbl_today.setVisible(width >= 700)
         if hasattr(self, "lbl_home_version"):
             self.lbl_home_version.setVisible(width >= 1150)
         if hasattr(self, "lbl_quick_commands"):
@@ -673,6 +919,10 @@ class HomeDashboardPage(QWidget):
 
     def _send_quick_command(self, cmd: str, shell):
         shell.omnibar.setText(cmd)
+        if cmd.endswith(" "):
+            shell.omnibar.setFocus()
+            shell.omnibar.setCursorPosition(len(cmd))
+            return
         shell.handle_omnibar()
 
     def _today_card(self):
@@ -791,7 +1041,9 @@ class HomeDashboardPage(QWidget):
         self.lbl_flow.setText(flow.get("pulse", ""))
         self.lbl_flow.setToolTip(" → ".join(step["title"] for step in flow.get("steps", [])))
         self._flow_next = action
-        self.btn_flow_next.setText(action.get("label") or "▶ Continue")
+        label = action.get("label") or "▶ Continue"
+        self.btn_flow_next.setAccessibleName(label)
+        self.btn_flow_next.setText(label if len(label) <= 24 else label[:21] + "…")
         self.btn_flow_next.setToolTip(action.get("reason") or "The loop is clear")
         self.btn_flow_next.setEnabled(bool(action))
 
@@ -831,7 +1083,7 @@ class HomeDashboardPage(QWidget):
         # A generous floor keeps the Recent Notes / Today's Focus / Recently
         # Closed cards from collapsing into a single cramped row on shorter
         # viewports; extra window height then grows them further.
-        list_widget.setMinimumHeight(220)
+        list_widget.setMinimumHeight(150)
         layout.addWidget(list_widget, 1)
         return card
 
@@ -842,7 +1094,45 @@ class HomeDashboardPage(QWidget):
         QMessageBox.information(self, "Café Focus", "25-minute pour started. Track it with /status or /focus.")
 
     def refresh(self):
+        locked = getattr(self.shell, "_private_locked", False) is True or (
+            security.has_passcode(self.shell.profile_dir) and not (
+                security.is_unlocked(self.shell.profile_dir) or getattr(self.shell, "_unlocked_spaces", set())
+            )
+        )
+        if locked:
+            # Home is public chrome, not a bypass around Personal's passcode.
+            for label in self._stat_labels.values():
+                label.setText("—")
+            for listing in (self.recent_notes, self.recent_tasks, self.recent_closed, self.reflect_items):
+                listing.clear()
+                listing.addItem(components.hint_list_item("Unlock Personal to continue", "○"))
+            for widgets in self._desk_cards.values():
+                widgets["list"].clear()
+                widgets["list"].addItem(components.hint_list_item("Your private desk is locked", "○"))
+                widgets["badge"].setText("—")
+            self._flow_next = {}
+            self._desk = {}
+            self.lbl_desk.setText("Your quiet corner is ready. Open Personal to unlock your desk.")
+            self.lbl_flow.setText("Private workspace locked")
+            self.lbl_reflect.clear()
+            self.lbl_brief.setText("Unlock Personal to see your morning brief.")
+            self.lbl_research_workspace.setText("Unlock Personal to see your research desk.")
+            self.lbl_research_links.clear()
+            self.research_items.clear()
+            self.research_items.addItem(components.hint_list_item("Unlock Personal to see linked research items", "○"))
+            self._active_research = None
+            for button in (self.btn_research_resume, self.btn_research_ai, self.btn_research_capture):
+                button.setEnabled(False)
+            self.btn_desk_continue.setEnabled(False)
+            self.btn_flow_next.setEnabled(False)
+            self.week_chart._counts = [0] * 7
+            self.domain_chart._rows = []
+            self.week_chart.update()
+            self.domain_chart.update()
+            return
         snapshot = life_service.get_dashboard_snapshot(self.shell.profile_dir)
+        self._refresh_research_workspace()
+        self.btn_research_capture.setEnabled(True)
         self._stat_labels["task"].setText(str(snapshot["tasks_pending"]))
         self._stat_labels["events"].setText(str(len(snapshot["events_upcoming"])))
         self._stat_labels["pages"].setText(str(snapshot["saved_pages_total"]))
@@ -855,7 +1145,10 @@ class HomeDashboardPage(QWidget):
 
         self.recent_notes.clear()
         for note in personal_service.list_notes(self.shell.profile_dir)[:8]:
-            self.recent_notes.addItem(note["title"])
+            row = QListWidgetItem(note["title"])
+            row.setToolTip(note.get("snippet", ""))
+            row.setData(Qt.UserRole, {"kind": "note", "id": note["id"]})
+            self.recent_notes.addItem(row)
         if self.recent_notes.count() == 0:
             self.recent_notes.addItem(components.hint_list_item("No notes yet"))
 
@@ -943,18 +1236,20 @@ class LibraryPage(QWidget):
         search_row.setSpacing(8)
         self.ed_search = QLineEdit()
         self.ed_search.setPlaceholderText("Search your saved pages, notes, tasks, boards, and calendar...")
-        self.ed_search.setMinimumWidth(280)
+        self.ed_search.setMinimumWidth(0)
+        self.ed_search.setAccessibleName("Search the library")
         search_row.addWidget(self.ed_search, 1)
         self.btn_refresh = QPushButton("Refresh")
         self.btn_refresh.setObjectName("TopAccentButton")
         search_row.addWidget(self.btn_refresh)
         hero_layout.addLayout(search_row)
 
-        filter_row = QHBoxLayout()
-        filter_row.setSpacing(6)
+        filter_row = QGridLayout()
+        filter_row.setHorizontalSpacing(6)
+        filter_row.setVerticalSpacing(6)
         filter_label = QLabel("SHOW")
         filter_label.setObjectName("MutedLabel")
-        filter_row.addWidget(filter_label)
+        filter_row.addWidget(filter_label, 0, 0)
         self.library_filter_buttons = {}
         for key, label in (
             ("all", "Everything"),
@@ -969,8 +1264,9 @@ class LibraryPage(QWidget):
             button = components.chip(label, checked=key == "all")
             button.clicked.connect(lambda checked=False, value=key: self._set_library_filter(value))
             self.library_filter_buttons[key] = button
-            filter_row.addWidget(button)
-        filter_row.addStretch(1)
+            index = len(self.library_filter_buttons) - 1
+            filter_row.addWidget(button, index // 4, index % 4 + 1)
+        filter_row.setColumnStretch(5, 1)
         hero_layout.addLayout(filter_row)
         layout.addWidget(hero)
 
@@ -1022,7 +1318,7 @@ class LibraryPage(QWidget):
         return kind in mapping.get(value, set())
 
     def refresh(self, query: str | None = None):
-        q = query if query is not None else self.ed_search.text().strip()
+        q = query if isinstance(query, str) else self.ed_search.text().strip()
         self.ed_search.setText(q)
         items = []
         if q:
@@ -1075,6 +1371,17 @@ class LibraryPage(QWidget):
                 items.append({"kind": "note", "title": note.get("title", ""), "id": note.get("id", ""), "subtitle": note.get("snippet", "")})
             for task in life_service.load_tasks(self.shell.profile_dir)[:20]:
                 items.append({"kind": "task", "title": task.get("title", ""), "id": task.get("id", ""), "subtitle": task.get("bucket", "")})
+            for event in life_service.load_events(self.shell.profile_dir)[:20]:
+                items.append({"kind": "event", "title": event.get("title", ""), "id": event.get("id", ""), "subtitle": _format_ts(event.get("starts_at", 0))})
+            for board in life_service.load_boards(self.shell.profile_dir)[:20]:
+                items.append({"kind": "board", "title": board.get("title", ""), "id": board.get("id", ""), "subtitle": "Idea board"})
+            from litebrowser.services import flashcard_service, personal_plan
+            plan = personal_plan.load_plan(self.shell.profile_dir)
+            for collection, kind, title_key in (("items", "planner-item", "title"), ("courses", "planner-course", "name"), ("time_blocks", "planner-block", "title")):
+                for row in plan[collection][:20]:
+                    items.append({"kind": kind, "id": row["id"], "title": row[title_key], "subtitle": row.get("notes") or row.get("date") or "Weekly plan"})
+            for card in flashcard_service.load_cards(self.shell.profile_dir)[:20]:
+                items.append({"kind": "flashcard", "id": card.get("id", ""), "title": card.get("front", ""), "subtitle": card.get("back", "")[:160]})
         items = [item for item in items if self._matches_library_filter(item, self._library_filter)]
         self._last_results = items
         self.list_widget.clear()
@@ -1123,8 +1430,8 @@ class SettingsPage(QWidget):
         title_row = QHBoxLayout()
         title_row.addWidget(
             components.page_header(
-                "Settings & Profile Center",
-                "Shape your workspace, protect your data, and keep every device in step.",
+                "Settings",
+                "Appearance, privacy, and your local workspace",
             ),
             1,
         )
@@ -1134,7 +1441,7 @@ class SettingsPage(QWidget):
         hero_note = QLabel("Your choices are saved to this profile. Changes to the theme take effect across the entire workspace.")
         hero_note.setObjectName("HeroSubtitle")
         hero_note.setWordWrap(True)
-        hero_layout.addWidget(hero_note)
+        hero_note.hide()
         layout.addWidget(hero)
 
         self.settings_scroll = QScrollArea()
@@ -1174,10 +1481,10 @@ class SettingsPage(QWidget):
         self.ed_display_name.setPlaceholderText("Display name")
         self.ed_email = QLineEdit()
         self.ed_email.setPlaceholderText("Email")
-        self.chk_sync_enabled = QCheckBox("Keep a local profile snapshot (no remote server yet)")
+        self.chk_local_snapshot = QCheckBox("Keep a local profile snapshot")
         account_layout.addWidget(self.ed_display_name)
         account_layout.addWidget(self.ed_email)
-        account_layout.addWidget(self.chk_sync_enabled)
+        account_layout.addWidget(self.chk_local_snapshot)
         self.btn_save_account = QPushButton("Save account")
         self.btn_save_account.setObjectName("TopAccentButton")
         account_layout.addWidget(self.btn_save_account, 0, Qt.AlignLeft)
@@ -1188,9 +1495,20 @@ class SettingsPage(QWidget):
         ui_layout = QVBoxLayout(ui_card)
         ui_layout.setContentsMargins(12, 12, 12, 12)
         ui_layout.setSpacing(6)
-        ui_layout.addWidget(components.section_header("Interface", "Density, theme, accent, and performance"))
+        ui_layout.addWidget(components.section_header("Interface", "Theme, density, motion, and performance"))
+        self.cmb_appearance = QComboBox()
+        for label, value in (("System", "system"), ("Light", "light"), ("Dark", "dark"), ("Palette / scheduled", "palette")):
+            self.cmb_appearance.addItem(label, value)
+        self.cmb_appearance.setAccessibleName("Appearance mode")
         self.cmb_density = QComboBox()
         self.cmb_density.addItems(["compact", "comfortable", "tablet"])
+        self.cmb_motion = QComboBox()
+        for label, value in (("System", "system"), ("Reduce", "reduce"), ("Allow", "allow")):
+            self.cmb_motion.addItem(label, value)
+        self.cmb_motion.setToolTip(
+            "System follows Windows' reduced-animation setting when available. "
+            "Reduce disables Mei's nonessential motion; Allow keeps it on."
+        )
         self.cmb_theme = QComboBox()
         # Pretty display names + a live color swatch per entry (a bare key
         # list like 'sand-day' told users nothing about the vibe).
@@ -1213,7 +1531,7 @@ class SettingsPage(QWidget):
             self.cmb_theme.setItemIcon(self.cmb_theme.count() - 1, QIcon(pixmap))
         self.cmb_accent = QComboBox()
         for accent_id in sorted(theme.ACCENTS.keys()):
-            self.cmb_accent.addItem(theme.accent_display_name(accent_id))
+            self.cmb_accent.addItem(theme.accent_display_name(accent_id), accent_id)
             pixmap = QPixmap(24, 18)
             pixmap.fill(QColor("transparent"))
             painter = QPainter(pixmap)
@@ -1222,10 +1540,12 @@ class SettingsPage(QWidget):
             painter.drawRoundedRect(3, 3, 18, 12, 4, 4)
             painter.end()
             self.cmb_accent.setItemIcon(self.cmb_accent.count() - 1, QIcon(pixmap))
+        self.btn_custom_accent = ghost_button("Custom accent…", "Choose any accent color; text contrast adapts automatically")
+        self.btn_custom_accent.clicked.connect(self._choose_custom_accent)
         self.spin_max_live_tabs = QSpinBox()
         self.spin_max_live_tabs.setRange(1, 32)
         self.spin_max_live_tabs.setToolTip("Fewer live tabs = lighter RAM/CPU when hundreds of tabs are open.")
-        self.chk_auto_theme = QCheckBox("Auto day / night (flips the café palette with the clock)")
+        self.chk_auto_theme = QCheckBox("Day / night schedule (06:00–18:00)")
         self.chk_auto_theme.setToolTip(
             "On: day palettes from 6:00 to 18:00, their night siblings otherwise.\n"
             "Pairs: Latte Cream ↔ Midnight Mocha, Sakura ↔ Ember Night, Matcha ↔ Matcha Night..."
@@ -1236,10 +1556,12 @@ class SettingsPage(QWidget):
         controls_grid.setVerticalSpacing(5)
         for column, (label, control) in enumerate(
             (
+                ("Appearance", self.cmb_appearance),
+                ("Palette family", self.cmb_theme),
+                ("Accent", self.cmb_accent),
                 ("Density", self.cmb_density),
-                ("Theme", self.cmb_theme),
-                ("Accent color", self.cmb_accent),
-                ("Max live tabs", self.spin_max_live_tabs),
+                ("Motion", self.cmb_motion),
+                ("Live tab limit", self.spin_max_live_tabs),
             )
         ):
             field = QWidget()
@@ -1250,10 +1572,15 @@ class SettingsPage(QWidget):
             field_label.setObjectName("MutedLabel")
             field_layout.addWidget(field_label)
             field_layout.addWidget(control)
-            controls_grid.addWidget(field, 0, column)
-            controls_grid.setColumnStretch(column, 1)
+            control.setAccessibleName(label)
+            control.setMinimumWidth(0)
+            control.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            controls_grid.addWidget(field, column // 2, column % 2)
+            controls_grid.setColumnStretch(column % 2, 1)
         ui_layout.addLayout(controls_grid)
+        ui_layout.addWidget(self.btn_custom_accent, 0, Qt.AlignLeft)
         ui_layout.addWidget(self.chk_auto_theme)
+        self.cmb_appearance.currentIndexChanged.connect(lambda: self.chk_auto_theme.setEnabled(self.cmb_appearance.currentData() == "palette"))
         self.btn_save_ui = QPushButton("Apply UI preferences")
         self.btn_save_ui.setObjectName("TopAccentButton")
         ui_layout.addWidget(self.btn_save_ui, 0, Qt.AlignLeft)
@@ -1689,14 +2016,66 @@ class SettingsPage(QWidget):
         self._refresh_folder_sync()
         self._refresh_plugins()
         self._refresh_engine_notice()
+        # Keep all capabilities, but show one focused settings category at a time.
+        groups = {
+            "Appearance": (ui_card, extras_card, study_card),
+            "Account & privacy": (account_card, google_card, security_card),
+            "Sync & devices": (sync_card, mobile_card),
+        }
+        assigned = {card for cards in groups.values() for card in cards}
+        groups["Tools & maintenance"] = tuple(content_layout.itemAt(i).widget() for i in range(content_layout.count()) if content_layout.itemAt(i).widget() and content_layout.itemAt(i).widget() not in assigned)
+        self._settings_groups = groups
+        self.cmb_settings_section = QComboBox()
+        self.cmb_settings_section.addItems(groups.keys())
+        self.cmb_settings_section.setAccessibleName("Settings category")
+        layout.insertWidget(1, self.cmb_settings_section)
+        self.cmb_settings_section.currentTextChanged.connect(self._show_settings_section)
+        self._show_settings_section(self.cmb_settings_section.currentText())
+        self._form_baseline = {}
+
+    def _show_settings_section(self, section):
+        for name, cards in self._settings_groups.items():
+            for card in cards:
+                card.setVisible(name == section)
+        self.settings_scroll.verticalScrollBar().setValue(0)
+
+    def _choose_custom_accent(self):
+        current = self.cmb_accent.currentData() or "brass"
+        value = current if str(current).startswith("#") else theme.ACCENTS[current][0]
+        color = QColorDialog.getColor(QColor(value), self, "Custom accent")
+        if color.isValid():
+            index = self.cmb_accent.findData(color.name())
+            if index < 0:
+                pixmap = QPixmap(24, 18)
+                pixmap.fill(color)
+                self.cmb_accent.addItem(QIcon(pixmap), color.name().upper(), color.name())
+                index = self.cmb_accent.count() - 1
+            self.cmb_accent.setCurrentIndex(index)
+
+    def _form_values(self):
+        result = {}
+        for widget in self.findChildren((QLineEdit, QComboBox, QCheckBox, QSpinBox)):
+            if widget is getattr(self, "cmb_settings_section", None):
+                continue
+            if isinstance(widget, QLineEdit):
+                result[widget] = widget.text()
+            elif isinstance(widget, QComboBox):
+                result[widget] = widget.currentIndex()
+            elif isinstance(widget, QCheckBox):
+                result[widget] = widget.isChecked()
+            else:
+                result[widget] = widget.value()
+        return result
 
     def refresh(self):
+        values = self._form_values()
+        drafts = {w: value for w, value in values.items() if w in self._form_baseline and value != self._form_baseline[w]}
         account = life_service.load_sync_account(self.shell.profile_dir)
         state = life_service.load_sync_state(self.shell.profile_dir)
         prefs_data = prefs.load_prefs(self.shell.profile_dir)
         self.ed_display_name.setText(account.get("display_name", ""))
         self.ed_email.setText(account.get("email", ""))
-        self.chk_sync_enabled.setChecked(bool(state.get("enabled")))
+        self.chk_local_snapshot.setChecked(bool(state.get("enabled")))
         display_name = (account.get("display_name") or "").strip()
         email = (account.get("email") or "").strip()
         identity = display_name or email or "Mei user"
@@ -1712,17 +2091,23 @@ class SettingsPage(QWidget):
         idx = self.cmb_density.findText(density)
         if idx >= 0:
             self.cmb_density.setCurrentIndex(idx)
+        motion_idx = self.cmb_motion.findData(prefs_data.get("reduced_motion", "system"))
+        self.cmb_motion.setCurrentIndex(max(0, motion_idx))
         # Theme/accent combos store pretty labels; map back through ids.
         try:
             theme_idx = self._theme_ids.index(theme_name)
             self.cmb_theme.setCurrentIndex(theme_idx)
         except (ValueError, AttributeError):
             pass
-        accent_id = accent if accent in theme.ACCENTS else "brass"
-        accent_idx = next(
-            (i for i in range(self.cmb_accent.count()) if self.cmb_accent.itemText(i) == theme.accent_display_name(accent_id)),
-            -1,
-        )
+        appearance = prefs_data.get("appearance_mode", "palette")
+        self.cmb_appearance.setCurrentIndex(max(0, self.cmb_appearance.findData(appearance)))
+        accent_id = accent if theme.valid_accent(accent) else "brass"
+        accent_idx = self.cmb_accent.findData(accent_id)
+        if accent_idx < 0 and str(accent_id).startswith("#"):
+            pixmap = QPixmap(24, 18)
+            pixmap.fill(QColor(accent_id))
+            self.cmb_accent.addItem(QIcon(pixmap), accent_id.upper(), accent_id)
+            accent_idx = self.cmb_accent.count() - 1
         if accent_idx >= 0:
             self.cmb_accent.setCurrentIndex(accent_idx)
         self.spin_max_live_tabs.setValue(prefs.get_max_live_tabs(self.shell.profile_dir))
@@ -1755,9 +2140,21 @@ class SettingsPage(QWidget):
         data_root = app_paths.data_root(self.shell.app_dir)
         self.lbl_backup_paths.setText(
             f"Active profile (notes, prefs, SafeVault, BrowserData, sessions):\n{self.shell.profile_dir}\n\n"
-            f"Profiles root:\n{profiles_root}\n\n"
-            f"Runtime data root:\n{data_root}"
+            f"Profiles root:\n{profiles_root}\n\n"            f"Runtime data root:\n{data_root}"
         )
+        self._form_baseline = self._form_values()
+        for widget, value in drafts.items():
+            widget.blockSignals(True)
+            if isinstance(widget, QLineEdit):
+                widget.setText(value)
+            elif isinstance(widget, QComboBox):
+                widget.setCurrentIndex(value)
+            elif isinstance(widget, QCheckBox):
+                widget.setChecked(value)
+            else:
+                widget.setValue(value)
+            widget.blockSignals(False)
+        self.chk_auto_theme.setEnabled(self.cmb_appearance.currentData() == "palette")
 
     # -- study reminders, Google account, passcode lock, watched pages -------
     def _load_study_reminder(self):
@@ -1830,6 +2227,10 @@ class SettingsPage(QWidget):
     def _refresh_folder_sync(self):
         """Paint the folder card from the service's own status."""
         state = sync_folder.status(self.shell.profile_dir)
+        if getattr(self, "_folder_sync_running", False):
+            for button in (self.btn_apply_sync, self.btn_preview_sync, self.btn_choose_sync_folder, self.btn_clear_sync_folder):
+                button.setEnabled(False)
+            return
         if not state["enabled"]:
             self.lbl_sync_folder.setText("No folder chosen")
             self.lbl_sync_status.setText("")
@@ -1873,12 +2274,41 @@ class SettingsPage(QWidget):
         self._refresh_folder_sync()
 
     def _preview_sync(self):
-        """Read-only: show what a sync would do, including the conflicts."""
+        """Read-only merge computation uses the same background relay as Apply."""
+        if getattr(self, "_folder_sync_running", False):
+            return
+        if getattr(type(self.shell), "run_in_background", None) is not None:
+            self._folder_sync_running = True
+            self._refresh_folder_sync()
+            self.lbl_sync_status.setText("Checking the shared folder… No data will be changed.")
+            try:
+                self.shell.run_in_background(lambda: sync_folder.compute(self.shell.profile_dir), self._finish_folder_preview)
+            except RuntimeError as exc:
+                self._folder_sync_running = False
+                self.btn_choose_sync_folder.setEnabled(True)
+                self._refresh_folder_sync()
+                QMessageBox.warning(self, "Folder sync", str(exc))
+            return
         try:
             report = sync_folder.compute(self.shell.profile_dir)
-        except sync_folder.SyncFormatError as exc:
+        except (sync_folder.SyncFormatError, OSError, ValueError) as exc:
             QMessageBox.warning(self, "Folder sync", str(exc))
             return
+        self._show_folder_preview(report)
+
+    def _finish_folder_preview(self, future):
+        self._folder_sync_running = False
+        self.btn_choose_sync_folder.setEnabled(True)
+        self._refresh_folder_sync()
+        try:
+            report = future.result()
+        except (sync_folder.SyncFormatError, OSError, ValueError) as exc:
+            self.lbl_sync_status.setText("Preview could not be completed. No data was changed.")
+            QMessageBox.warning(self, "Folder sync", str(exc))
+            return
+        self._show_folder_preview(report)
+
+    def _show_folder_preview(self, report):
         self.lbl_sync_status.setText(sync_folder.summary_line(report))
         changes = report.get("changes", [])
         if not changes:
@@ -1894,7 +2324,23 @@ class SettingsPage(QWidget):
         )
 
     def _apply_sync(self):
-        """Merge for real: snapshot first, then write and publish."""
+        """Merge off the GUI thread; keep controls stable until it finishes."""
+        if getattr(self, "_folder_sync_running", False):
+            return
+        runner = getattr(type(self.shell), "run_in_background", None)
+        if runner is not None:
+            self._folder_sync_running = True
+            for button in (self.btn_apply_sync, self.btn_preview_sync, self.btn_choose_sync_folder, self.btn_clear_sync_folder):
+                button.setEnabled(False)
+            self.lbl_sync_status.setText("Syncing locally… Your previous data is backed up first.")
+            try:
+                self.shell.run_in_background(lambda: sync_folder.sync(self.shell.profile_dir), self._finish_folder_sync)
+            except RuntimeError as exc:
+                self._folder_sync_running = False
+                self._refresh_folder_sync()
+                QMessageBox.warning(self, "Folder sync", str(exc))
+            return
+        # Small non-executor hosts (tests/embedded pages) remain synchronous.
         try:
             report = sync_folder.sync(self.shell.profile_dir)
         except sync_folder.SyncFormatError as exc:
@@ -1903,6 +2349,21 @@ class SettingsPage(QWidget):
         except OSError as exc:  # noqa: BLE001 - a missing folder drive is not a crash
             QMessageBox.warning(self, "Folder sync", f"The sync folder could not be written:\n{exc}")
             return
+        self._show_folder_sync_report(report)
+
+    def _finish_folder_sync(self, future):
+        self._folder_sync_running = False
+        self.btn_choose_sync_folder.setEnabled(True)
+        self._refresh_folder_sync()
+        try:
+            report = future.result()
+        except (sync_folder.SyncFormatError, OSError, ValueError) as exc:
+            self.lbl_sync_status.setText("Sync was not completed. Your backup is retained.")
+            QMessageBox.warning(self, "Folder sync", str(exc))
+            return
+        self._show_folder_sync_report(report)
+
+    def _show_folder_sync_report(self, report):
         line = sync_folder.summary_line(report)
         self.lbl_sync_status.setText(line)
         self._refresh_folder_sync()
@@ -2140,8 +2601,8 @@ class SettingsPage(QWidget):
             self.shell.profile_dir, lan_ip=self._local_ipv4_hint()
         )
         self.lbl_pairing_code.setText(
-            "Mã ghép nối — dán vào Mei Remote (Cài đặt) hoặc vào extension Mei Bridge "
-            "trong Chrome / Opera GX:\n" + self._current_pairing_code
+            "Pairing code — paste into Mei Remote (Settings) or the Mei Bridge extension "
+            "in Chrome / Opera GX:\n" + self._current_pairing_code
         )
         try:
             png = android_bridge_service.pairing_qr_png(self._current_pairing_code)
@@ -2187,7 +2648,7 @@ class SettingsPage(QWidget):
             self.shell.profile_dir,
             self.ed_email.text().strip(),
             self.ed_display_name.text().strip(),
-            enabled=self.chk_sync_enabled.isChecked(),
+            enabled=self.chk_local_snapshot.isChecked(),
         )
         self.shell.refresh_shell()
         QMessageBox.information(self, "Settings", "Profile account state saved.")
@@ -2221,13 +2682,11 @@ class SettingsPage(QWidget):
             theme_id = self._theme_ids[self.cmb_theme.currentIndex()]
         except (AttributeError, IndexError):
             theme_id = theme.DEFAULT_THEME
-        selected_label = self.cmb_accent.currentText()
-        accent_id = next(
-            (key for key in theme.ACCENTS if theme.accent_display_name(key) == selected_label),
-            "brass",
-        )
+        accent_id = self.cmb_accent.currentData() or "brass"
+        prefs.save_pref(self.shell.profile_dir, "appearance_mode", self.cmb_appearance.currentData() or "system")
         prefs.set_shell_theme(self.shell.profile_dir, theme_id)
         prefs.set_accent(self.shell.profile_dir, accent_id)
+        prefs.save_pref(self.shell.profile_dir, "reduced_motion", self.cmb_motion.currentData() or "system")
         prefs.set_max_live_tabs(self.shell.profile_dir, self.spin_max_live_tabs.value())
         prefs.set_new_tab_steam(self.shell.profile_dir, self.chk_new_tab_steam.isChecked())
         prefs.set_new_tab_greeting(self.shell.profile_dir, self.chk_new_tab_greeting.isChecked())
@@ -2272,7 +2731,8 @@ class HistoryPage(QWidget):
         controls_row.addWidget(self.cmb_kind)
         self.ed_search = QLineEdit()
         self.ed_search.setPlaceholderText("Search URLs, notes, tasks, AI questions, downloads, boards...")
-        self.ed_search.setMinimumWidth(240)
+        self.ed_search.setMinimumWidth(0)
+        self.cmb_kind.setMaximumWidth(150)
         controls_row.addWidget(self.ed_search, 1)
         self.btn_refresh = QPushButton("Refresh")
         self.btn_export = QPushButton("Export backup")
@@ -2280,10 +2740,14 @@ class HistoryPage(QWidget):
         self.btn_clear_activity = QPushButton("Clear all")
         self.btn_refresh.setObjectName("TopAccentButton")
         controls_row.addWidget(self.btn_refresh)
-        controls_row.addWidget(self.btn_export)
-        controls_row.addWidget(self.btn_import)
-        controls_row.addWidget(self.btn_clear_activity)
         hero_layout.addLayout(controls_row)
+        backup_row = QHBoxLayout()
+        backup_row.addWidget(self.btn_export)
+        backup_row.addWidget(self.btn_import)
+        backup_row.addStretch(1)
+        self.btn_clear_activity.setObjectName("DangerButton")
+        backup_row.addWidget(self.btn_clear_activity)
+        hero_layout.addLayout(backup_row)
         layout.addWidget(hero)
 
         self.history_stats = {
@@ -2295,6 +2759,7 @@ class HistoryPage(QWidget):
 
         self.lbl_summary = QLabel("")
         self.lbl_summary.setObjectName("MutedLabel")
+        self.lbl_summary.setWordWrap(True)
         activity_card, activity_layout = _panel(
             "Your activity",
             "A readable timeline of browser visits and workspace changes",
@@ -2302,7 +2767,7 @@ class HistoryPage(QWidget):
         activity_layout.addWidget(self.lbl_summary)
 
         self.chk_zip_include_browser_data = QCheckBox(
-            "Include BrowserData in zip (WebEngine cache, localStorage for sites like Cục Quản Lý — large & slow)"
+            "Include browser state in backup (larger export)"
         )
         self.chk_zip_include_browser_data.setObjectName("MutedLabel")
         layout.addWidget(self.chk_zip_include_browser_data)
@@ -2337,6 +2802,15 @@ class HistoryPage(QWidget):
         kind = self.cmb_kind.currentText()
         query = self.ed_search.text().strip()
         items = history_service.list_activity(self.shell.profile_dir, query=query, kind="" if kind == "all" else kind)
+        private_access = security.is_unlocked(self.shell.profile_dir) or bool(getattr(self.shell, "_unlocked_spaces", set()))
+        if security.has_passcode(self.shell.profile_dir) and not private_access:
+            # Activity descriptions can include note titles and AI answers.
+            items = [item for item in items if item.get("kind") in ("page", "browser", "tab", "download")]
+            self.btn_export.setEnabled(False)
+            self.btn_import.setEnabled(False)
+        else:
+            self.btn_export.setEnabled(True)
+            self.btn_import.setEnabled(True)
         self.list_widget.clear()
         for item in items:
             stamp = _format_ts(int(item.get("ts", 0) or 0))
@@ -2345,13 +2819,12 @@ class HistoryPage(QWidget):
             self.list_widget.addItem(row)
         if self.list_widget.count() == 0:
             self.list_widget.addItem("No activity matched your search.")
-        self.lbl_summary.setText(
-            f"{len(items)} activity records · Zip export: profile.json + vault/. Optionally tick below to also pack "
-            "BrowserData/ (full in-browser state). JSON export inlines vault as base64. Import restores zip contents; "
-            "restart the app after import if BrowserData was included."
-        )
+        self.lbl_summary.setText(f"{len(items)} activity records · Backups include your profile and notes.")
+        self.chk_zip_include_browser_data.setToolTip("Includes WebEngine cache and site storage. Larger and slower; restart after importing browser state.")
 
     def export_backup(self):
+        if not self.shell.switch_workspace("library"):
+            return
         default = os.path.join(self.shell.profile_dir, f"litebrowser-profile-backup-{time.strftime('%Y%m%d-%H%M')}.zip")
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Export profile backup", default, "Zip bundle (*.zip);;JSON (*.json)"
@@ -2384,6 +2857,10 @@ class HistoryPage(QWidget):
         QMessageBox.information(self, "History", "Profile backup exported successfully.")
 
     def import_backup(self):
+        if not self.shell.switch_workspace("library"):
+            return
+        if not self.shell.personal_page._flush_note_edits():
+            return
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Import profile backup", "", "Backup (*.zip *.json);;Zip (*.zip);;JSON (*.json)"
         )

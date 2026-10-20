@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from litebrowser.core import migrations, prefs
-from litebrowser.core.store import StoreSpec, read_store, store_path, stored_version, write_store
+from litebrowser.core.store import StoreWriteError, StoreSpec, read_store, store_path, stored_version, write_store
 from litebrowser.services import personal_plan, tab_sets
 
 FAKE = StoreSpec(name="fake_store.json", version=1, default=lambda: {"rows": []})
@@ -125,6 +125,30 @@ class TestNewerBuildIsNotDowngraded(_Base):
         self.assertEqual(data["rows"], ["from the future"])
         self.assertEqual(self._read_raw(spec)["version"], 9, "a newer profile must be left intact")
         self.assertTrue(self._read_raw(spec)["extra"])
+
+    def test_mutation_cannot_downgrade_a_future_store(self):
+        spec = _spec(version=1)
+        original = {"version": 9, "rows": ["future"], "extra": True}
+        self._write_raw(spec, original)
+        with self.assertRaises(StoreWriteError):
+            write_store(self.base, spec, {"rows": ["older build"]})
+        self.assertEqual(self._read_raw(spec), original)
+
+    def test_planner_mutation_leaves_a_future_schema_intact(self):
+        original = {"version": 99, "items": [{"id": "x", "title": "Keep"}], "future": True}
+        self._write_raw(personal_plan.PLAN_STORE, original)
+        with self.assertRaises(StoreWriteError):
+            personal_plan.create_item(self.base, "Cannot downgrade")
+        self.assertEqual(self._read_raw(personal_plan.PLAN_STORE), original)
+
+    def test_corrupt_store_cannot_be_silently_overwritten(self):
+        path = self._write_raw(FAKE, {})
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("{broken")
+        with self.assertRaises(StoreWriteError):
+            write_store(self.base, FAKE, {"rows": []})
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "{broken")
 
     def test_corrupt_store_falls_back_without_deleting_it(self):
         spec = _spec()

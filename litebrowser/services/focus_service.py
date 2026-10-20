@@ -9,7 +9,7 @@ import time
 import uuid
 from datetime import datetime
 
-from litebrowser.core.profile_lock import profile_locked
+from litebrowser.core.profile_lock import profile_locked, profile_transaction
 from litebrowser.core.storage_utils import read_json, write_json
 
 SESSION_FILE = "focus_sessions.json"
@@ -23,9 +23,31 @@ def _now() -> int:
     return int(time.time())
 
 
+def _integer(value, default=0):
+    try:
+        return max(0, min(253402214400, int(value)))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _session(value):
+    if not isinstance(value, dict):
+        return None
+    session = dict(value)
+    for key in ("started_at", "ends_at", "ended_at", "minutes"):
+        if key in session:
+            session[key] = _integer(session[key])
+    session["minutes"] = min(180, session.get("minutes", 0))
+    return session
+
+
 def _load(base_dir: str) -> dict:
-    data = read_json(sessions_path(base_dir), {})
-    return data if isinstance(data, dict) else {}
+    raw = read_json(sessions_path(base_dir), {})
+    data = dict(raw) if isinstance(raw, dict) else {}
+    data["active"] = _session(data.get("active"))
+    rows = data.get("sessions")
+    data["sessions"] = [s for row in rows if (s := _session(row)) is not None] if isinstance(rows, list) else []
+    return data
 
 
 def _save(base_dir: str, data: dict) -> None:
@@ -33,6 +55,7 @@ def _save(base_dir: str, data: dict) -> None:
         write_json(sessions_path(base_dir), data)
 
 
+@profile_transaction
 def start_focus(base_dir: str, minutes: int = 25, label: str = "", item_id: str = "") -> dict:
     """Start (or restart) a focus session. Returns the active session record.
 
@@ -41,12 +64,13 @@ def start_focus(base_dir: str, minutes: int = 25, label: str = "", item_id: str 
     ``item_id`` is set the session is a study session for that planner item, so
     its minutes can be credited back once it finishes.
     """
-    minutes = max(1, min(int(minutes or 25), 180))
+    minutes = max(1, min(_integer(minutes, 25) or 25, 180))
     data = _load(base_dir)
     now = _now()
     active = data.get("active")
     if active:
-        _close_active(data, "abandoned")
+        expired = active.get("ends_at", 0) <= now
+        _close_active(data, "completed" if expired else "abandoned")
     session = {
         "id": uuid.uuid4().hex[:12],
         "label": (label or "").strip() or f"{minutes} min focus",
@@ -63,6 +87,7 @@ def start_focus(base_dir: str, minutes: int = 25, label: str = "", item_id: str 
     return session
 
 
+@profile_transaction
 def focus_status(base_dir: str) -> dict:
     """Current running session (or None) with remaining seconds computed live."""
     data = _load(base_dir)
@@ -75,6 +100,7 @@ def focus_status(base_dir: str) -> dict:
     return {"running": True, "session": active, "remaining": remaining}
 
 
+@profile_transaction
 def stop_focus(base_dir: str, complete: bool = True) -> dict:
     """Stop the running session. completed=True (default) marks it finished and
     moves it to the journal; completed=False abandons it."""
@@ -87,9 +113,10 @@ def stop_focus(base_dir: str, complete: bool = True) -> dict:
     return {"closed": True, "session": active}
 
 
+@profile_transaction
 def _finish(base_dir: str, active: dict) -> dict:
     data = _load(base_dir)
-    if data.get("active", {}).get("id") != active.get("id"):
+    if (data.get("active") or {}).get("id") != active.get("id"):
         # Re-entered concurrently; report the current truth.
         return focus_status(base_dir) if data.get("active") else {"running": False, "session": None, "remaining": 0}
     _close_active(data, "completed")
@@ -114,6 +141,7 @@ def focus_journal(base_dir: str, limit: int = 50) -> list:
     return data.get("sessions", [])[:limit]
 
 
+@profile_transaction
 def mark_credited(base_dir: str, session_id: str) -> bool:
     """Flag a finished study session as credited so minutes are counted once."""
     if not session_id:
@@ -134,8 +162,9 @@ def compute_daily_minutes(sessions: list) -> dict:
     abandoned, clamps to planned). Shared by today_focus_seconds and the
     Personal Hub heatmap so both always agree."""
     per_day = {}
-    for s in sessions:
-        if s.get("status") == "abandoned":
+    for raw in sessions:
+        s = _session(raw)
+        if s is None or s.get("status") == "abandoned":
             continue
         started = int(s.get("started_at", 0) or 0)
         ended = int(s.get("ended_at", 0) or started)
@@ -143,7 +172,10 @@ def compute_daily_minutes(sessions: list) -> dict:
         if not started or planned <= 0:
             continue
         spent = max(0, min(ended - started, planned))
-        key = datetime.fromtimestamp(started).strftime("%Y-%m-%d")
+        try:
+            key = datetime.fromtimestamp(started).strftime("%Y-%m-%d")
+        except (ValueError, OSError, OverflowError):
+            continue
         per_day[key] = per_day.get(key, 0) + spent // 60
     return per_day
 
@@ -185,7 +217,12 @@ def today_focus_seconds(base_dir: str) -> int:
         ended = s.get("ended_at")
         if not ended:
             continue
-        if datetime.fromtimestamp(ended).strftime("%Y-%m-%d") != today:
+        try:
+            # Attribute a pour to the day it began, like the heatmap.
+            session_day = datetime.fromtimestamp(s.get("started_at") or ended).strftime("%Y-%m-%d")
+        except (ValueError, OSError, OverflowError):
+            continue
+        if session_day != today:
             continue
         if s.get("status") == "abandoned":
             continue

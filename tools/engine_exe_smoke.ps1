@@ -1,38 +1,20 @@
-# Packaged-app smoke: does each exe start, and does the engine really come up?
-#
-# A windowed onefile exe writes no console output, so "it stayed alive" proves
-# little. What proves the engine initialised is QtWebEngineProcess — Chromium's
-# child process, spawned only when a web view is actually created. The onefile
-# bootloader adds a level (the real app is a *child* of the exe, and the engine
-# processes hang off that), so the whole descendant tree is walked, and the
-# thread count / memory footprint are printed as a shape to compare against the
-# last known-good build.
-#
-# Processes are killed by PID, deepest first, never by image name: you may have
-# your own Mei open, and it must survive this.
-#
-# Usage (from the repository root):
-#   powershell -NoProfile -ExecutionPolicy Bypass -File tools/engine_exe_smoke.ps1 -ExePaths dist/Mei.exe
-#   powershell -NoProfile -ExecutionPolicy Bypass -File tools/engine_exe_smoke.ps1 -ExePaths dist/Mei.exe,build/alpha/Mei.exe
-
+# Packaged-app smoke, using disposable data and TEMP inside the workspace.
+# Only processes descended from the launched PID are stopped.
+# Usage: powershell -NoProfile -ExecutionPolicy Bypass -File tools/engine_exe_smoke.ps1 -ExePaths build/current-release/Mei.exe
 param(
     [Parameter(Mandatory = $true)][string[]]$ExePaths,
     [int]$SettleSeconds = 35
 )
 
-# Run each exe from its own folder: the app treats the folder holding the exe as
-# its data root, so this keeps a test run out of the real install's files.
-foreach ($candidate in $ExePaths) {
-    if (-not (Test-Path $candidate)) {
-        "$candidate RESULT missing exe"
-        continue
-    }
-    $exe = (Resolve-Path $candidate).Path
-    $dir = Split-Path -Parent $exe
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $PSScriptRoot
+$testRoot = Join-Path $root ('build/exe-smoke-' + [guid]::NewGuid().ToString('N'))
+$variables = @('LITEBROWSER_DATA_DIR', 'LITEBROWSER_UPDATE_METADATA_URL', 'LOCALAPPDATA', 'TEMP', 'TMP', 'QT_QPA_PLATFORM')
+$previous = @{}
+foreach ($name in $variables) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+$failed = $false
 
-    $p = Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru -WindowStyle Hidden
-    Start-Sleep -Seconds $SettleSeconds
-
+function Get-Descendants([int]$ParentId) {
     $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
     $byParent = @{}
     foreach ($proc in $all) {
@@ -40,15 +22,16 @@ foreach ($candidate in $ExePaths) {
         if (-not $byParent.ContainsKey($key)) { $byParent[$key] = @() }
         $byParent[$key] += $proc
     }
-
     $tree = @()
-    $queue = @($p.Id)
+    $queue = @($ParentId)
+    $seen = @{}
     while ($queue.Count -gt 0) {
         $next = @()
         foreach ($q in $queue) {
-            $key = [int]$q
-            if ($byParent.ContainsKey($key)) {
-                foreach ($kid in $byParent[$key]) {
+            if ($seen.ContainsKey([int]$q)) { continue }
+            $seen[[int]$q] = $true
+            if ($byParent.ContainsKey([int]$q)) {
+                foreach ($kid in $byParent[[int]$q]) {
                     $tree += $kid
                     $next += $kid.ProcessId
                 }
@@ -56,25 +39,72 @@ foreach ($candidate in $ExePaths) {
         }
         $queue = $next
     }
-
-    $engine = @($tree | Where-Object { $_.Name -like 'QtWebEngineProcess*' })
-    $shape = @()
-    foreach ($id in @($p.Id) + @($tree | Select-Object -ExpandProperty ProcessId)) {
-        $live = Get-Process -Id $id -ErrorAction SilentlyContinue
-        if ($live) {
-            $shape += ("{0}#{1}(threads={2},mem={3}MB,cpu={4:N1}s)" -f $live.Name, $live.Id, $live.Threads.Count, [int]($live.WorkingSet64 / 1MB), $live.CPU)
-        }
-    }
-
-    "$candidate RESULT bootloader-exited=$($p.HasExited) engine-procs=$($engine.Count)"
-    "$candidate SHAPE $($shape -join ' | ')"
-
-    for ($i = $tree.Count - 1; $i -ge 0; $i--) { Stop-Process -Id $tree[$i].ProcessId -Force -ErrorAction SilentlyContinue }
-    if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
-    Start-Sleep -Seconds 3
+    return $tree
 }
 
-'--- leftovers (should be empty) ---'
-Get-CimInstance Win32_Process |
-    Where-Object { $_.Name -match '^(Mei|QtWebEngineProcess)' } |
-    Select-Object ProcessId, Name, ExecutablePath | Format-Table -AutoSize
+try {
+    New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+    $index = 0
+    foreach ($candidate in $ExePaths) {
+        $index++
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            "$candidate RESULT missing exe"
+            $failed = $true
+            continue
+        }
+        $exe = (Resolve-Path -LiteralPath $candidate).Path
+        $dir = Split-Path -Parent $exe
+        $runRoot = Join-Path $testRoot ([string]$index)
+        $tempRoot = Join-Path $runRoot 'temp'
+        $dataRoot = Join-Path $runRoot 'data'
+        $profile = Join-Path $dataRoot 'profiles/Default'
+        New-Item -ItemType Directory -Path $tempRoot, $profile, (Join-Path $runRoot 'localappdata') -Force | Out-Null
+        # Seed only synthetic settings, never copy an existing profile.
+        [IO.File]::WriteAllText((Join-Path $profile 'prefs.json'), '{"onboarding_done":true}')
+        [IO.File]::WriteAllText((Join-Path $dataRoot 'last_profile.txt'), 'Default')
+        $env:LITEBROWSER_DATA_DIR = $dataRoot
+        $env:LOCALAPPDATA = Join-Path $runRoot 'localappdata'
+        $env:TEMP = $tempRoot
+        $env:TMP = $tempRoot
+        $env:QT_QPA_PLATFORM = 'windows'
+        # Missing local metadata reports an error without using any network/key.
+        $env:LITEBROWSER_UPDATE_METADATA_URL = ([uri](Join-Path $runRoot 'no-update.json')).AbsoluteUri
+        $p = $null
+        try {
+            $p = Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru
+            Start-Sleep -Seconds $SettleSeconds
+            $tree = @(Get-Descendants $p.Id)
+            $engine = @($tree | Where-Object { $_.Name -like 'QtWebEngineProcess*' })
+            $shape = @()
+            $windows = @()
+            foreach ($id in @($p.Id) + @($tree | Select-Object -ExpandProperty ProcessId)) {
+                $live = Get-Process -Id $id -ErrorAction SilentlyContinue
+                if ($live) {
+                    $shape += ('{0}#{1}(threads={2},mem={3}MB)' -f $live.Name, $live.Id, $live.Threads.Count, [int]($live.WorkingSet64 / 1MB))
+                    if ($live.MainWindowTitle) { $windows += $live.MainWindowTitle }
+                }
+            }
+            $ok = -not $p.HasExited -and $engine.Count -gt 0 -and @($windows | Where-Object { $_ -like 'Mei - Workspace*' }).Count -gt 0
+            "$candidate RESULT passed=$ok bootloader-exited=$($p.HasExited) engine-procs=$($engine.Count)"
+            "$candidate WINDOWS $($windows -join ' | ')"
+            "$candidate SHAPE $($shape -join ' | ')"
+            if (-not $ok) { $failed = $true }
+        } finally {
+            if ($p) {
+                $tree = @(Get-Descendants $p.Id)
+                for ($i = $tree.Count - 1; $i -ge 0; $i--) { Stop-Process -Id $tree[$i].ProcessId -Force -ErrorAction SilentlyContinue }
+                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 3
+            }
+        }
+    }
+} catch {
+    Write-Output ('SMOKE FAILED: ' + $_.Exception.Message)
+    $failed = $true
+} finally {
+    foreach ($name in $variables) { [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process') }
+    # All test files are generated under this unique workspace directory.
+    if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue }
+}
+if ($failed) { exit 1 }
+exit 0

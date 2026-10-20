@@ -66,6 +66,8 @@ def enable_text_selection(window) -> None:
     if window is None:
         return
     for label in window.findChildren(QLabel):
+        if label.property("decorative"):
+            continue
         flags = label.textInteractionFlags()
         label.setTextInteractionFlags(flags | Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
     for button in window.findChildren((QPushButton, QToolButton, QCheckBox)):

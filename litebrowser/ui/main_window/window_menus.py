@@ -60,6 +60,9 @@ class MenusMixin:
         sessions_menu.addAction("Reopen Closed Tab (Ctrl+Shift+T)").triggered.connect(self.reopen_closed_tab)
         sessions_menu.addAction("Reopen Closed Window").triggered.connect(self.reopen_closed_window)
         sessions_menu.addAction("Quick Switcher (Ctrl+Shift+K)").triggered.connect(lambda: dialogs.show_quick_switcher(self))
+        sessions_menu.addAction("Save Research Workspace...").triggered.connect(
+            lambda: dialogs.show_save_research_workspace_dialog(self)
+        )
         sessions_menu.addAction("Save Current Tab Set...").triggered.connect(self.save_current_tab_set)
         sessions_menu.addAction("Restore Tab Set...").triggered.connect(lambda: dialogs.show_tab_sets_dialog(self))
 

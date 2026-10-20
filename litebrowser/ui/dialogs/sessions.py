@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import (
 )
 
 from litebrowser.core import prefs, time_utils
-from litebrowser.services import tab_sets
+from litebrowser.services import life_service, personal_service, tab_sets
 from litebrowser.ui.dialogs.common import (
     _stylesheet,
     dialog_footer,
@@ -483,7 +483,7 @@ def show_tab_sets_dialog(parent):
     dialog.resize(560, 420)
     dialog.setStyleSheet(_stylesheet(parent))
     layout = QVBoxLayout(dialog)
-    info = QLabel("Saved tab collections. Open one to restore all its tabs (inactive tabs start suspended).")
+    info = QLabel("Saved tab and research collections. Opening adds tabs to the current workspace; inactive tabs start suspended.")
     info.setWordWrap(True)
     layout.addWidget(info)
     list_widget = QListWidget()
@@ -495,6 +495,13 @@ def show_tab_sets_dialog(parent):
             count = len(item.get("tabs", []))
             updated = time_utils.format_ts(item.get("updated_at"))
             label = f"{item.get('title', 'Untitled')}  ·  {count} tab(s)  ·  {updated}"
+            related = []
+            if item.get("notes"):
+                related.append(f"{len(item['notes'])} note(s)")
+            if item.get("tasks"):
+                related.append(f"{len(item['tasks'])} task(s)")
+            if related:
+                label += "  ·  " + ", ".join(related)
             if item.get("kind"):
                 label += f"  ·  {item.get('kind')}"
             list_item = QListWidgetItem(label)
@@ -503,14 +510,32 @@ def show_tab_sets_dialog(parent):
 
     refresh()
 
-    def open_selected():
+    def open_selected(mode="merge"):
         current = list_widget.currentItem()
         if not current:
             return
         set_id = current.data(Qt.UserRole)
         dialog.accept()
         if hasattr(parent, "restore_tab_set"):
-            parent.restore_tab_set(set_id)
+            parent.restore_tab_set(set_id, mode=mode)
+
+    def replace_selected():
+        current = list_widget.currentItem()
+        if not current:
+            return
+        data = tab_sets.get_tab_set(base_dir, current.data(Qt.UserRole))
+        if not data:
+            return
+        if QMessageBox.warning(
+            dialog,
+            "Replace current tabs?",
+            f"Close the tabs in this browser workspace and open \"{data.get('title', '')}\"?\n\n"
+            "Closed tabs remain available through Reopen Closed Tab.",
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        ) != QMessageBox.Yes:
+            return
+        open_selected("replace")
 
     def delete_selected():
         current = list_widget.currentItem()
@@ -542,8 +567,8 @@ def show_tab_sets_dialog(parent):
 
     # Five flat buttons became: open (what you came for), a refresh glyph that
     # belongs to the list, and one menu holding rename/delete.
-    btn_open = primary_button("Open")
-    btn_open.clicked.connect(open_selected)
+    btn_open = primary_button("Open & merge")
+    btn_open.clicked.connect(lambda: open_selected("merge"))
     btn_refresh = icon_button("↻", "Reload the list from disk")
     btn_refresh.clicked.connect(refresh)
     dialog_footer(
@@ -551,11 +576,75 @@ def show_tab_sets_dialog(parent):
         primary=btn_open,
         secondary=(btn_refresh,),
         menu=(
+            ("Replace current workspace…", replace_selected),
+            (None, None),
             ("Rename…", rename_selected),
             (None, None),
             ("🗑  Delete this tab set", delete_selected),
         ),
         close=dialog.accept,
     )
+    dialog.exec_()
+
+
+def show_save_research_workspace_dialog(parent):
+    """Save current browser tabs with references to existing notes and tasks."""
+    base_dir = parent.base_dir
+    tabs = parent.get_current_tab_state()
+    active_workspace = str(getattr(parent, "current_workspace_id", "") or "")
+    if active_workspace:
+        tabs = [tab for tab in tabs if str(tab.get("workspace_id") or "") == active_workspace]
+    if not tabs:
+        QMessageBox.information(parent, "Research workspace", "There are no regular tabs in this browser workspace to save.")
+        return
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Save Research Workspace")
+    dialog.resize(480, 300)
+    dialog.setStyleSheet(_stylesheet(parent))
+    layout = QVBoxLayout(dialog)
+    layout.addWidget(QLabel("Save these tabs as a named research workspace. Related items are references to your existing profile data."))
+    title_edit = QLineEdit()
+    title_edit.setPlaceholderText("Workspace name")
+    layout.addWidget(title_edit)
+    note_combo = QComboBox()
+    note_combo.addItem("No linked note", "")
+    notes = personal_service.list_notes(base_dir)[:300]
+    for note in notes:
+        note_combo.addItem(str(note.get("title") or "Untitled note"), str(note.get("id") or ""))
+    layout.addWidget(QLabel("Related note"))
+    layout.addWidget(note_combo)
+    task_combo = QComboBox()
+    task_combo.addItem("No linked task", "")
+    tasks = [row for row in life_service.load_tasks(base_dir) if not row.get("archived")][:300]
+    for task in tasks:
+        task_combo.addItem(str(task.get("title") or "Untitled task"), str(task.get("id") or ""))
+    layout.addWidget(QLabel("Related task"))
+    layout.addWidget(task_combo)
+    btn_save = primary_button("Save workspace")
+
+    def save():
+        title = title_edit.text().strip()
+        if not title:
+            title_edit.setFocus()
+            return
+        try:
+            saved = tab_sets.add_tab_set(
+                base_dir,
+                "workspace",
+                title,
+                tabs,
+                workspace_id=str(getattr(parent, "current_workspace_id", "") or ""),
+                notes=[note_combo.currentData()] if note_combo.currentData() else [],
+                tasks=[task_combo.currentData()] if task_combo.currentData() else [],
+            )
+            tab_sets.set_active_research_workspace(base_dir, saved["id"])
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(dialog, "Research workspace", f"Could not save workspace:\n{exc}")
+            return
+        dialog.accept()
+        QMessageBox.information(parent, "Research workspace", f"Saved {len(tabs)} tab(s) with linked context.")
+
+    btn_save.clicked.connect(save)
+    dialog_footer(layout, primary=btn_save, close=dialog.reject)
     dialog.exec_()
 

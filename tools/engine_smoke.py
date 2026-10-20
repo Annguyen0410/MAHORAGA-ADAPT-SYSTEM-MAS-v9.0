@@ -18,6 +18,7 @@ import functools
 import http.server
 import json
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -366,9 +367,10 @@ def main() -> int:
             h.blocker.seen.count("127.0.0.1") >= 3,
             f"{h.blocker.seen.count('127.0.0.1')} loopback request(s) so far",
         )
-        second_view.setPage(None)
+        second_view.close()
         second_page.deleteLater()
         second_view.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
         h.pump(300)
 
     h.page.load(QtCore.QUrl(origin + "/smoke.html"))
@@ -386,10 +388,24 @@ def main() -> int:
         f"storage={os.path.isdir(storage)} cache={os.path.isdir(cache)}",
     )
 
+    # A page must be destroyed before its profile, not merely queued beside
+    # it. Chromium can crash during interpreter teardown if deferred deletes
+    # never ran (processEvents alone does not guarantee DeferredDelete).
+    h.page.triggerAction(QWebEnginePage.WebAction.Stop)
     h.page.deleteLater()
+    QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+    h.page = None
+    h.profile.setUrlRequestInterceptor(None)
     h.profile.deleteLater()
+    QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+    h.profile = None
+    h.blocker.deleteLater()
+    QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+    h.blocker = None
     h.pump(300)
     server.shutdown()
+    server.server_close()
+    shutil.rmtree(tmp, ignore_errors=True)
 
     failed = [name for name, item in RESULTS.items() if not item["ok"]]
     print("\nSUMMARY " + json.dumps({"failed": failed, "total": len(RESULTS)}), flush=True)

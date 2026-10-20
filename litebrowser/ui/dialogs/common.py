@@ -30,6 +30,7 @@ def role_button(text: str, role: str = "ghost", tooltip: str = "") -> QtWidgets.
     button.setObjectName(ROLE_OBJECT_NAMES.get(role, ROLE_OBJECT_NAMES["ghost"]))
     if tooltip:
         button.setToolTip(tooltip)
+    button.setAccessibleName(tooltip or text)
     return button
 
 
@@ -60,7 +61,8 @@ def icon_button(glyph: str, tooltip: str = "") -> QtWidgets.QPushButton:
     act on instead of adding another look-alike box next to the real actions.
     """
     button = quiet_button(glyph, tooltip)
-    button.setFixedSize(28, 28)
+    button.setProperty("compactIcon", True)
+    button.setFixedSize(34, 34)
     return button
 
 
@@ -85,7 +87,11 @@ def more_menu(
         action = menu.addAction(text)
         if callback is not None:
             action.triggered.connect(lambda _checked=False, run=callback: run())
+    # Keep Qt ownership/modal membership intact. A parentless popup can be
+    # blocked by an active modal dialog and does not inherit its stylesheet.
+    button._overflow_menu = menu
     button.setMenu(menu)
+    menu.aboutToShow.connect(lambda: menu.setStyleSheet(button.window().styleSheet()))
     return button
 
 

@@ -69,16 +69,16 @@ DEFAULT_WEB_SUPPORT = os.path.join("dist", "web_support")
 DEFAULT_EXE = os.path.join("dist", product.ASSET_NAME)
 
 # A release body is read by people, not by the updater. The channel manifest is
-# English (it is data); the body opens with two lines of Vietnamese because that
-# is who downloads this build.
-VI_HEADER = (
-    "**Tải về:** `{exe}` (bản build sẵn) và `{web_support}` (giải nén cạnh file exe). "
-    "Mei 0.7.0.0 trở lên tự cập nhật từ kênh `releases/latest/download/update.json`."
+# English (it is data); download instructions and release notes are English too.
+DOWNLOAD_HEADER = (
+    "**Download:** `{exe}` (prebuilt application) and `{web_support}` "
+    "(extract beside the executable). Mei 0.7.0.0 and later update automatically "
+    "from `releases/latest/download/update.json`."
 )
 
 PRERELEASE_NOTE = (
-    "**Bản Alpha (pre-release)** — bản này không đi vào kênh tự cập nhật: "
-    "`releases/latest` vẫn phục vụ bản ổn định gần nhất, nên hãy tải bằng tay ở trang này."
+    "**Alpha (pre-release)** — this build is not offered through automatic updates: "
+    "`releases/latest` still serves the latest stable build. Download this preview manually here."
 )
 
 #: ``v1.0.0.0`` or ``v1.0.0.0-alpha.2``. A tag may carry a pre-release suffix,
@@ -163,7 +163,7 @@ def changelog_section(text: str, version: str) -> str:
 def build_release_body(
     version: str, exe_name: str, web_support: str, changelog_text: str, prerelease: bool = False
 ) -> str:
-    header = VI_HEADER.format(exe=exe_name, web_support=web_support)
+    header = DOWNLOAD_HEADER.format(exe=exe_name, web_support=web_support)
     if prerelease:
         header = f"{header}\n\n{PRERELEASE_NOTE}"
     notes = changelog_section(changelog_text, version)
@@ -205,17 +205,26 @@ def verify_build(exe_path: str) -> dict:
 
 
 def zip_web_support(folder: str, out_path: str) -> str:
-    """Zip ``dist/web_support`` for download; logs never travel with a release."""
+    """Package only public web assets; preserve the previous ZIP on failure."""
+    from tools.sync_web_support import public_files
+    import tempfile
+
     if not os.path.isdir(folder):
         raise FileNotFoundError(folder)
-    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as bundle:
-        for root, dirs, files in os.walk(folder):
-            dirs[:] = [name for name in dirs if not name.startswith(".")]
-            for name in sorted(files):
-                if name.lower().endswith(".log"):
-                    continue
-                path = os.path.join(root, name)
-                bundle.write(path, os.path.relpath(path, folder))
+    if os.path.commonpath([os.path.abspath(folder), os.path.abspath(out_path)]) == os.path.abspath(folder):
+        raise ValueError("Write the release ZIP outside the source folder")
+    parent = os.path.dirname(os.path.abspath(out_path))
+    os.makedirs(parent, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".mei-web-", suffix=".zip", dir=parent)
+    os.close(fd)
+    try:
+        with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as bundle:
+            for relative in public_files(folder):
+                bundle.write(os.path.join(folder, relative), relative.as_posix())
+        os.replace(temporary, out_path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
     return out_path
 
 
@@ -423,7 +432,6 @@ def publish(
         "manifest_path": manifest_path,
         "body_path": body_path,
         "body": body,
-        "body_path": body_path,
         "release": release,
         "uploaded": True,
     }

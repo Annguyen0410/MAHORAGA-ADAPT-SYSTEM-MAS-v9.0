@@ -25,9 +25,13 @@ _app = QApplication.instance() or QApplication([])
 class _FakePage:
     """A WebEngine page that answers runJavaScript synchronously."""
 
-    def __init__(self, text):
+    def __init__(self, text, private=False):
         self.text = text
         self.scripts = []
+        self.private = private
+
+    def profile(self):
+        return _FakeProfile(self.private)
 
     def runJavaScript(self, script, callback):
         self.scripts.append(script)
@@ -35,9 +39,17 @@ class _FakePage:
             callback(self.text)
 
 
+class _FakeProfile:
+    def __init__(self, private=False):
+        self.private = private
+
+    def isOffTheRecord(self):
+        return self.private
+
+
 class _FakeBrowser:
-    def __init__(self, text="Body of the page", title="Docs", url="https://docs.example/x"):
-        self._page = _FakePage(text)
+    def __init__(self, text="Body of the page", title="Docs", url="https://docs.example/x", private=False):
+        self._page = _FakePage(text, private=private)
         self._title = title
         self._url = url
 
@@ -109,6 +121,15 @@ class TestBrowserContextToggle(_AICase):
         self.assertIn("browser", tooltip)
         self.assertIn("untrusted", tooltip, "reading a page must stay untrusted context")
 
+    def test_research_context_is_off_by_default_and_disclosure_is_visible(self):
+        self.assertFalse(self.window.chk_research_context.isChecked())
+        self.assertIn("may be sent", self.window.chk_research_context.toolTip())
+
+    def test_research_context_preference_is_remembered(self):
+        self.window.chk_research_context.setChecked(True)
+        self.window._save_settings()
+        self.assertTrue(prefs.load_ai_settings(self.base)["read_research"])
+
     def test_the_choice_is_remembered_with_the_provider(self):
         self.window.chk_browser_context.setChecked(False)
         self.window._save_settings()
@@ -122,6 +143,27 @@ class TestBrowserContextToggle(_AICase):
         self.assertIn("https://docs.example/x", context)
         self.assertIn("[Open tabs in this window]", context)
         self.assertIn("Slides", context, "the assistant sees the session, not one page")
+
+    def test_opted_in_research_context_joins_the_browser_context(self):
+        from litebrowser.services import personal_service, tab_sets
+
+        note = personal_service.create_note(self.base, "Lab notes", "Local note body.")
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Chemistry project", [], notes=[note["id"]])
+        tab_sets.set_active_research_workspace(self.base, workspace["id"])
+        self.window.chk_research_context.setChecked(True)
+        ask = self._ask("Summarize the research")
+        _question, label, context = ask.call_args[0]
+        self.assertEqual(label, "Browser page + open tabs + research")
+        self.assertIn("Local note body", context)
+        self.assertIn("Chemistry project", context)
+
+    def test_incognito_page_text_is_never_attached(self):
+        self.shell.browser_page._browser = _FakeBrowser(private=True)
+        ask = self._ask()
+        _question, label, context = ask.call_args[0]
+        self.assertEqual(label, "Workspace-wide (private page excluded)")
+        self.assertEqual(context, "")
+        self.assertIn("private page excluded", self.window.lbl_context_scope.text())
 
     def test_the_page_is_read_through_javascript(self):
         self._ask()
@@ -157,6 +199,19 @@ class TestBrowserContextToggle(_AICase):
         ask = self._ask()
         _question, label, _context = ask.call_args[0]
         self.assertEqual(label, "Workspace-wide")
+
+
+class TestPrivacyCallbacks(_AICase):
+    def test_late_answer_after_relock_is_discarded_even_after_unlock(self):
+        from concurrent.futures import Future
+        future = Future()
+        future.set_result({"answer": "private old answer", "context": "private source"})
+        self.window._active_query = future
+        self.window.relock()
+        self.window._privacy_locked = False
+        self.window._finish_assistant_query(future, "Old context")
+        self.assertEqual(self.window.txt_answer.toPlainText(), "")
+        self.assertEqual(self.window.txt_context.toPlainText(), "")
 
 
 class TestIndexCarriesTheWeek(_AICase):

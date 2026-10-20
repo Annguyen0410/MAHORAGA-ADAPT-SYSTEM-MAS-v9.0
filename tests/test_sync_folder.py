@@ -22,6 +22,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 from datetime import datetime
 
 from litebrowser.core import prefs
@@ -199,6 +200,23 @@ class TestConflicts(_TwoMachines):
 
 
 class TestSafety(_TwoMachines):
+    def test_failed_publication_does_not_advance_the_baseline(self):
+        life_service.add_task(self.a, "Do not lose this")
+        with mock.patch.object(sync_folder, "_write_payload", return_value=False):
+            with self.assertRaises(OSError):
+                sync_folder.sync(self.a)
+        self.assertFalse(os.path.exists(sync_folder.state_path(self.a)))
+        self.assertTrue(sync_folder.sync(self.a)["payload_written"])
+        sync_folder.sync(self.b)
+        self.assertEqual(life_service.load_tasks(self.b)[0]["title"], "Do not lose this")
+
+    def test_invalid_schema_version_is_a_controlled_error(self):
+        path = sync_folder.payload_path(self.a)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"kind": sync_folder.PAYLOAD_KIND, "version": "invalid"}, handle)
+        with self.assertRaises(sync_folder.SyncFormatError):
+            sync_folder.sync(self.a)
+
     def test_a_snapshot_holds_the_state_before_the_merge(self):
         life_service.add_task(self.a, "Buy ink")
         self._sync(self.a)

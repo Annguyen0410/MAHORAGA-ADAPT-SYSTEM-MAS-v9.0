@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from litebrowser.core import prefs
+from litebrowser.ui.main_window.window import SearchWindow
 
 
 class TestSessionStateRoundTrip(unittest.TestCase):
@@ -50,6 +51,28 @@ class TestSessionStateRoundTrip(unittest.TestCase):
         urls = [e.get("url") for e in loaded["recently_closed"]]
         self.assertEqual(urls.count("https://x.example"), 1)
         self.assertEqual(urls[0], "https://x.example")
+
+    def test_incognito_tabs_never_enter_recently_closed_or_saved_session_payloads(self):
+        class _TabItem:
+            def data(self, _role):
+                return {"incognito": True, "url": "https://private.example"}
+
+        class _TabList:
+            def item(self, _index):
+                return _TabItem()
+
+        class _FakeWindow:
+            def __init__(self, base):
+                self.base_dir = base
+                self.tab_list = _TabList()
+                self.current_workspace_id = "main"
+
+        window = _FakeWindow(self.base)
+        SearchWindow.remember_closed_tab(window, {
+            "incognito": True, "url": "https://private.example", "title": "Private",
+        })
+        self.assertEqual(prefs.session_state_load(self.base)["recently_closed"], [])
+        self.assertIsNone(SearchWindow._tab_state_payload(window, 0, None, None))
 
     def test_legacy_list_format_is_upgraded(self):
         path = prefs.session_path(self.base)

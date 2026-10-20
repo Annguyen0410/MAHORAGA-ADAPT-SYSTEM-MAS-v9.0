@@ -22,6 +22,7 @@ from litebrowser.ui.dialogs.sessions import (
     show_hibernate_pref_dialog,
     show_history_dialog,
     show_startup_dialog,
+    show_save_research_workspace_dialog,
     show_tab_sets_dialog,
     show_vpn_dialog,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "show_quick_switcher",
     "show_routines_dialog",
     "show_save_password_dialog",
+    "show_save_research_workspace_dialog",
     "show_startup_dialog",
     "show_tab_sets_dialog",
     "show_vpn_dialog",

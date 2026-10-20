@@ -3,9 +3,11 @@ import base64
 import hashlib
 import json
 import os
+from urllib.parse import urlsplit
 
 from litebrowser.core.log import get_logger
-from litebrowser.core.profile_lock import profile_locked
+from litebrowser.core.profile_lock import profile_locked, profile_transaction
+from litebrowser.core.storage_utils import write_text_atomic
 
 try:
     from cryptography.fernet import Fernet
@@ -149,6 +151,8 @@ def _decode_v2_vault(blob, master_password):
             return True, None
         salt = base64.b64decode(kdf.get("salt") or "")
         iterations = int(kdf.get("iterations") or _KDF_ITERATIONS)
+        if not 100_000 <= iterations <= 2_000_000 or len(salt) != _SALT_BYTES:
+            return True, None
         cipher, _ = _get_v2_cipher(master_password, salt=salt, iterations=iterations)
         if not cipher:
             return True, None
@@ -170,23 +174,12 @@ def save_passwords(base_dir, entries, master_password):
     encoded = _encode_v2_vault(entries if isinstance(entries, list) else [], master_password)
     if not encoded:
         return False
-    tmp_path = None
     try:
-        path = _passwords_path(base_dir)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp_path = path + ".tmp"
         with profile_locked(base_dir):
-            with open(tmp_path, "wb") as f:
-                f.write(encoded)
-            os.replace(tmp_path, path)
+            write_text_atomic(_passwords_path(base_dir), encoded.decode("utf-8"))
         return True
     except (OSError, ValueError) as exc:
         _log.warning("password vault save failed: %s", type(exc).__name__)
-        try:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except OSError:
-            pass
         return False
 
 
@@ -223,6 +216,7 @@ def load_passwords_status(base_dir, master_password):
         return "locked", []
 
 
+@profile_transaction
 def add_password(base_dir, url, username, password, master_password):
     status, entries = load_passwords_status(base_dir, master_password)
     if status == "locked":
@@ -234,6 +228,8 @@ def add_password(base_dir, url, username, password, master_password):
             "Nothing was changed. Check the password and try again."
         )
     url_norm = _normalize_origin(url)
+    if not url_norm:
+        return False
     for e in entries:
         if _origin_match(e["url"], url_norm) and e["username"] == username:
             e["password"] = password
@@ -254,22 +250,29 @@ def get_credentials_for(base_dir, url, master_password):
 def _normalize_origin(url):
     if not url:
         return ""
-    url = url.strip()
-    for p in ("https://", "http://"):
-        if url.startswith(p):
-            url = url[len(p):]
-            break
-    if "/" in url:
-        url = url.split("/")[0]
-    return url.lower()
+    try:
+        parsed = urlsplit(url.strip() if "://" in url else "https://" + url.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+            return ""
+        host = parsed.hostname.lower().rstrip(".")
+        port = parsed.port
+        default = 443 if parsed.scheme == "https" else 80
+        authority = f"[{host}]" if ":" in host else host
+        if port is not None and port != default:
+            authority = f"{authority}:{port}"
+        return f"{parsed.scheme.lower()}://{authority}"
+    except (ValueError, TypeError, AttributeError):
+        return ""
 
 
 def _origin_match(stored_origin, page_origin):
     if not stored_origin or not page_origin:
         return False
-    so = stored_origin.lower()
-    po = page_origin.lower()
-    return po == so or po.endswith("." + so) or so.endswith("." + po)
+    # Old vaults stored host-only entries. Interpret these as HTTPS rather
+    # than releasing their secrets on an HTTP downgrade.
+    so = _normalize_origin(stored_origin)
+    po = _normalize_origin(page_origin)
+    return bool(so and po and po == so)
 
 
 AUTOFILL_SCRIPT = """
@@ -299,7 +302,7 @@ def build_autofill_script(username, password):
     """Returns JS string that sets __lite_username/__lite_password and runs AUTOFILL_SCRIPT."""
     u_esc = json.dumps(username)
     p_esc = json.dumps(password)
-    return "var __lite_username = " + u_esc + "; var __lite_password = " + p_esc + "; " + AUTOFILL_SCRIPT.strip()
+    return "(function(){var __lite_username = " + u_esc + "; var __lite_password = " + p_esc + "; " + AUTOFILL_SCRIPT.strip() + "})();"
 
 
 # Chrome-style save-password capture: a profile-level script watches every

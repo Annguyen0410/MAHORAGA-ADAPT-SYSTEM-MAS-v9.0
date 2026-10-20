@@ -54,12 +54,13 @@ def _normalize_link(link: Any) -> dict | None:
         return None
     from_type = _clean_type(link.get("from_type"))
     to_type = _clean_type(link.get("to_type"))
-    from_id = str(link.get("from_id") or "").strip()[:80]
-    to_id = str(link.get("to_id") or "").strip()[:80]
+    from_id = str(link.get("from_id") or "").strip()[:1024]
+    to_id = str(link.get("to_id") or "").strip()[:1024]
     if not (from_type and to_type and from_id and to_id):
         return None
     created = str(link.get("created_at") or "").strip() or _now_iso()
     return {
+        **link,
         "id": str(link.get("id") or uuid.uuid4().hex)[:80],
         "from_type": from_type,
         "from_id": from_id,

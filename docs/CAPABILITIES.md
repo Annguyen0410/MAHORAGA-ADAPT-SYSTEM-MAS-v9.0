@@ -25,7 +25,7 @@ accepted alternative to deleting the code.
 | Update check / download / verify / install | `services/update_service.py` → `ui/app_shell.py` |
 | Slash commands (completion, hints, help dialog) | `core/commands.py` → `app_shell.py`, `ui/dialogs/navigation.py`, `ui/dialogs/shell_palette.py` |
 | Bridge action advertising | `services/android_bridge_service.py` (`API_VERSION`) |
-| Workspace/chain apps (7 apps: LinkLumina, Cục Quản Lý, MAS, World Leaderboard, Bí Mật, Bói Toán, Hub) | `litebrowser/data/chain.json` → `core/app_paths.py` |
+| Workspace/chain apps (7 apps: LinkLumina, Management Hub, MAS, World Leaderboard, PersonalFrequency, Fortune & Reflection, Hub) | `litebrowser/data/chain.json` → `core/app_paths.py` |
 | Search engines | `core/prefs.py` → `SEARCH_ENGINES` |
 | Themes / accents | `ui/theme.py` → `PALETTES` / `ACCENTS`; the *resolved* (auto day/night) mode comes from `core/prefs.py` (`resolved_auto_theme`, `theme_data.is_night_theme`) |
 | Web pages following the shell's light/dark mode | `core/prefs.py` (`effective_force_dark_web`) → `browser/browser_page.py` (`ensure_forced_dark_script`), re-applied on a theme flip by `ui/main_window/window_topbar.py` (`refresh_chrome_theme`) |
@@ -75,7 +75,7 @@ bundle, or a future UI, and are intentionally *not* dead:
 
 | Capability | API | Reachable from | Why kept |
 |---|---|---|---|
-| Cục Quản Lý support URL | `app_paths.cuc_quan_ly_support_url` | — | Resolves the bundled copy's `index.html`; wired when the packaged copy is missing |
+| Management Hub support URL | `app_paths.cuc_quan_ly_support_url` | — | Resolves the bundled copy's `index.html`; wired when the packaged copy is missing |
 
 The Google, planner-settings, rename, monitor-removal and passcode rows that used to
 live here were promoted into §1 (Settings, the Weekly Plan header, the Tab Sets dialog

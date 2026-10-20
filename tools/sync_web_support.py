@@ -16,6 +16,7 @@ comes from ``litebrowser.core.app_paths`` so the build and the running app agree
 on which folder names are stale.
 """
 import os
+from pathlib import Path
 import shutil
 import sys
 
@@ -40,18 +41,45 @@ def is_skipped(name: str) -> bool:
     return name in SKIP_DIRS or name.lower().endswith(SKIP_SUFFIXES)
 
 
-def prune(dest: str, log=print) -> int:
-    """Delete skipped entries older builds left in ``dest``, at any depth.
+# Public static assets only. Never inspect private backend stores or keys.
+PRIVATE_DIRS = frozenset({"server", "node_modules", "tests", "profiles", "runtime_data", "browserdata", "safevault", "downloads", "litebrowser-update", "extension", "bí mật - bản cũ full màu"})
+PUBLIC_SUFFIXES = frozenset({".html", ".htm", ".css", ".js", ".mjs", ".json", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".otf", ".mp3", ".wav", ".mp4", ".webm"})
+PRIVATE_FILES = frozenset({"sessions.json", "config.local.json", "credentials.json", "tokens.json", "package-lock.json", "package.json", "replace_colors.js"})
 
-    Older builds copied the whole folder (dev logs included), so the stale copies
-    can sit several levels down — walking ``dest`` is what actually clears them.
+
+def _private_directory(name: str) -> bool:
+    return name.startswith(".") or name.lower() in PRIVATE_DIRS or is_skipped(name)
+
+
+def _private_file(name: str) -> bool:
+    return name.startswith(".") or name.lower() in PRIVATE_FILES or is_skipped(name) or Path(name).suffix.lower() not in PUBLIC_SUFFIXES
+
+
+def public_files(source: str):
+    """Yield safe relative paths without following links or entering private dirs."""
+    root_path = Path(source).resolve()
+    for root, dirs, names in os.walk(root_path, topdown=True, followlinks=False):
+        dirs[:] = sorted(name for name in dirs if not _private_directory(name) and not Path(root, name).is_symlink())
+        for name in sorted(names):
+            path = Path(root, name)
+            if _private_file(name) or path.is_symlink():
+                continue
+            if path.is_file():
+                yield path.relative_to(root_path)
+
+
+def prune(dest: str, log=print) -> int:
+    """Remove non-public entries older builds left in the generated bundle.
+
+    Apply the same policy as copying, without following links or reading private
+    file contents. A cleanup failure must fail the build, not ship stale secrets.
     """
     if not os.path.isdir(dest):
         return 0
     removed = 0
     for root, dirs, names in os.walk(dest, topdown=True):
-        stale_dirs = [name for name in dirs if is_skipped(name)]
-        stale_files = [name for name in names if is_skipped(name)]
+        stale_dirs = [name for name in dirs if _private_directory(name) or os.path.islink(os.path.join(root, name))]
+        stale_files = [name for name in names if _private_file(name) or os.path.islink(os.path.join(root, name))]
         dirs[:] = [name for name in dirs if name not in stale_dirs]
         for name in stale_dirs + stale_files:
             path = os.path.join(root, name)
@@ -61,8 +89,7 @@ def prune(dest: str, log=print) -> int:
                 else:
                     os.remove(path)
             except OSError as exc:
-                log(f"  could not remove {path}: {exc}")
-                continue
+                raise OSError(f"Could not remove non-public bundle entry {path}: {exc}") from exc
             removed += 1
             log(f"  pruned {os.path.relpath(path, dest)}")
     return removed
@@ -70,28 +97,23 @@ def prune(dest: str, log=print) -> int:
 
 def sync(source: str, dest: str, log=print) -> tuple[int, int]:
     """Copy ``source`` onto ``dest``, returning (files copied, bytes copied)."""
-    os.makedirs(dest, exist_ok=True)
-    prune(dest, log)
-    files = 0
-    total = 0
-    for root, dirs, names in os.walk(source, topdown=True):
-        dirs[:] = [d for d in dirs if not is_skipped(d)]
-        target = dest if root == source else os.path.join(dest, os.path.relpath(root, source))
-        os.makedirs(target, exist_ok=True)
-        for name in names:
-            if is_skipped(name):
-                continue
-            src_path = os.path.join(root, name)
-            if not os.path.isfile(src_path):
-                continue
-            size = os.path.getsize(src_path)
-            try:
-                shutil.copy2(src_path, os.path.join(target, name))
-            except OSError as exc:
-                log(f"  skipped {src_path}: {exc}")
-                continue
-            files += 1
-            total += size
+    source_path, dest_path = Path(source).resolve(), Path(dest).resolve()
+    if not source_path.is_dir():
+        raise FileNotFoundError(source)
+    if source_path == dest_path or source_path.is_relative_to(dest_path) or dest_path.is_relative_to(source_path):
+        raise ValueError("Source and destination must be separate, non-nested folders")
+    dest_path.mkdir(parents=True, exist_ok=True)
+    prune(str(dest_path), log)
+    files = total = 0
+    for relative in public_files(str(source_path)):
+        src_path, target = source_path / relative, dest_path / relative
+        if not target.resolve().is_relative_to(dest_path):
+            raise OSError("Destination path escapes the web bundle")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # A failed public-asset copy is a failed build, never a silent success.
+        shutil.copy2(src_path, target)
+        files += 1
+        total += src_path.stat().st_size
     return files, total
 
 
@@ -120,7 +142,11 @@ def main(argv=None) -> int:
         return 1
     print(f"Syncing {source}\n      -> {dest}")
     print(f"  not shipping: {', '.join(SKIP_DIRS)}")
-    files, total = sync(source, dest)
+    try:
+        files, total = sync(source, dest)
+    except (OSError, ValueError) as exc:
+        print(f"Sync failed: {exc}")
+        return 1
     print(f"  copied {files} files, {total / (1024 * 1024):.1f} MB")
     return 0
 

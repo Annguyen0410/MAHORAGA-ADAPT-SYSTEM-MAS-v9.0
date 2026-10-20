@@ -50,6 +50,13 @@ def _saved_proxy_chromium_flag(app_dir: str) -> str:
             cfg = _json.load(fh)
         if not cfg.get("enabled"):
             return ""
+        pac_url = str(cfg.get("pac_url") or "").strip()
+        if pac_url:
+            from urllib.parse import urlsplit
+            parsed = urlsplit(pac_url)
+            if parsed.scheme in ("http", "https", "file") and not any(c.isspace() for c in pac_url):
+                return f"--proxy-pac-url={pac_url}"
+            return ""
         host = (cfg.get("host") or "").strip()
         port = int(cfg.get("port") or 0)
         if not host or port <= 0 or port > 65535:
@@ -64,10 +71,6 @@ def _saved_proxy_chromium_flag(app_dir: str) -> str:
             os.environ["MEI_PROXY_AUTH_WARNING"] = (
                 "SOCKS5 with username/password is not supported by Chromium; connect an HTTP proxy for authenticated use."
             )
-        # PAC (proxy auto-config) beats a static proxy when present.
-        pac_url = str(cfg.get("pac_url") or "").strip()
-        if pac_url:
-            return f"--proxy-pac-url={pac_url}"
         return "--proxy-server=%s://%s:%d" % (scheme, host, port)
     except Exception:
         return ""
@@ -154,7 +157,10 @@ def _register_bundled_personal_sites(profile_dir, app_dir):
             continue
         # Migrate entries created by older builds to the six public defaults,
         # without touching unrelated sites the user added themselves.
-        if url in remote_urls or url in bundled_urls:
+        if url in remote_urls:
+            # Keep user titles and ordering for already-migrated defaults.
+            continue
+        if url in bundled_urls:
             prefs.remove_personal_site(profile_dir, url)
             continue
         unquoted_url = unquote(url)
@@ -221,6 +227,11 @@ def main(app_dir=None):
     from litebrowser.core import profile_lock
 
     acquired, lock_msg = profile_lock.try_acquire_process_lock(profile_dir)
+    if not acquired and os.environ.get("MEI_SMART_RESTART") == "1":
+        deadline = time.monotonic() + 45
+        while not acquired and time.monotonic() < deadline:
+            time.sleep(0.1)
+            acquired, lock_msg = profile_lock.try_acquire_process_lock(profile_dir)
     if not acquired:
         from PyQt5.QtWidgets import QMessageBox as _QMB
 
@@ -274,7 +285,16 @@ def main(app_dir=None):
 
         _QMB.warning(windows[0], "VPN", proxy_warning)
     android_bridge_service.start_from_prefs(profile_dir)
-    app.aboutToQuit.connect(android_bridge_service.stop)
+    def finish_application():
+        android_bridge_service.stop()
+        for window in windows:
+            if not window._closing:
+                window.persist_state()
+                window.shutdown()
+        # Keep the claim until process exit: running executor jobs can still
+        # finish after the GUI quits, and Chromium releases its files at exit.
+
+    app.aboutToQuit.connect(finish_application)
     sys.exit(app.exec_())
 
 

@@ -8,7 +8,7 @@ import time
 from litebrowser.core import app_paths
 from litebrowser.core import theme_data as _theme_mod
 from litebrowser.core.log import get_logger
-from litebrowser.core.profile_lock import profile_locked
+from litebrowser.core.profile_lock import profile_locked, profile_transaction
 from litebrowser.core.storage_utils import read_json, write_json, write_text_atomic
 
 _log = get_logger("prefs")
@@ -47,6 +47,7 @@ def get_proxy_config(base_dir) -> dict:
     return data if isinstance(data, dict) else {"enabled": False}
 
 
+@profile_transaction
 def set_proxy_config(base_dir, cfg: dict):
     write_json(proxy_config_path(base_dir), cfg if isinstance(cfg, dict) else {"enabled": False})
 
@@ -55,6 +56,7 @@ def get_auto_connect_vpn(base_dir) -> bool:
     return bool(load_prefs(base_dir).get("vpn_auto_connect", False))
 
 
+@profile_transaction
 def set_auto_connect_vpn(base_dir, value):
     data = load_prefs(base_dir)
     data["vpn_auto_connect"] = bool(value)
@@ -68,6 +70,7 @@ def get_last_vpn_proxy(base_dir) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+@profile_transaction
 def set_last_vpn_proxy(base_dir, cfg: dict):
     data = load_prefs(base_dir)
     data["vpn_last_proxy"] = cfg if isinstance(cfg, dict) else {}
@@ -184,6 +187,7 @@ def load_prefs(base_dir):
     return _deep_copy_prefs(base_dir, signature, data)
 
 
+@profile_transaction
 def save_prefs(base_dir, data):
     _prefs_cache.pop(base_dir, None)
     _prefs_copy_cache.pop(base_dir, None)
@@ -203,6 +207,7 @@ def get_https_only(base_dir):
     return bool(load_prefs(base_dir).get("https_only", True))
 
 
+@profile_transaction
 def set_https_only(base_dir, value):
     data = load_prefs(base_dir)
     data["https_only"] = bool(value)
@@ -246,6 +251,7 @@ def get_search_engine(base_dir):
     return name if name in SEARCH_ENGINES else DEFAULT_SEARCH_ENGINE
 
 
+@profile_transaction
 def set_search_engine(base_dir, name):
     data = load_prefs(base_dir)
     data["search_engine"] = name if name in SEARCH_ENGINES else DEFAULT_SEARCH_ENGINE
@@ -254,12 +260,13 @@ def set_search_engine(base_dir, name):
 
 def get_accent(base_dir):
     name = load_prefs(base_dir).get("accent", "brass")
-    return name if name in _theme_mod.ACCENTS else "brass"
+    return name if _theme_mod.valid_accent(name) else "brass"
 
 
+@profile_transaction
 def set_accent(base_dir, name):
     data = load_prefs(base_dir)
-    data["accent"] = name if name in _theme_mod.ACCENTS else "brass"
+    data["accent"] = name if _theme_mod.valid_accent(name) else "brass"
     save_prefs(base_dir, data)
 
 
@@ -273,6 +280,7 @@ def get_pref(base_dir, key, default=None):
     return load_prefs(base_dir).get(key, default)
 
 
+@profile_transaction
 def save_pref(base_dir, key, value):
     data = load_prefs(base_dir)
     data[key] = value
@@ -284,6 +292,7 @@ def get_auto_theme(base_dir) -> bool:
     return bool(load_prefs(base_dir).get("auto_theme", False))
 
 
+@profile_transaction
 def set_auto_theme(base_dir, value):
     data = load_prefs(base_dir)
     data["auto_theme"] = bool(value)
@@ -295,8 +304,21 @@ def resolved_auto_theme(base_dir):
     otherwise. Pairs each user theme with its sibling (minimal <-> minimal-night
     etc.); unknown pairs resolve to the plain default."""
     theme_id = get_shell_theme(base_dir)
+    appearance = get_pref(base_dir, "appearance_mode", "palette")
+    if appearance in ("light", "dark", "system"):
+        dark = appearance == "dark"
+        if appearance == "system":
+            try:
+                import winreg
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+                    dark = not bool(winreg.QueryValueEx(key, "AppsUseLightTheme")[0])
+            except (ImportError, OSError):
+                dark = False
+        return _theme_mod.theme_variant(theme_id, dark)
     if not get_auto_theme(base_dir):
         return theme_id
+
+
     hour = time.localtime().tm_hour
     day_mode = 6 <= hour < 18
     pairs = {
@@ -316,19 +338,70 @@ def resolved_auto_theme(base_dir):
         "sunrise-day": ("sunrise-day", "midnight-ember"),
         "autumn-day": ("autumn-day", "cafe-night"),
     }
-    day, night = pairs.get(theme_id, (_theme_mod.DEFAULT_THEME, "cafe-night"))
+    day, night = pairs.get(theme_id, (_theme_mod.theme_variant(theme_id, False), _theme_mod.theme_variant(theme_id, True)))
     return day if day_mode else night
+
+
+def _system_reduced_motion() -> bool:
+    """Read Windows' client-area animation preference when it is available.
+
+    Other platforms keep motion enabled unless the user chooses Reduce. The
+    explicit setting remains available everywhere, including systems whose
+    accessibility API is not exposed by the current Qt binding.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        enabled = ctypes.c_int()
+        # SPI_GETCLIENTAREAANIMATION; false means Windows asks apps to reduce
+        # or disable client-area movement and fade effects.
+        ok = ctypes.windll.user32.SystemParametersInfoW(
+            0x1042, 0, ctypes.byref(enabled), 0
+        )
+        return bool(ok) and not bool(enabled.value)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return False
+
+
+def reduced_motion_enabled(base_dir) -> bool:
+    """Whether nonessential Mei animations should be removed for this profile."""
+    if not base_dir:
+        return _system_reduced_motion()
+    mode = get_pref(base_dir, "reduced_motion", "system")
+    if mode == "reduce":
+        return True
+    if mode == "allow":
+        return False
+    return _system_reduced_motion()
+
+
+_MOTION_DURATIONS_MS = {
+    "micro": 100,
+    "standard": 160,
+    "workspace": 240,
+    "dialog": 180,
+}
+
+
+def motion_duration_ms(base_dir, transition: str = "standard") -> int:
+    """Return a shared transition duration, or zero under reduced motion."""
+    duration = _MOTION_DURATIONS_MS.get(transition, _MOTION_DURATIONS_MS["standard"])
+    return 0 if reduced_motion_enabled(base_dir) else duration
 
 
 DEFAULT_BASE_DIR = ""
 
 
+@profile_transaction
 def set_default_base_dir(base_dir: str):
     """Remember the primary profile dir for theme lookups without a profile."""
     global DEFAULT_BASE_DIR
     DEFAULT_BASE_DIR = base_dir or ""
 
 
+@profile_transaction
 def set_shell_theme(base_dir, name):
     data = load_prefs(base_dir)
     fallback = _theme_mod.DEFAULT_THEME
@@ -343,6 +416,7 @@ def get_site_zoom_map(base_dir):
     return raw if isinstance(raw, dict) else {}
 
 
+@profile_transaction
 def set_site_zoom(base_dir, host, factor):
     data = load_prefs(base_dir)
     zooms = data.get("site_zoom", {})
@@ -370,6 +444,7 @@ def get_password_manager_enabled(base_dir):
     return bool(load_prefs(base_dir).get("password_manager_enabled", False))
 
 
+@profile_transaction
 def set_password_manager_enabled(base_dir, value):
     data = load_prefs(base_dir)
     data["password_manager_enabled"] = bool(value)
@@ -380,6 +455,7 @@ def get_autofill_passwords(base_dir):
     return bool(load_prefs(base_dir).get("autofill_passwords", False))
 
 
+@profile_transaction
 def set_autofill_passwords(base_dir, value):
     data = load_prefs(base_dir)
     data["autofill_passwords"] = bool(value)
@@ -400,6 +476,7 @@ def effective_force_dark_web(base_dir) -> bool:
     return _theme_mod.is_night_theme(resolved_auto_theme(base_dir))
 
 
+@profile_transaction
 def set_force_dark_web(base_dir, value):
     data = load_prefs(base_dir)
     data["force_dark_web"] = bool(value)
@@ -411,6 +488,7 @@ def get_text_highlight_enabled(base_dir):
     return bool(load_prefs(base_dir).get("text_highlight_enabled", True))
 
 
+@profile_transaction
 def set_text_highlight_enabled(base_dir, value):
     data = load_prefs(base_dir)
     data["text_highlight_enabled"] = bool(value)
@@ -421,6 +499,7 @@ def get_ui_dynamic_background(base_dir):
     return bool(load_prefs(base_dir).get("ui_dynamic_background", False))
 
 
+@profile_transaction
 def set_ui_dynamic_background(base_dir, value):
     data = load_prefs(base_dir)
     data["ui_dynamic_background"] = bool(value)
@@ -435,6 +514,7 @@ def get_last_web_panel(base_dir):
     return "", ""
 
 
+@profile_transaction
 def set_last_web_panel(base_dir, title, url):
     data = load_prefs(base_dir)
     data["web_panel"] = {"title": str(title or ""), "url": str(url or ""), "visible": True}
@@ -446,6 +526,7 @@ def get_web_panel_visible(base_dir):
     return bool(data.get("visible")) if isinstance(data, dict) else False
 
 
+@profile_transaction
 def set_web_panel_visible(base_dir, value):
     data = load_prefs(base_dir)
     panel = data.get("web_panel") if isinstance(data.get("web_panel"), dict) else {}
@@ -458,6 +539,7 @@ def get_adblock_filter_file(base_dir):
     return load_prefs(base_dir).get("adblock_filter_file", "")
 
 
+@profile_transaction
 def set_adblock_filter_file(base_dir, path):
     data = load_prefs(base_dir)
     data["adblock_filter_file"] = path or ""
@@ -469,6 +551,7 @@ def get_passcode_record(base_dir):
     return d.get("passcode_salt", ""), d.get("passcode_hash", ""), int(d.get("passcode_rounds", 0) or 0)
 
 
+@profile_transaction
 def set_passcode_record(base_dir, salt_b64, hash_b64, rounds):
     data = load_prefs(base_dir)
     data["passcode_salt"] = salt_b64 or ""
@@ -481,6 +564,7 @@ def get_personal_root(base_dir):
     return load_prefs(base_dir).get("personal_root", "")
 
 
+@profile_transaction
 def set_personal_root(base_dir, path):
     data = load_prefs(base_dir)
     data["personal_root"] = path or ""
@@ -492,12 +576,14 @@ def get_personal_sites(base_dir):
     return sites if isinstance(sites, list) else []
 
 
+@profile_transaction
 def save_personal_sites(base_dir, sites):
     data = load_prefs(base_dir)
     data["personal_sites"] = sites if isinstance(sites, list) else []
     save_prefs(base_dir, data)
 
 
+@profile_transaction
 def add_personal_site(base_dir, url, title=""):
     url = (url or "").strip()
     if not url:
@@ -514,6 +600,7 @@ def add_personal_site(base_dir, url, title=""):
     return True
 
 
+@profile_transaction
 def remove_personal_site(base_dir, url):
     url = (url or "").strip()
     if not url:
@@ -541,6 +628,7 @@ def get_show_bundled_sites(base_dir) -> bool:
     return bool(user_sites)
 
 
+@profile_transaction
 def set_show_bundled_sites(base_dir, value):
     data = load_prefs(base_dir)
     data["show_bundled_sites"] = bool(value)
@@ -552,6 +640,7 @@ def load_permissions(base_dir):
     return data if isinstance(data, dict) else {}
 
 
+@profile_transaction
 def save_permissions(base_dir, perms):
     with profile_locked(base_dir):
         write_json(permissions_path(base_dir), perms)
@@ -561,6 +650,7 @@ def get_permission(base_dir, origin, feature):
     return load_permissions(base_dir).get(origin, {}).get(feature)
 
 
+@profile_transaction
 def set_permission(base_dir, origin, feature, policy):
     perms = load_permissions(base_dir)
     perms.setdefault(origin, {})
@@ -577,6 +667,7 @@ def get_hibernate_seconds(base_dir):
     return int(load_prefs(base_dir).get("hibernate_seconds", 300))
 
 
+@profile_transaction
 def save_hibernate_seconds(base_dir, seconds):
     data = load_prefs(base_dir)
     data["hibernate_seconds"] = int(seconds or 0)
@@ -592,6 +683,7 @@ def get_defer_background_tabs(base_dir):
     return bool(load_prefs(base_dir).get("defer_background_tabs", True))
 
 
+@profile_transaction
 def set_defer_background_tabs(base_dir, value):
     data = load_prefs(base_dir)
     data["defer_background_tabs"] = bool(value)
@@ -611,6 +703,7 @@ def get_max_live_tabs(base_dir):
     return max(1, min(32, value))
 
 
+@profile_transaction
 def set_max_live_tabs(base_dir, value):
     data = load_prefs(base_dir)
     try:
@@ -625,6 +718,7 @@ def get_new_tab_steam(base_dir):
     return bool(load_prefs(base_dir).get("new_tab_steam", True))
 
 
+@profile_transaction
 def set_new_tab_steam(base_dir, value):
     data = load_prefs(base_dir)
     data["new_tab_steam"] = bool(value)
@@ -636,6 +730,7 @@ def get_new_tab_greeting(base_dir):
     return bool(load_prefs(base_dir).get("new_tab_greeting", True))
 
 
+@profile_transaction
 def set_new_tab_greeting(base_dir, value):
     data = load_prefs(base_dir)
     data["new_tab_greeting"] = bool(value)
@@ -647,6 +742,7 @@ def get_show_morning_brief(base_dir):
     return bool(load_prefs(base_dir).get("show_morning_brief", True))
 
 
+@profile_transaction
 def set_show_morning_brief(base_dir, value):
     data = load_prefs(base_dir)
     data["show_morning_brief"] = bool(value)
@@ -667,6 +763,7 @@ def get_study_reminder_minutes(base_dir):
     return max(0, min(480, value))
 
 
+@profile_transaction
 def set_study_reminder_minutes(base_dir, value):
     data = load_prefs(base_dir)
     try:
@@ -680,6 +777,7 @@ def get_sync_endpoint(base_dir):
     return str(load_prefs(base_dir).get("sync_endpoint", "") or "").strip()
 
 
+@profile_transaction
 def set_sync_endpoint(base_dir, value):
     data = load_prefs(base_dir)
     data["sync_endpoint"] = str(value or "").strip()
@@ -690,6 +788,7 @@ def get_sync_token(base_dir):
     return str(load_prefs(base_dir).get("sync_token", "") or "").strip()
 
 
+@profile_transaction
 def set_sync_token(base_dir, value):
     data = load_prefs(base_dir)
     data["sync_token"] = str(value or "").strip()
@@ -700,6 +799,7 @@ def get_sync_enabled(base_dir):
     return bool(load_prefs(base_dir).get("sync_enabled", False))
 
 
+@profile_transaction
 def set_sync_enabled(base_dir, value):
     data = load_prefs(base_dir)
     data["sync_enabled"] = bool(value)
@@ -711,6 +811,7 @@ def get_browser_data_saver(base_dir):
     return bool(load_prefs(base_dir).get("browser_data_saver", False))
 
 
+@profile_transaction
 def set_browser_data_saver(base_dir, enabled):
     data = load_prefs(base_dir)
     data["browser_data_saver"] = bool(enabled)
@@ -723,6 +824,7 @@ def get_disable_webgl(base_dir):
     return bool(load_prefs(base_dir).get("disable_webgl", False))
 
 
+@profile_transaction
 def set_disable_webgl(base_dir, enabled):
     data = load_prefs(base_dir)
     data["disable_webgl"] = bool(enabled)
@@ -736,6 +838,7 @@ def get_block_third_party_cookies(base_dir):
     return bool(load_prefs(base_dir).get("block_third_party_cookies", True))
 
 
+@profile_transaction
 def set_block_third_party_cookies(base_dir, value):
     data = load_prefs(base_dir)
     data["block_third_party_cookies"] = bool(value)
@@ -747,6 +850,7 @@ def get_strict_referrer(base_dir):
     return bool(load_prefs(base_dir).get("strict_referrer", True))
 
 
+@profile_transaction
 def set_strict_referrer(base_dir, value):
     data = load_prefs(base_dir)
     data["strict_referrer"] = bool(value)
@@ -760,6 +864,7 @@ def get_strip_client_hints(base_dir):
     return bool(load_prefs(base_dir).get("strip_client_hints", True))
 
 
+@profile_transaction
 def set_strip_client_hints(base_dir, value):
     data = load_prefs(base_dir)
     data["strip_client_hints"] = bool(value)
@@ -770,6 +875,7 @@ def get_chrome_compat_shim(base_dir):
     return bool(load_prefs(base_dir).get("chrome_compat_shim", True))
 
 
+@profile_transaction
 def set_chrome_compat_shim(base_dir, value):
     data = load_prefs(base_dir)
     data["chrome_compat_shim"] = bool(value)
@@ -781,6 +887,7 @@ def get_adblock_subscriptions(base_dir):
     return data if isinstance(data, list) else []
 
 
+@profile_transaction
 def set_adblock_subscriptions(base_dir, value):
     data = load_prefs(base_dir)
     data["adblock_subscriptions"] = value if isinstance(value, list) else []
@@ -820,14 +927,22 @@ def session_state_load(base_dir):
     return data
 
 
-def session_state_save(base_dir, state):
+def session_state_save(base_dir, state, *, window_slot=None):
     # The read-modify-write must sit inside the lock: v6.4 read the file
     # BEFORE acquiring it, so two windows (or the bridge thread) saving
     # concurrently could silently drop each other's recently_closed/tabs.
     with profile_locked(base_dir):
         payload = session_state_load(base_dir)
         if isinstance(state, dict):
-            payload.update(state)
+            incoming = dict(state)
+            if window_slot and "tabs" in incoming:
+                legacy_workspace = "ws2" if window_slot == "secondary" else "ws1"
+                kept = [tab for tab in payload.get("tabs", []) if isinstance(tab, dict) and (
+                    tab.get("window_slot") != window_slot if tab.get("window_slot") else
+                    tab.get("workspace_id", "ws1") != legacy_workspace
+                )]
+                incoming["tabs"] = kept + [{**tab, "window_slot": window_slot} for tab in incoming["tabs"] if isinstance(tab, dict)]
+            payload.update(incoming)
         payload["version"] = 2
         payload["tabs"] = payload.get("tabs", []) if isinstance(payload.get("tabs", []), list) else []
         payload["recently_closed"] = payload.get("recently_closed", []) if isinstance(payload.get("recently_closed", []), list) else []
@@ -857,6 +972,7 @@ def load_history_entries(base_dir):
     return entries
 
 
+@profile_transaction
 def save_history_entries(base_dir, entries):
     ensure_profile_layout(base_dir)
     lines = "".join(f"{int(ts or 0)}\t{url}\n" for ts, url in entries)
@@ -876,6 +992,7 @@ def load_bookmarks(base_dir):
     return data if isinstance(data, list) else []
 
 
+@profile_transaction
 def save_bookmarks(base_dir, bookmarks):
     with profile_locked(base_dir):
         write_json(bookmarks_path(base_dir), bookmarks if isinstance(bookmarks, list) else [])
@@ -890,6 +1007,7 @@ def load_bookmark_folders(base_dir):
     return data if isinstance(data, list) else []
 
 
+@profile_transaction
 def save_bookmark_folders(base_dir, folders):
     with profile_locked(base_dir):
         write_json(bookmark_folders_path(base_dir), folders if isinstance(folders, list) else [])
@@ -915,6 +1033,7 @@ def load_workspaces(base_dir):
     return data
 
 
+@profile_transaction
 def save_workspaces(base_dir, data):
     with profile_locked(base_dir):
         write_json(workspaces_path(base_dir), data)
@@ -942,6 +1061,7 @@ def load_ai_settings(base_dir):
     return data if isinstance(data, dict) else {}
 
 
+@profile_transaction
 def save_ai_settings(base_dir, settings):
     with profile_locked(base_dir):
         current = load_ai_settings(base_dir)
@@ -966,6 +1086,7 @@ def get_last_profile(app_dir):
     return None
 
 
+@profile_transaction
 def set_last_profile(app_dir, name):
     # Atomic write: a crash mid-write left an empty file (fell back to None).
     write_text_atomic(_last_profile_path(app_dir), (name or "").strip() + "\n")
@@ -1022,6 +1143,7 @@ def get_mobile_bridge_enabled(base_dir):
     return bool(load_prefs(base_dir).get("mobile_bridge_enabled", False))
 
 
+@profile_transaction
 def set_mobile_bridge_enabled(base_dir, value):
     data = load_prefs(base_dir)
     data["mobile_bridge_enabled"] = bool(value)
@@ -1033,6 +1155,7 @@ def get_mobile_bridge_host(base_dir):
     return h if h else MOBILE_BRIDGE_DEFAULT_HOST
 
 
+@profile_transaction
 def set_mobile_bridge_host(base_dir, host):
     data = load_prefs(base_dir)
     data["mobile_bridge_host"] = (host or MOBILE_BRIDGE_DEFAULT_HOST).strip() or MOBILE_BRIDGE_DEFAULT_HOST
@@ -1047,6 +1170,7 @@ def get_mobile_bridge_port(base_dir):
     return max(1, min(65535, p))
 
 
+@profile_transaction
 def set_mobile_bridge_port(base_dir, port):
     data = load_prefs(base_dir)
     try:
@@ -1065,12 +1189,14 @@ def generate_mobile_bridge_token():
     return secrets.token_urlsafe(32)
 
 
+@profile_transaction
 def set_mobile_bridge_token(base_dir, token):
     data = load_prefs(base_dir)
     data["mobile_bridge_token"] = (token or "").strip()
     save_prefs(base_dir, data)
 
 
+@profile_transaction
 def ensure_mobile_bridge_token(base_dir):
     token = get_mobile_bridge_token(base_dir)
     if token:
@@ -1084,6 +1210,7 @@ def get_mobile_bridge_lan(base_dir):
     return get_mobile_bridge_host(base_dir) == MOBILE_BRIDGE_LAN_HOST
 
 
+@profile_transaction
 def set_mobile_bridge_lan(base_dir, lan_enabled):
     set_mobile_bridge_host(base_dir, MOBILE_BRIDGE_LAN_HOST if lan_enabled else MOBILE_BRIDGE_DEFAULT_HOST)
 
@@ -1092,6 +1219,7 @@ def get_show_neural_notes_graph(base_dir):
     return bool(load_prefs(base_dir).get("show_neural_notes_graph", False))
 
 
+@profile_transaction
 def set_show_neural_notes_graph(base_dir, value):
     data = load_prefs(base_dir)
     data["show_neural_notes_graph"] = bool(value)
@@ -1104,6 +1232,7 @@ def get_note_order(base_dir):
     return [str(x) for x in order] if isinstance(order, list) else []
 
 
+@profile_transaction
 def set_note_order(base_dir, order):
     data = load_prefs(base_dir)
     data["note_order"] = [str(x) for x in order] if isinstance(order, list) else []
@@ -1114,6 +1243,7 @@ def get_google_oauth_client_id(base_dir):
     return (load_prefs(base_dir).get("google_oauth_client_id") or "").strip()
 
 
+@profile_transaction
 def set_google_oauth_client_id(base_dir, client_id):
     data = load_prefs(base_dir)
     data["google_oauth_client_id"] = (client_id or "").strip()
@@ -1125,12 +1255,14 @@ def get_google_account(base_dir):
     return value if isinstance(value, dict) else {}
 
 
+@profile_transaction
 def set_google_account(base_dir, account):
     data = load_prefs(base_dir)
     data["google_account"] = account if isinstance(account, dict) else {}
     save_prefs(base_dir, data)
 
 
+@profile_transaction
 def clear_google_account(base_dir):
     data = load_prefs(base_dir)
     data.pop("google_account", None)
@@ -1143,6 +1275,7 @@ def get_google_token_cache(base_dir):
     return value if isinstance(value, dict) else {}
 
 
+@profile_transaction
 def set_google_token_cache(base_dir, token_cache):
     data = load_prefs(base_dir)
     data["google_token_cache"] = token_cache if isinstance(token_cache, dict) else {}

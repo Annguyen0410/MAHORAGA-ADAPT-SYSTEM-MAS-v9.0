@@ -14,10 +14,11 @@ Intervals floor at 1 day after the first successful review; ease clamps to
 [1.3, 3.0] so a rough streak never wedges a card.
 """
 
+import math
 import os
 import time
 
-from litebrowser.core.profile_lock import profile_locked
+from litebrowser.core.profile_lock import profile_locked, profile_transaction
 from litebrowser.core.storage_utils import read_json, write_json
 from litebrowser.services import history_service
 
@@ -30,10 +31,30 @@ def cards_path(base_dir: str) -> str:
     return os.path.join(base_dir, "flashcards.json")
 
 
+def _number(value, default, maximum):
+    try:
+        result = float(value)
+        return max(0, min(maximum, result)) if math.isfinite(result) else default
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
 def load_cards(base_dir: str) -> list[dict]:
     data = read_json(cards_path(base_dir), {"version": 1, "cards": []})
     cards = data.get("cards") if isinstance(data, dict) else None
-    return [c for c in cards if isinstance(c, dict)] if isinstance(cards, list) else []
+    result = []
+    for raw in cards if isinstance(cards, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        card = dict(raw)
+        for key in ("front", "back", "source_note_id"):
+            card[key] = str(card.get(key) or "")
+        card["ease"] = max(_EASE_MIN, _number(card.get("ease"), 2.5, _EASE_MAX))
+        card["interval"] = _number(card.get("interval"), 0, 36500)
+        for key in ("due", "reviews", "lapses"):
+            card[key] = int(_number(card.get(key), 0, 253402214400 if key == "due" else 1_000_000))
+        result.append(card)
+    return result
 
 
 def save_cards(base_dir: str, cards: list[dict]) -> None:
@@ -61,6 +82,7 @@ def new_card(front: str, back: str, source_note_id: str = "") -> dict:
     }
 
 
+@profile_transaction
 def add_cards(base_dir: str, cards: list[dict]) -> list[dict]:
     """Store several prepared cards (see :func:`new_card`) in a single write.
 
@@ -84,6 +106,7 @@ def add_card(base_dir: str, front: str, back: str, source_note_id: str = "") -> 
     return card
 
 
+@profile_transaction
 def delete_card(base_dir: str, card_id: str) -> bool:
     from litebrowser.services import link_service
 
@@ -96,6 +119,7 @@ def delete_card(base_dir: str, card_id: str) -> bool:
     return True
 
 
+@profile_transaction
 def delete_cards_for_note(base_dir: str, note_id: str) -> int:
     """Cascade: when a source note is deleted, its generated cards go too
     (they would review as orphans with no context)."""
@@ -117,6 +141,7 @@ def due_cards(base_dir: str, now: int | None = None) -> list[dict]:
     return [c for c in load_cards(base_dir) if int(c.get("due", 0) or 0) <= now]
 
 
+@profile_transaction
 def review_card(base_dir: str, card_id: str, grade: str) -> dict | None:
     """Apply one SM-2 review; grade in {again, hard, good, easy}."""
     grade = (grade or "").strip().lower()
@@ -155,5 +180,6 @@ def review_card(base_dir: str, card_id: str, grade: str) -> dict | None:
 
 def stats(base_dir: str) -> dict:
     cards = load_cards(base_dir)
-    due = due_cards(base_dir)
-    return {"total": len(cards), "due": len(due), "matured": sum(1 for c in cards if float(c.get("interval", 0) or 0) >= 21)}
+    now = int(time.time())
+    due = sum(1 for c in cards if c["due"] <= now)
+    return {"total": len(cards), "due": due, "matured": sum(1 for c in cards if float(c.get("interval", 0) or 0) >= 21)}

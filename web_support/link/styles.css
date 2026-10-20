@@ -1,0 +1,2226 @@
+/* Smooth Scrolling + containment for lighter paint */
+html {
+    scroll-behavior: smooth;
+    /* The living background (WebGL canvas) is the primary page backdrop, and
+       body itself is transparent. Paint the theme color on <html> so the page
+       is never blank/white when WebGL is unavailable (embedded engines without
+       ANGLE, VMs, GPU-less environments). The opaque shader canvas paints over
+       this, so it is invisible when WebGL works. */
+    background-color: var(--bg-color, #0a0808);
+}
+
+.tab-content {
+    contain: layout style;
+}
+
+#toolsListContainer {
+    contain: layout style paint;
+}
+
+/* ==================== THEME VARIABLES — Đỏ Vàng Kim (theo Dark / Light / Chill) ==================== */
+:root,
+[data-theme="dark"] {
+    /* Dark — crimson + gold rõ ràng */
+    --bg-color: #0a0808;
+    --text-primary: #fef3e2;
+    --text-secondary: #d4b896;
+    --text-muted: #9a7b5a;
+
+    --crimson: #b91c1c;
+    --crimson-soft: rgba(185, 28, 28, 0.4);
+    --gold: #dc2626;
+    --gold-soft: rgba(239, 68, 68, 0.35);
+
+    --glass-bg: rgba(28, 20, 16, 0.15);
+    --glass-header-bg: rgba(18, 12, 10, 0.25);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shine: rgba(255, 215, 0, 0.08);
+    --button-bg: rgba(255, 255, 255, 0.06);
+    --button-hover-bg: rgba(255, 255, 255, 0.13);
+
+    --card-hover-shadow: rgba(0, 0, 0, 0.45);
+    --accent-glow: rgba(239, 68, 68, 0.28);
+    --accent-red: rgba(185, 28, 28, 0.4);
+}
+
+/* Light Mode — đỏ vàng nhẹ, hài hòa */
+[data-theme="light"] {
+    --bg-color: #fdf8f0;
+    --text-primary: #1c1410;
+    --text-secondary: #5c4a3a;
+    --text-muted: #8b7355;
+
+    --crimson: #b91c1c;
+    --crimson-soft: rgba(185, 28, 28, 0.15);
+    --gold: #dc2626;
+    --gold-soft: rgba(239, 68, 68, 0.2);
+
+    --glass-bg: rgba(255, 255, 255, 0.2);
+    --glass-header-bg: rgba(255, 255, 255, 0.3);
+    --glass-border: rgba(0, 0, 0, 0.05);
+    --glass-shine: rgba(239, 68, 68, 0.08);
+    --button-bg: rgba(255, 255, 255, 0.66);
+    --button-hover-bg: rgba(255, 255, 255, 0.88);
+
+    --card-hover-shadow: rgba(0, 0, 0, 0.06);
+    --accent-glow: rgba(239, 68, 68, 0.2);
+    --accent-red: rgba(185, 28, 28, 0.18);
+}
+
+/* Chill Mode — ấm sepia, đỏ vàng hòa trộn */
+[data-theme="chill"] {
+    --bg-color: #1a1410;
+    --text-primary: #e8dcc8;
+    --text-secondary: #b8a078;
+    --text-muted: #7a6b52;
+
+    --crimson: #dc2626;
+    --crimson-soft: rgba(239, 68, 68, 0.3);
+    --gold: #dc2626;
+    --gold-soft: rgba(239, 68, 68, 0.3);
+
+    --glass-bg: rgba(45, 35, 28, 0.15);
+    --glass-header-bg: rgba(30, 22, 18, 0.25);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shine: rgba(255, 200, 100, 0.08);
+    --button-bg: rgba(58, 46, 36, 0.55);
+    --button-hover-bg: rgba(74, 60, 46, 0.72);
+
+    --card-hover-shadow: rgba(0, 0, 0, 0.5);
+    --accent-glow: rgba(239, 68, 68, 0.25);
+    --accent-red: rgba(239, 68, 68, 0.25);
+}
+
+/* ==================== LIGHT THEME TEXT/SURFACE OVERRIDES ==================== */
+/* Many components hardcode dark-theme Tailwind text classes, so the light theme
+   needs explicit remaps to stay legible on the cream canvas. Chill stays dark. */
+[data-theme="light"] .text-white { color: #1c1410; }
+[data-theme="light"] .text-gray-100 { color: #261c14; }
+[data-theme="light"] .text-gray-200 { color: #33281c; }
+[data-theme="light"] .text-gray-300 { color: #4a3a2a; }
+[data-theme="light"] .text-gray-400 { color: #6d5a44; }
+[data-theme="light"] .text-gray-500 { color: #8a7356; }
+[data-theme="light"] .text-gray-600 { color: #a08a6a; }
+[data-theme="light"] .text-gray-700 { color: #b39b78; }
+
+[data-theme="light"] .text-gray-400\/80 { color: rgba(109, 90, 68, 0.82); }
+[data-theme="light"] .text-gray-500\/90 { color: rgba(138, 115, 86, 0.92); }
+[data-theme="light"] .text-gray-500\/80 { color: rgba(138, 115, 86, 0.82); }
+[data-theme="light"] .text-gray-300\/80 { color: rgba(74, 58, 42, 0.82); }
+
+[data-theme="light"] .placeholder-gray-400::placeholder { color: #8a7356; }
+[data-theme="light"] .placeholder-gray-500::placeholder { color: #a08a6a; }
+
+/* Hardcoded dark surfaces that must lighten for light theme */
+[data-theme="light"] #folderSidebar { background: rgba(253, 248, 240, 0.72); }
+[data-theme="light"] #moreMenuDropdown { background: rgba(255, 252, 246, 0.95) !important; }
+[data-theme="light"] #toast { background: rgba(255, 252, 246, 0.94); }
+[data-theme="light"] .link-card .card-body .tag {
+    background: rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.08);
+    color: rgba(28, 20, 16, 0.8);
+}
+
+/* ==================== LIGHT THEME — REMAP HARDCODED SURFACES ====================
+   Tailwind classes like bg-black/40, bg-white/10, border-white/10 are baked into
+   the HTML for the dark theme. On the cream canvas they must flip to dark-tinted
+   tints so every panel/input/card reads correctly. Modal scrims (bg-black/60,
+   bg-black/70) stay dark in both themes — dimming behind dialogs is intentional. */
+[data-theme="light"] .text-white\/70 { color: rgba(28, 20, 16, 0.7); }
+
+[data-theme="light"] .bg-black { background-color: #fffaf2; }
+[data-theme="light"] .bg-black\/5 { background-color: rgba(28, 20, 16, 0.04); }
+[data-theme="light"] .bg-black\/10 { background-color: rgba(28, 20, 16, 0.07); }
+[data-theme="light"] .bg-black\/20 { background-color: rgba(28, 20, 16, 0.1); }
+[data-theme="light"] .bg-black\/30 { background-color: rgba(28, 20, 16, 0.16); }
+[data-theme="light"] .bg-black\/40 { background-color: rgba(28, 20, 16, 0.06); }
+[data-theme="light"] .bg-black\/50 { background-color: rgba(28, 20, 16, 0.32); }
+/* bg-black/60 + /70 intentionally NOT remapped (modal scrims) */
+
+[data-theme="light"] .bg-gray-900 { background-color: #fffaf2; }
+[data-theme="light"] .bg-gray-900\/90 { background-color: rgba(253, 248, 240, 0.92); }
+[data-theme="light"] .bg-\[\#0a0a0a\] { background-color: #fffdf8; }
+
+/* White-glass surfaces (cards/inputs on dark) → dark-tinted glass on cream */
+[data-theme="light"] .bg-white\/5 { background-color: rgba(28, 20, 16, 0.035); }
+[data-theme="light"] .bg-white\/10 { background-color: rgba(28, 20, 16, 0.07); }
+[data-theme="light"] .bg-white\/15 { background-color: rgba(28, 20, 16, 0.1); }
+[data-theme="light"] .bg-white\/20 { background-color: rgba(28, 20, 16, 0.14); }
+
+/* Borders */
+[data-theme="light"] .border-white\/5 { border-color: rgba(28, 20, 16, 0.07); }
+[data-theme="light"] .border-white\/10 { border-color: rgba(28, 20, 16, 0.12); }
+[data-theme="light"] .border-white\/15 { border-color: rgba(28, 20, 16, 0.16); }
+[data-theme="light"] .border-white\/20 { border-color: rgba(28, 20, 16, 0.2); }
+[data-theme="light"] .border-white\/40 { border-color: rgba(28, 20, 16, 0.32); }
+
+/* Global Glassmorphism Scrollbar (Auto-hiding) */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
+}
+
+*:hover::-webkit-scrollbar-thumb,
+body:hover::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom, rgba(185, 28, 28, 0.4), rgba(239, 68, 68, 0.4));
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(to bottom, rgba(185, 28, 28, 0.6), rgba(239, 68, 68, 0.6)) !important;
+}
+
+/* Custom Tailwind Configuration (Polyfills) */
+@layer utilities {
+    .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+
+    .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+/* Base Body Styles */
+body {
+    background-color: transparent;
+    color: var(--text-primary);
+    min-height: 100vh;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Brand gradient & colors — đi chung với Dark/Light/Chill */
+.brand-gradient {
+    background: linear-gradient(to right, var(--crimson), var(--gold));
+}
+
+.brand-gradient-br {
+    background: linear-gradient(to bottom right, var(--crimson), var(--gold));
+}
+
+.text-brand-gradient {
+    background: linear-gradient(to right, var(--crimson), var(--gold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.text-brand-crimson {
+    color: var(--crimson);
+}
+
+.text-brand-gold {
+    color: var(--gold);
+}
+
+.border-brand-crimson {
+    border-color: var(--crimson);
+}
+
+.border-brand-gold {
+    border-color: var(--gold);
+}
+
+.shadow-brand {
+    box-shadow: 0 4px 20px var(--accent-red), 0 0 16px var(--accent-glow);
+}
+
+.ring-brand:focus {
+    box-shadow: 0 0 0 2px var(--gold), 0 0 0 4px var(--crimson-soft);
+}
+
+/* Image drop zone overlay — crimson + gold nhẹ theo theme */
+.image-drop-overlay {
+    background: linear-gradient(135deg, var(--crimson-soft), var(--gold-soft));
+    opacity: 0;
+    pointer-events: none;
+}
+
+.group:hover .image-drop-overlay {
+    opacity: 0.2;
+}
+
+
+/* Glassmorphism Effects — Premium 2.0 */
+.glass-header {
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
+    background: var(--glass-header-bg);
+    border-bottom: 1px solid var(--glass-border);
+    box-shadow: 0 4px 40px rgba(0, 0, 0, 0.15);
+}
+
+.glass-card {
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-top-color: rgba(255, 255, 255, 0.25);
+    /* Specular highlight */
+    border-left-color: rgba(255, 255, 255, 0.15);
+    /* Specular highlight */
+    border-radius: 1.5rem;
+    /* Smoother curve */
+    box-shadow: 0 12px 40px 0 var(--card-hover-shadow),
+        inset 0 1px 0 0 var(--glass-shine),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+    color: var(--text-primary);
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s ease, border-color 0.4s ease;
+}
+
+.glass-button {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: var(--button-bg);
+    border: 1px solid var(--glass-border);
+    border-top-color: rgba(255, 255, 255, 0.1);
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    position: relative;
+    overflow: hidden;
+}
+
+.glass-button::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transform: skewX(-20deg);
+    transition: 0.5s;
+}
+
+.glass-button:hover::after {
+    left: 150%;
+}
+
+.glass-button:hover {
+    background: var(--button-hover-bg);
+    border-color: var(--glass-shine);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.glass-button:active {
+    transform: translateY(1px) scale(0.97);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), inset 0 2px 4px rgba(0, 0, 0, 0.15);
+    transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-button.active {
+    background: linear-gradient(135deg, var(--crimson-soft), var(--gold-soft));
+    border-color: var(--gold);
+    box-shadow: 0 0 15px var(--accent-glow), 0 0 8px var(--accent-red), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    transform: scale(0.98);
+}
+
+/* Primary CTA: the brand gradient must win over .glass-button's flat background
+   (previously the Add Link button rendered dark instead of red→gold). */
+button.glass-button.brand-gradient {
+    background: linear-gradient(to right, var(--crimson), var(--gold));
+    border-color: transparent;
+    box-shadow: 0 4px 20px var(--accent-red), 0 0 16px var(--accent-glow);
+}
+
+button.glass-button.brand-gradient:hover {
+    background: linear-gradient(to right, var(--crimson), var(--gold));
+    filter: brightness(1.12);
+    box-shadow: 0 6px 26px var(--accent-red), 0 0 22px var(--accent-glow);
+}
+
+/* View-mode segmented control */
+.view-seg {
+    border-radius: 0.85rem;
+}
+
+.seg-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0.45rem;
+    border-radius: 0.6rem;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease, transform 0.15s ease;
+}
+
+.seg-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.seg-btn:active {
+    transform: scale(0.94);
+}
+
+.seg-btn.active {
+    background: linear-gradient(135deg, var(--crimson-soft), var(--gold-soft));
+    color: #fff;
+    box-shadow: 0 0 12px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Link Card Styles — performance: contain + content-visibility */
+.link-card {
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s ease;
+    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    cursor: pointer;
+    contain: layout style paint;
+    content-visibility: auto;
+    /* Anchors scroll position while content-visibility skips off-screen paint
+       (critical for smooth scrolling through thousands of cards). */
+    contain-intrinsic-size: auto 340px;
+    border-radius: 1rem;
+}
+
+.link-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(800px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.06), transparent 40%);
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.link-card:hover {
+    transform: translateY(-6px) scale(1.02) perspective(1000px) rotateX(2deg) rotateY(-2deg);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4),
+        0 0 30px var(--accent-red),
+        0 0 20px var(--accent-glow),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    z-index: 10;
+}
+
+.link-card:hover::after {
+    opacity: 1;
+}
+
+.card-thumb {
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.link-card:hover .card-thumb {
+    transform: scale(1.05);
+}
+
+/* Thumbnail lazy-load placeholder shimmer (image cards only, via data-bg) */
+.card-thumb[data-bg]::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.07) 50%, transparent 70%);
+    background-size: 200% 100%;
+    animation: thumbShimmer 1.4s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes thumbShimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+}
+
+/* Viền crimson + gold — theo theme */
+.link-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 1rem;
+    padding: 1px;
+    background: linear-gradient(135deg, var(--crimson), var(--gold), transparent 70%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.link-card:hover::before {
+    opacity: 0.6;
+}
+
+/* Animations */
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(24px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -1000px 0;
+    }
+
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translate(0, 0) scale(1);
+    }
+
+    33% {
+        transform: translate(30px, -30px) scale(1.1);
+    }
+
+    66% {
+        transform: translate(-20px, 20px) scale(0.9);
+    }
+}
+
+@keyframes floatReverse {
+
+    0%,
+    100% {
+        transform: translate(0, 0) scale(1);
+    }
+
+    33% {
+        transform: translate(-30px, 30px) scale(0.9);
+    }
+
+    66% {
+        transform: translate(20px, -20px) scale(1.1);
+    }
+}
+
+/* Background Orbs — dịu, nhẹ */
+.orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.4;
+    animation: float 22s ease-in-out infinite;
+}
+
+.orb-1 {
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, var(--gold-soft), transparent 60%);
+    top: 10%;
+    left: 10%;
+    animation-duration: 25s;
+    box-shadow: 0 0 120px var(--accent-glow);
+}
+
+.orb-2 {
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, var(--crimson-soft), transparent 60%);
+    top: 60%;
+    right: 10%;
+    animation: floatReverse 30s ease-in-out infinite;
+    box-shadow: 0 0 120px var(--accent-red);
+}
+
+.orb-3 {
+    width: 450px;
+    height: 450px;
+    background: radial-gradient(circle, var(--gold-soft), var(--crimson-soft), transparent 70%);
+    bottom: 10%;
+    left: 50%;
+    animation-duration: 35s;
+    box-shadow: 0 0 120px var(--accent-glow), 0 0 80px var(--accent-red);
+}
+
+/* Modal Animation */
+#addLinkModal,
+#translateModal,
+#toolModal,
+.modal-backdrop {
+    animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#addLinkModal .glass-card,
+#translateModal .glass-card,
+#toolModal .glass-card,
+.modal-content {
+    animation: slideUpScale 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        backdrop-filter: blur(0px);
+    }
+
+    to {
+        opacity: 1;
+        backdrop-filter: blur(8px);
+    }
+}
+
+@keyframes slideUpScale {
+    from {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* ==================== UI Animation Utilities (polish) ==================== */
+/* Dropdown / popup entrance — referenced by more-menu & modals */
+.animate-fadeIn {
+    animation: fadeInDrop 0.25s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes fadeInDrop {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Soft pulsing glow for magic / primary call-to-action buttons */
+.animate-glow-pulse {
+    animation: glowPulse 2.2s ease-in-out infinite;
+}
+
+@keyframes glowPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 8px var(--accent-glow), 0 0 0 0 var(--accent-red);
+    }
+
+    50% {
+        box-shadow: 0 0 18px var(--accent-glow), 0 0 0 6px transparent;
+    }
+}
+
+/* Tab content cross-fade when switching tabs */
+.tab-content:not(.hidden) {
+    animation: tabReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes tabReveal {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Floating batch action bar rises in when selection mode opens */
+#floatingActionBar:not(.hidden)>div {
+    animation: barRise 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) backwards;
+}
+
+@keyframes barRise {
+    from {
+        opacity: 0;
+        transform: translateY(28px) scale(0.96);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Dropdown menu items cascade in */
+#moreMenuDropdown:not(.hidden) button,
+#floatingBarMoreDropdown:not(.hidden) .batch-more-action {
+    animation: menuItemIn 0.3s ease backwards;
+}
+
+#moreMenuDropdown:not(.hidden) button:nth-of-type(2) {
+    animation-delay: 0.03s;
+}
+
+#moreMenuDropdown:not(.hidden) button:nth-of-type(3) {
+    animation-delay: 0.06s;
+}
+
+#moreMenuDropdown:not(.hidden) button:nth-of-type(4) {
+    animation-delay: 0.09s;
+}
+
+#moreMenuDropdown:not(.hidden) button:nth-of-type(5) {
+    animation-delay: 0.12s;
+}
+
+#moreMenuDropdown:not(.hidden) button:nth-of-type(n+6) {
+    animation-delay: 0.15s;
+}
+
+@keyframes menuItemIn {
+    from {
+        opacity: 0;
+        transform: translateX(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Button press ripple — adds tactile feedback on top of the sheen */
+.glass-button:active::after {
+    left: 150%;
+    transition: 0.25s;
+}
+
+/* Tag — dịu */
+.tag {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.75);
+    transition: all 0.2s ease;
+    backdrop-filter: blur(6px);
+}
+
+.tag:hover {
+    background: rgba(255, 255, 255, 0.12);
+    transform: none;
+}
+
+/* Category Badge — tinted by the card's --cat-color (falls back to crimson+gold) */
+.category-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.7rem;
+    background: linear-gradient(135deg, var(--crimson-soft), var(--gold-soft));
+    background: color-mix(in srgb, var(--cat-color, var(--gold)) 16%, transparent);
+    border: 1px solid var(--gold);
+    border: 1px solid color-mix(in srgb, var(--cat-color, var(--gold)) 45%, transparent);
+    border-radius: 9999px;
+    font-size: 0.72rem;
+    color: var(--text-primary);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 1px 4px var(--accent-red);
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--cat-color, var(--accent-red)) 35%, transparent);
+    transition: all 0.2s ease;
+}
+
+.category-badge:hover {
+    background: linear-gradient(135deg, var(--accent-red), var(--accent-glow));
+    box-shadow: 0 2px 8px var(--accent-red), 0 0 8px var(--accent-glow);
+}
+
+/* Category dot — solid hue swatch next to the category name */
+.cat-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px color-mix(in srgb, currentColor 60%, transparent);
+    background: var(--cat-color, var(--gold));
+}
+
+/* Category accent strip along the top edge of a card */
+.cat-accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--cat-color, transparent), transparent 85%);
+    opacity: 0.85;
+    z-index: 6;
+    pointer-events: none;
+}
+
+/* Delete / Visit — dịu */
+.delete-btn {
+    transition: all 0.2s ease;
+}
+
+.delete-btn:hover {
+    background: rgba(239, 68, 68, 0.18);
+    color: #ef4444;
+    transform: scale(1.05);
+}
+
+.visit-btn {
+    transition: all 0.2s ease;
+}
+
+.visit-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fcd34d;
+    transform: scale(1.05);
+}
+
+/* Image Drop Zone — dịu */
+#imageDropZone.drag-over {
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(185, 28, 28, 0.08);
+    transform: scale(1.01);
+    box-shadow: 0 0 16px var(--accent-glow);
+}
+
+/* Empty State */
+.empty-state-icon {
+    position: relative;
+    animation: pulse 2.4s ease-in-out infinite;
+}
+
+.empty-state-icon::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 150px;
+    height: 150px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+    border-radius: 50%;
+    filter: blur(8px);
+    z-index: -1;
+}
+
+/* Toast Notification */
+#toast {
+    min-width: 300px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background: rgba(20, 20, 30, 0.6);
+    /* Semi-transparent dark bg */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+#toast.show {
+    transform: translateX(0);
+}
+
+/* Translate Modal — kéo chiều cao, cả 4 khung to/nhỏ đồng loạt */
+.translate-modal-body {
+    height: var(--translate-body-h, 50vh);
+    min-height: 280px;
+    max-height: 80vh;
+    transition: height 0.08s ease-out;
+}
+
+.translate-resize-handle {
+    height: 14px;
+    flex-shrink: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Loading Spinner */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+/* Enhanced Input Focus — crimson + gold theo theme */
+input:focus,
+select:focus,
+textarea:focus {
+    box-shadow: 0 0 0 2px var(--gold-soft), 0 0 0 4px var(--crimson-soft);
+}
+
+/* Search Bar Enhancements */
+#searchInput:focus {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Header Logo — crimson + gold theo theme */
+@keyframes logoGlow {
+
+    0%,
+    100% {
+        box-shadow: 0 0 14px var(--accent-glow);
+    }
+
+    50% {
+        box-shadow: 0 0 18px var(--accent-red);
+    }
+}
+
+header .w-10 {
+    animation: logoGlow 4s ease-in-out infinite;
+}
+
+/* Card Stagger Animation */
+.link-card:nth-child(1) {
+    animation-delay: 0.05s;
+}
+
+.link-card:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.link-card:nth-child(3) {
+    animation-delay: 0.15s;
+}
+
+.link-card:nth-child(4) {
+    animation-delay: 0.2s;
+}
+
+.link-card:nth-child(5) {
+    animation-delay: 0.25s;
+}
+
+.link-card:nth-child(6) {
+    animation-delay: 0.3s;
+}
+
+.link-card:nth-child(7) {
+    animation-delay: 0.35s;
+}
+
+.link-card:nth-child(8) {
+    animation-delay: 0.4s;
+}
+
+.link-card:nth-child(n+9) {
+    /* No delay: cards appended by infinite scroll should paint instantly
+       (the 0.45s delay made later batches flash empty). */
+    animation-delay: 0s;
+}
+
+/* Tag Suggestions — dịu */
+.tag-suggestion {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tag-suggestion:hover {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+/* Selected Card — vàng đỏ */
+.link-card.ring-2 {
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.5), 0 4px 16px var(--accent-glow);
+}
+
+/* Favorite Star */
+i[data-lucide="star"].fill-red-400 {
+    fill: #facc15;
+    color: #facc15;
+}
+
+/* Responsive — dịu */
+@media (max-width: 640px) {
+    .link-card:hover {
+        transform: translateY(-2px) scale(1.005);
+    }
+}
+
+/* Tab Navigation */
+.tab-btn {
+    color: rgba(255, 255, 255, 0.6);
+    background: transparent;
+    border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
+    transition: color 0.3s ease, background 0.3s ease;
+}
+
+.tab-btn::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--crimson), var(--gold));
+    transition: width 0.3s ease;
+}
+
+.tab-btn:hover {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn.active {
+    color: var(--text-primary);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02));
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.tab-btn.active::before {
+    width: 60%;
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.tab-content {
+    min-height: calc(100vh - 200px);
+}
+
+/* Note Card — dịu */
+.note-card {
+    transition: all 0.25s ease;
+}
+
+.note-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+/* Snippet Card */
+.snippet-card pre {
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 0.5rem;
+    overflow-x: auto;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+/* Color Swatch — dịu */
+.color-swatch {
+    aspect-ratio: 1;
+    border-radius: 1rem;
+    transition: all 0.25s ease;
+    cursor: pointer;
+}
+
+.color-swatch:hover {
+    transform: scale(1.03);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Todo Item */
+.todo-item {
+    transition: all 0.2s ease;
+}
+
+.todo-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.todo-item.completed .todo-text {
+    text-decoration: line-through;
+    opacity: 0.5;
+}
+
+/* File Card */
+.file-card {
+    transition: all 0.3s ease;
+}
+
+.file-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+/* Priority Colors */
+.priority-high {
+    border-left: 3px solid #ef4444;
+}
+
+.priority-medium {
+    border-left: 3px solid #f59e0b;
+}
+
+.priority-low {
+    border-left: 3px solid #10b981;
+}
+
+/* Folder Sidebar */
+#folderSidebar {
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#folderSidebar.collapsed {
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+}
+
+.folder-item {
+    position: relative;
+    border-radius: 0.5rem;
+    transition: all 0.2s ease;
+}
+
+.folder-item.droppable.bg-white\/20 {
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: inset 0 0 0 2px var(--crimson), 0 0 8px var(--gold-soft);
+}
+
+/* Mobile Sidebar */
+@media (max-width: 768px) {
+    #folderSidebar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 50;
+        width: 100%;
+        max-width: 280px;
+        background: #000;
+        transform: translateX(-100%);
+    }
+
+    #folderSidebar.active {
+        transform: translateX(0);
+    }
+}
+
+/* Scrollbar hide */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* ==================== Resizable Layout ==================== */
+:root {
+    --sidebar-width: 256px;
+    --card-min-width: 300px;
+}
+
+/* Sidebar Resizer */
+#sidebarResizer {
+    width: 6px;
+    cursor: col-resize;
+    position: relative;
+    z-index: 20;
+    transition: background 0.2s;
+    background: transparent;
+    margin-right: -3px;
+}
+
+#sidebarResizer:hover,
+#sidebarResizer.active {
+    background: rgba(239, 68, 68, 0.5);
+}
+
+#sidebarResizer::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+}
+
+#folderSidebar {
+    width: var(--sidebar-width) !important;
+}
+
+#linksGrid,
+#notesGrid,
+#promptsTabList,
+#filesGrid,
+#snippetsGrid,
+#colorsGrid {
+    grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr)) !important;
+}
+
+body.resizing,
+body.resizing-col {
+    cursor: col-resize;
+    user-select: none;
+}
+
+body.resizing-row {
+    cursor: row-resize;
+    user-select: none;
+}
+
+body.resizing iframe,
+body.resizing-col iframe,
+body.resizing-row iframe {
+    pointer-events: none;
+}
+
+#timelineSplitHandle {
+    height: 8px;
+    background: transparent;
+    cursor: row-resize;
+    position: relative;
+    z-index: 20;
+    margin: -4px 0 10px 0;
+    transition: background 0.2s;
+}
+
+#timelineSplitHandle:hover,
+#timelineSplitHandle.active {
+    background: linear-gradient(to right, var(--crimson-soft), var(--gold-soft));
+}
+
+#timelineSplitHandle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+}
+
+.range-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    outline: none;
+    transition: background 0.2s;
+}
+
+.range-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    cursor: pointer;
+    box-shadow: 0 0 10px var(--accent-glow);
+    transition: transform 0.1s;
+}
+
+.range-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+/* ==================== Mobile UI (Phones) ==================== */
+
+/* Safe area & viewport */
+:root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --header-height: 64px;
+    --tab-nav-height: 52px;
+}
+
+body.mobile-safe-area {
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+    padding-bottom: var(--safe-bottom);
+}
+
+@media (max-width: 768px) {
+    body.mobile-safe-area {
+        padding-bottom: 0;
+    }
+
+    /* FAB/bar use safe area themselves */
+}
+
+/* Min touch target (44px) */
+@media (max-width: 768px) {
+
+    .min-touch,
+    .glass-button,
+    .seg-btn,
+    .tab-btn,
+    button[id^="themeToggleBtn"],
+    button[id="selectModeBtn"],
+    #moreMenuBtn,
+    #toggleSidebarBtn,
+    #addLinkBtn,
+    .link-card-actions button,
+    .link-card-actions-mobile button {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 10px;
+    }
+
+    .tab-btn {
+        padding: 10px 16px;
+    }
+
+    #searchInput {
+        min-height: 44px;
+    }
+
+    input[type="text"],
+    input[type="url"],
+    input[type="search"],
+    select.form-control {
+        font-size: 16px !important;
+    }
+
+    /* Prevent iOS zoom on focus */
+}
+
+/* Tap highlight */
+@media (max-width: 768px) {
+
+    a,
+    button {
+        -webkit-tap-highlight-color: rgba(239, 68, 68, 0.2);
+    }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+
+    .link-card,
+    .note-card,
+    .snippet-card,
+    .color-swatch,
+    .file-card,
+    * {
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Phase 2: Header fixed height, tab sticky */
+.mobile-header {
+    padding-top: var(--safe-top);
+}
+
+@media (max-width: 768px) {
+    .mobile-header {
+        min-height: var(--header-height);
+        padding-top: calc(var(--safe-top) + 8px);
+        padding-bottom: 12px;
+    }
+}
+
+.mobile-tab-nav {
+    top: calc(var(--header-height) + var(--safe-top));
+}
+
+@media (min-width: 769px) {
+    .mobile-tab-nav {
+        top: 88px;
+    }
+}
+
+@media (max-width: 768px) {
+    .mobile-tab-nav {
+        min-height: var(--tab-nav-height);
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .mobile-tab-nav .flex {
+        scroll-snap-type: x mandatory;
+    }
+
+    .mobile-tab-nav .tab-btn {
+        scroll-snap-align: start;
+        flex-shrink: 0;
+    }
+}
+
+/* Sidebar overlay (backdrop) */
+.mobile-sidebar-overlay {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+}
+
+@media (min-width: 769px) {
+    #sidebarOverlay {
+        display: none !important;
+    }
+}
+
+/* Mobile Sidebar (drawer) - keep existing + overlay */
+@media (max-width: 768px) {
+    #folderSidebar {
+        padding-top: var(--safe-top);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+    }
+}
+
+/* Main content padding on mobile */
+@media (max-width: 768px) {
+    main.flex-1 {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+}
+
+/* Phase 3: Link card - desktop actions hidden on mobile, mobile block visible */
+@media (max-width: 768px) {
+    .link-card-actions:not(.link-card-actions-mobile) {
+        display: none !important;
+    }
+
+    .link-card-actions-mobile {
+        opacity: 1;
+        transform: none;
+        display: flex !important;
+        gap: 8px;
+    }
+
+    .link-card-actions-mobile .link-card-more-dropdown {
+        position: absolute;
+        right: 0;
+        top: 100%;
+        margin-top: 4px;
+        min-width: 180px;
+        z-index: 25;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+}
+
+@media (min-width: 769px) {
+    .link-card-actions-mobile {
+        display: none !important;
+    }
+}
+
+/* Phase 4: Floating bar - bottom sheet on mobile, centered on desktop */
+.mobile-floating-bar {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding-bottom: var(--safe-bottom);
+}
+
+@media (min-width: 769px) {
+    .mobile-floating-bar {
+        bottom: 2rem;
+        left: 50%;
+        right: auto;
+        padding-bottom: 0;
+        transform: translateX(-50%);
+    }
+}
+
+@media (max-width: 768px) {
+    #floatingActionBar>div {
+        border-radius: 16px 16px 0 0;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    #floatingBarActions {
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+    }
+
+    #floatingBarActions .mobile-only-batch {
+        display: flex !important;
+    }
+
+    #floatingBarActions button:not(.mobile-only-batch):not(#exitSelectModeBtn) {
+        flex-shrink: 0;
+        min-width: 44px;
+    }
+}
+
+/* Modals: full-screen on mobile */
+@media (max-width: 640px) {
+
+    #addLinkModal .glass-card,
+    #quickSaveModal .glass-card,
+    #storageModal .glass-card,
+    #promptModal .glass-card,
+    #analyticsModal .glass-card,
+    #translateModal .glass-card,
+    #commandPalette .glass-card,
+    #bulkEditModal>div:last-child,
+    #batchMoveModal>div:last-child {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        border-radius: 0 !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        transform: none !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #addLinkModal .glass-card,
+    #quickSaveModal .glass-card,
+    #storageModal .glass-card,
+    #promptModal .glass-card,
+    #analyticsModal .glass-card {
+        overflow-y: auto;
+    }
+}
+
+/* Phase 5: FAB */
+.mobile-fab {
+    bottom: calc(80px + var(--safe-bottom));
+    right: calc(16px + var(--safe-right));
+    -webkit-tap-highlight-color: transparent;
+}
+
+@media (min-width: 769px) {
+    .mobile-fab {
+        display: none !important;
+    }
+}
+
+/* ==================== ZEN MODE ==================== */
+body.zen-mode header.glass-header,
+body.zen-mode nav.mobile-tab-nav,
+body.zen-mode #categoryFilters {
+    display: none !important;
+}
+
+body.zen-mode {
+    padding-top: 1rem !important;
+}
+
+header.glass-header,
+nav.mobile-tab-nav,
+#categoryFilters {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* ==================== COMPACT / DENSE MODE (minimal theme) ==================== */
+/* One toggle shrinks cards into a dense, scannable grid — great for 5k+ links. */
+body.compact-mode #linksGrid,
+body.compact-mode #notesGrid,
+body.compact-mode #promptsTabList {
+    gap: 1rem;
+}
+
+body.compact-mode .link-card .card-thumb {
+    height: 5.5rem;
+}
+
+body.compact-mode .link-card .card-body {
+    padding: 0.7rem 0.85rem;
+}
+
+body.compact-mode .link-card h3 {
+    font-size: 0.95rem;
+    line-height: 1.25;
+}
+
+body.compact-mode .link-card .card-desc,
+body.compact-mode .link-card .card-notes {
+    display: none;
+}
+
+body.compact-mode .link-card .card-body p {
+    font-size: 0.72rem;
+}
+
+body.compact-mode .link-card .card-body .category-badge {
+    font-size: 0.62rem;
+    padding: 0.12rem 0.5rem;
+}
+
+body.compact-mode .link-card .card-body .tag {
+    font-size: 0.62rem;
+    padding: 0.1rem 0.45rem;
+}
+
+body.compact-mode .link-card .card-body .mb-3,
+body.compact-mode .link-card .card-body .mb-4 {
+    margin-bottom: 0.4rem;
+}
+
+/* ==================== SKELETON LOADER ==================== */
+.skeleton-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1.5rem;
+    backdrop-filter: blur(8px);
+    height: 280px;
+    animation: skeleton-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes skeleton-pulse {
+
+    0%,
+    100% {
+        opacity: 0.6;
+    }
+
+    50% {
+        opacity: 0.2;
+    }
+}
+
+/* ==================== UI POLISH ANIMATIONS ==================== */
+
+/* Search bar — glow ring + subtle lift when focused */
+.search-card:focus-within {
+    border-color: rgba(239, 68, 68, 0.45) !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15), 0 8px 30px rgba(0, 0, 0, 0.3);
+    transform: translateY(-1px);
+}
+
+/* Link count — pop whenever the number changes */
+.count-pop {
+    display: inline-block;
+    animation: countPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes countPop {
+    0% {
+        transform: scale(1);
+    }
+
+    40% {
+        transform: scale(1.5);
+        color: var(--crimson);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Sidebar folder item — animated indicator bar (slides in on hover, lit when active) */
+.folder-item {
+    position: relative;
+}
+
+.folder-item::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 50%;
+    transform: translateY(-50%) scaleY(0.2);
+    width: 3px;
+    height: 60%;
+    border-radius: 3px;
+    background: linear-gradient(180deg, var(--crimson), var(--gold));
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+    pointer-events: none;
+}
+
+.folder-item:hover::before {
+    opacity: 0.45;
+    transform: translateY(-50%) scaleY(0.7);
+}
+
+.folder-item.active::before {
+    opacity: 1;
+    transform: translateY(-50%) scaleY(1);
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* Segmented control — active button pops in */
+.seg-btn.active {
+    animation: segPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes segPop {
+    0% {
+        transform: scale(0.88);
+    }
+
+    55% {
+        transform: scale(1.08);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Header icon buttons — gentle lift on hover */
+header .glass-button:hover {
+    transform: translateY(-2px);
+}
+
+/* ==================== ACCESSIBILITY & POLISH ==================== */
+/* Respect users who prefer reduced motion (WCAG 2.3.3) */
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}
+
+/* Visible, consistent keyboard focus ring for usability */
+:focus-visible {
+    outline: 2px solid var(--gold, #dc2626);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* Subtle lift on interactive cards for a modern, tactile feel */
+button.glass-button,
+[role="button"].glass-button,
+button:not([class*="no-lift"]):hover {
+    will-change: transform;
+}
+/* ==================== FEATURE HUB (features.js) ==================== */
+@keyframes featureHubIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.feat-hub {
+    width: min(880px, 94vw);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 20px;
+    animation: hubCardIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes hubCardIn {
+    from { opacity: 0; transform: translateY(18px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.feat-hub-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 20px 22px 12px;
+}
+
+.feat-hub-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 20px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: 0.2px;
+}
+
+.feat-hub-title i { color: var(--gold, #f59e0b); }
+
+.feat-hub-sub {
+    margin: 4px 0 0 34px;
+    font-size: 12px;
+    color: var(--muted-text, #9a8a76);
+}
+
+.feat-hub-close {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #bbb;
+    transition: all 0.2s;
+}
+
+.feat-hub-close:hover {
+    background: rgba(220, 38, 38, 0.25);
+    color: #fff;
+    transform: rotate(90deg);
+}
+
+.feat-hub-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 22px 14px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    color: var(--muted-text, #9a8a76);
+    transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.feat-hub-search:focus-within {
+    border-color: rgba(239, 68, 68, 0.55);
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14), 0 0 24px rgba(239, 68, 68, 0.12);
+}
+
+.feat-hub-search input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #fff;
+    font-size: 13.5px;
+}
+
+.feat-hub-search input::placeholder { color: #6b5b4c; }
+
+.feat-hub-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 22px 22px;
+    scrollbar-width: thin;
+}
+
+.feat-group { margin-bottom: 22px; }
+
+.feat-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #8a7a6a;
+    margin-bottom: 10px;
+}
+
+.feat-group-head i { color: rgba(239, 68, 68, 0.8); }
+
+.feat-group-count {
+    margin-left: auto;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #777;
+}
+
+.feat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+}
+
+.feat-tile {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    text-align: left;
+    padding: 13px 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    opacity: 0;
+    transform: translateY(10px);
+    animation: featTileIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s, box-shadow 0.25s;
+}
+
+@keyframes featTileIn {
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.feat-tile:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(239, 68, 68, 0.35);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 26px -12px rgba(239, 68, 68, 0.35);
+}
+
+.feat-tile-icon {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: linear-gradient(135deg, rgba(220, 38, 38, 0.22), rgba(245, 158, 11, 0.16));
+    color: #f87171;
+}
+
+.feat-tile:hover .feat-tile-icon { color: #fbbf24; }
+
+.feat-tile-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+.feat-tile-title {
+    font-size: 13.5px;
+    font-weight: 650;
+    color: #eee;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.feat-badge {
+    font-style: normal;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 1.5px 7px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #dc2626, #f59e0b);
+    color: #fff;
+    letter-spacing: 0.4px;
+}
+
+.feat-kbd {
+    font-size: 9.5px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #9a8a76;
+    font-family: ui-monospace, monospace;
+}
+
+.feat-tile-desc {
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #8a7a6a;
+}
+
+.feat-hub-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 48px 0;
+    color: #8a7a6a;
+    font-size: 14px;
+}
+
+.feat-hub-empty.hidden { display: none; }
+
+/* Performance: skip off-screen painting for list/timeline/gallery cards too */
+#linksGrid > *,
+#linksList > *,
+#linksGallery > *,
+#linksTimeline > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 220px;
+}
+
+/* ==================== POWER SEARCH UI ==================== */
+
+/* Live suggestions dropdown */
+.search-suggestions {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 60;
+    max-height: 320px;
+    overflow-y: auto;
+    background: rgba(10, 8, 8, 0.94);
+    background: color-mix(in srgb, var(--bg-color, #0a0808) 94%, transparent);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+    border-radius: 14px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    padding: 6px;
+    animation: ssIn 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes ssIn {
+    from { opacity: 0; transform: translateY(-4px) scale(0.99); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.ss-group {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted, #9a7b5a);
+    padding: 8px 10px 4px;
+}
+.ss-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 9px;
+    cursor: pointer;
+    color: var(--text-secondary, #d4b896);
+    font-size: 13px;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+.ss-item:hover,
+.ss-item.active {
+    background: var(--crimson-soft, rgba(185, 28, 28, 0.3));
+    color: var(--text-primary, #fef3e2);
+}
+.ss-item .ss-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ss-item .ss-sub {
+    font-size: 11px;
+    color: var(--text-muted, #9a7b5a);
+    flex-shrink: 0;
+}
+.ss-item:hover .ss-sub,
+.ss-item.active .ss-sub { color: var(--text-secondary, #d4b896); }
+
+/* Search tips popover */
+.search-tips {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 300px;
+    max-width: calc(100vw - 40px);
+    z-index: 60;
+    background: rgba(10, 8, 8, 0.96);
+    background: color-mix(in srgb, var(--bg-color, #0a0808) 96%, transparent);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+    border-radius: 14px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    padding: 12px 14px;
+    animation: ssIn 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.ss-tips-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-primary, #fef3e2);
+    margin-bottom: 8px;
+}
+.ss-tips-body {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-secondary, #d4b896);
+}
+.ss-tips-body code {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 1px 5px;
+    border-radius: 5px;
+    color: #fca5a5;
+    font-size: 11px;
+    white-space: nowrap;
+}
+.ss-tips-note {
+    color: var(--text-muted, #9a7b5a);
+    padding-top: 6px;
+    border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.06));
+    margin-top: 4px;
+    font-size: 11px;
+    font-style: italic;
+}
+
+/* Search match highlight */
+mark.search-hit {
+    background: linear-gradient(120deg, rgba(239, 68, 68, 0.55), rgba(245, 158, 11, 0.55));
+    color: #fff;
+    border-radius: 3px;
+    padding: 0 2px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+}
+[data-theme="light"] mark.search-hit { color: #3a1d05; }
+
+/* Active query chips */
+.search-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px 8px;
+    border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.06));
+    margin-top: 6px;
+    animation: ssIn 0.18s ease both;
+}
+.chip-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    font-size: 12px;
+    border-radius: 999px;
+    background: var(--crimson-soft, rgba(185, 28, 28, 0.25));
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: var(--text-secondary, #d4b896);
+    max-width: 100%;
+}
+.chip-global {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: rgba(56, 189, 248, 0.3);
+}
+.chip-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 220px;
+}
+.chip-x {
+    background: none;
+    border: none;
+    color: inherit;
+    opacity: 0.6;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 2px;
+    border-radius: 4px;
+}
+.chip-x:hover { opacity: 1; color: #f87171; }
+.chip-clear {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-muted, #9a7b5a);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 3px 10px;
+    border-radius: 999px;
+    transition: all 0.15s ease;
+}
+.chip-clear:hover { color: #f87171; background: rgba(239, 68, 68, 0.1); }
+
+/* Empty-state search tip */
+.search-empty-tip { font-size: 11px; color: var(--text-muted, #9a7b5a); margin-top: 4px; }
+.search-empty-tip code {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 1px 5px;
+    border-radius: 5px;
+    color: #fca5a5;
+    font-size: 10px;
+}
+
+/* ==================== TOOLS TAB (Product Hunt grid) ==================== */
+#toolsGrid .tool-card {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+}
+.tool-thumb img {
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tool-card:hover .tool-thumb img {
+    transform: scale(1.06);
+}
+.tool-thumb {
+    background: linear-gradient(135deg, rgba(185, 28, 28, 0.18), rgba(245, 158, 11, 0.08));
+}
+.tool-thumb-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.25);
+    background: linear-gradient(135deg, rgba(185, 28, 28, 0.14), rgba(245, 158, 11, 0.06));
+}
+.tool-thumb.no-img .tool-thumb-fallback {
+    display: flex;
+}
+.tool-img {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* ==================== LOW-PERFORMANCE MODE ====================
+   Added by living_bg.js when WebGL is software-rendered or FPS drops
+   (QtWebEngine/SwiftShader, weak GPUs). backdrop-filter blur is one of
+   the most expensive effects on CPU rendering — drop it entirely and
+   shorten transitions so the UI stays responsive. */
+html.low-perf .glass-header,
+html.low-perf .glass-card,
+html.low-perf #moreMenuDropdown,
+html.low-perf [class*="backdrop-blur"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+html.low-perf * {
+    transition-duration: 0.05s !important;
+}
+
+/* ==================== RENDER-PERFORMANCE PASS ====================
+   Long card lists are painted lazily via content-visibility so opening
+   LinkLumina with hundreds of saved links stays smooth. Browsers that
+   honor prefers-reduced-motion get an instant, animation-free UI. */
+#linksGrid > *,
+#linksList > *,
+#linksGallery > *,
+#linksTimeline > *,
+#promptsTabList > *,
+#notesGrid > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 260px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001s !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001s !important;
+        scroll-behavior: auto !important;
+    }
+}
+

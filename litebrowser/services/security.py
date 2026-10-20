@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import os
+import weakref
 
 from PyQt5.QtWidgets import (
     QCheckBox,
@@ -18,6 +19,12 @@ from PyQt5.QtWidgets import (
 from litebrowser.core import prefs
 
 _UNLOCKED = set()  # in-memory session unlock, per base_dir
+_LOCK_LISTENERS = {}
+
+
+def on_lock(base_dir: str, callback) -> None:
+    """Weak subscriptions let every shell relock without retaining windows."""
+    _LOCK_LISTENERS.setdefault(os.path.normcase(os.path.realpath(base_dir)), []).append(weakref.WeakMethod(callback))
 
 
 def _pbkdf2_hash(passcode: str, salt: bytes, rounds: int = 200_000) -> bytes:
@@ -54,18 +61,30 @@ def verify_passcode(base_dir: str, passcode: str) -> bool:
     try:
         salt = _decode(salt_b64)
         expected = _decode(hash_b64)
-        got = _pbkdf2_hash(passcode, salt, int(rounds))
+        rounds = int(rounds)
+        if len(salt) != 16 or len(expected) != 32 or not 100_000 <= rounds <= 2_000_000:
+            return False
+        got = _pbkdf2_hash(passcode, salt, rounds)
         return hmac.compare_digest(expected, got)
     except (TypeError, ValueError):
         return False
 
 
 def is_unlocked(base_dir: str) -> bool:
-    return base_dir in _UNLOCKED
+    key = os.path.normcase(os.path.realpath(base_dir))
+    return any(os.path.normcase(os.path.realpath(path)) == key for path in _UNLOCKED)
 
 
 def lock(base_dir: str) -> None:
-    _UNLOCKED.discard(base_dir)
+    key = os.path.normcase(os.path.realpath(base_dir))
+    _UNLOCKED.difference_update(path for path in list(_UNLOCKED) if os.path.normcase(os.path.realpath(path)) == key)
+    live = []
+    for reference in _LOCK_LISTENERS.get(key, []):
+        callback = reference()
+        if callback is not None:
+            live.append(reference)
+            callback()
+    _LOCK_LISTENERS[key] = live
 
 
 class _PasscodeDialog(QDialog):
@@ -143,7 +162,7 @@ def ensure_unlocked(parent, base_dir: str, title: str = "Unlock") -> bool:
             QMessageBox.warning(parent, "Passcode", "Could not set the passcode.")
             return False
         if remember:
-            _UNLOCKED.add(base_dir)
+            _UNLOCKED.add(os.path.normcase(os.path.realpath(base_dir)))
         QMessageBox.information(parent, "Passcode", "Passcode set for this profile.")
         return True
 
@@ -153,7 +172,7 @@ def ensure_unlocked(parent, base_dir: str, title: str = "Unlock") -> bool:
     a, _b, remember = dlg.values()
     if verify_passcode(base_dir, a):
         if remember:
-            _UNLOCKED.add(base_dir)
+            _UNLOCKED.add(os.path.normcase(os.path.realpath(base_dir)))
         return True
 
     QMessageBox.warning(parent, "Passcode", "Wrong passcode.")

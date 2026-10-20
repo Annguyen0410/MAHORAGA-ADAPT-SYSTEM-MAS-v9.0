@@ -35,7 +35,7 @@ include = ["litebrowser*"]
 # The chain manifest ships with the code so dev and a packaged build read the
 # same project chain (see litebrowser/core/app_paths.py).
 [tool.setuptools.package-data]
-litebrowser = ["data/*.json"]
+litebrowser = ["data/*.json", "data/plugins/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -155,6 +155,51 @@ class TestBackupExport(unittest.TestCase):
         )
         self.assertEqual([card["front"] for card in flashcard_service.load_cards(dest)], ["Old"])
 
+    def test_empty_and_malformed_backups_do_not_change_live_data(self):
+        from litebrowser.services import life_service
+
+        note = personal_service.create_note(self.base, "Keep", "Original")
+        task = life_service.add_task(self.base, "Keep task")
+        for payload in ({}, {"tasks": [], "notes": [None]}, {"prefs": {}, "notes": [{"id": "General/a.md", "content": {}}]}):
+            self.assertFalse(history_service.import_profile_payload(self.base, payload))
+            self.assertEqual(personal_service.read_note(self.base, note["id"])["content"], "Original")
+            self.assertEqual(life_service.load_tasks(self.base)[0]["id"], task["id"])
+
+    def test_sparse_backup_preserves_unsupplied_collections(self):
+        from litebrowser.services import life_service
+
+        note = personal_service.create_note(self.base, "Keep", "Original")
+        life_service.add_task(self.base, "Replaced")
+        prefs.save_pref(self.base, "custom", "keep")
+        self.assertTrue(history_service.import_profile_payload(self.base, {"tasks": []}))
+        self.assertEqual(life_service.load_tasks(self.base), [])
+        self.assertEqual(personal_service.read_note(self.base, note["id"])["content"], "Original")
+        self.assertEqual(prefs.get_pref(self.base, "custom"), "keep")
+
+    def test_failed_import_rolls_back_previous_store_writes(self):
+        from litebrowser.services import life_service
+
+        life_service.add_task(self.base, "Original task")
+        note = personal_service.create_note(self.base, "Keep", "Original note")
+        prefs.save_pref(self.base, "custom", "original")
+        with mock.patch.object(life_service, "save_tasks", side_effect=OSError("disk full")):
+            self.assertFalse(history_service.import_profile_payload(self.base, {
+                "prefs": {"custom": "changed"}, "tasks": [],
+                "notes": [{"id": "General/new.md", "content": "Replacement"}],
+            }))
+        self.assertEqual(prefs.get_pref(self.base, "custom"), "original")
+        self.assertEqual(life_service.load_tasks(self.base)[0]["title"], "Original task")
+        self.assertEqual(personal_service.read_note(self.base, note["id"])["content"], "Original note")
+
+    def test_failed_export_does_not_replace_an_existing_backup(self):
+        zpath = os.path.join(self._tmp.name, "keep.zip")
+        with open(zpath, "wb") as handle:
+            handle.write(b"previous backup")
+        with mock.patch.object(history_service, "_add_vault_tree_to_zip", side_effect=OSError("read failure")):
+            self.assertFalse(history_service.export_profile_to_zip(self.base, zpath))
+        with open(zpath, "rb") as handle:
+            self.assertEqual(handle.read(), b"previous backup")
+
     def test_import_rejects_path_traversal_note_ids(self):
         """A crafted backup must not write outside the notes dir (v6.5 fix)."""
         payload = history_service.export_profile_payload(self.base)

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualgraph</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">Neural Lab Interface</p>
+                <h1>Visualgraph</h1>
+                <p class="hero-text">
+                    Break transcripts, notes and topics into keywords, core nodes and linked ideas.
+                    Compose your content while watching an animated knowledge graph.
+                </p>
+            </div>
+            <div class="hero-tools">
+                <a class="back-link" href="../index.html">Back to Management Hub</a>
+                <div class="hero-note">
+                    <strong>3D-style simulation</strong>
+                    <span>Canvas layers, node sizes and orbital motion create a spatial graph effect.</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="layout">
+            <section class="panel composer-panel">
+                <div class="section-head">
+                    <h2>Composer</h2>
+                    <p>Create a topic, choose its content type and set graph density.</p>
+                </div>
+                <div class="field">
+                    <label for="topicTitle">Topic title</label>
+                    <input id="topicTitle" type="text" placeholder="Example: System strategy transcript">
+                </div>
+                <div class="grid-two">
+                    <div class="field">
+                        <label for="topicType">Content type</label>
+                        <select id="topicType">
+                            <option value="transcript">Transcript</option>
+                            <option value="note">Note</option>
+                            <option value="idea">Idea</option>
+                            <option value="research">Research</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="densityLevel">Graph density</label>
+                        <select id="densityLevel">
+                            <option value="12">Compact</option>
+                            <option value="18" selected>Standard</option>
+                            <option value="24">Dense</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="topicContent">Content</label>
+                    <textarea id="topicContent" rows="14" placeholder="Paste a transcript, note or outline here..."></textarea>
+                </div>
+                <div class="composer-actions">
+                    <button id="generateBtn" class="primary-btn">Generate graph</button>
+                    <button id="clearBtn" class="secondary-btn" type="button">Clear input</button>
+                </div>
+            </section>
+
+            <section class="panel visual-panel">
+                <div class="visual-header">
+                    <div>
+                        <h2 id="activeTitle">No topic selected</h2>
+                        <p id="activeMeta">Create a topic to start the Visualgraph simulation.</p>
+                    </div>
+                    <div class="mode-pills">
+                        <span>Core</span>
+                        <span>Orbit</span>
+                        <span>Semantic links</span>
+                    </div>
+                </div>
+                <canvas id="graphCanvas" width="940" height="560"></canvas>
+                <div class="insight-grid">
+                    <article class="insight-card"><span>Total nodes</span><strong id="nodeCount">0</strong></article>
+                    <article class="insight-card"><span>Links</span><strong id="edgeCount">0</strong></article>
+                    <article class="insight-card"><span>Key terms</span><strong id="keywordCount">0</strong></article>
+                    <article class="insight-card"><span>Quick summary</span><strong id="summaryLine">No data yet</strong></article>
+                </div>
+                <div class="keyword-cloud" id="keywordCloud"></div>
+            </section>
+        </main>
+
+        <section class="panel library-panel">
+            <div class="section-head">
+                <h2>Topic library</h2>
+                <p>Save topics, reopen earlier graphs or delete ones you no longer need.</p>
+            </div>
+            <div id="topicLibrary" class="topic-library"></div>
+        </section>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

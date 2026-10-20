@@ -1,7 +1,7 @@
 """Shell command palette: search every app feature *and your own content*.
 
 Typing filters workspaces, Personal sub-pages, the bundled/remote sites and
-every slash command by name — ``b`` surfaces Browser, Bí Mật, Bói Toán,
+every slash command by name — ``b`` surfaces Browser, Boards, Bookmarks,
 Boards, ... Enter (or a click) executes the highlighted row through the
 shell's own dispatch, so password-protected workspaces (AI / Personal)
 prompt for the passcode first and then enter automatically.
@@ -12,7 +12,7 @@ rows, because "jump to Notes" was never the hard part — "jump to the note I
 half-remember" is. Feature rows and content rows are assembled here so the
 palette dialog, the omnibar popup and the tests all read one list.
 """
-from litebrowser.services import life_service, personal_service
+from litebrowser.services import life_service, personal_service, tab_sets
 from PyQt5.QtWidgets import QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QWidget
 
 from litebrowser.core import app_paths, prefs
@@ -134,6 +134,7 @@ CONTENT_GLYPHS = {
     "planner-item": "▦",
     "planner-block": "◷",
     "flashcard": "⇄",
+    "research_workspace": "⌘",
 }
 
 CONTENT_CATEGORIES = {
@@ -147,6 +148,7 @@ CONTENT_CATEGORIES = {
     "planner-item": "Your plan",
     "planner-block": "Focus block",
     "flashcard": "Your card",
+    "research_workspace": "Research workspace",
 }
 
 #: Two characters minimum: one letter matches half the profile, which is noise.
@@ -180,8 +182,25 @@ def content_entries(base_dir: str, query: str, limit: int = 8) -> list[dict]:
         )
     except Exception:  # noqa: BLE001  a broken vault must not break the omnibar
         pass
+    research_hits = []
+    try:
+        needle = q.lower()
+        research_hits = [
+            {
+                "kind": "research_workspace",
+                "title": workspace.get("title", ""),
+                "id": workspace.get("id", ""),
+                "subtitle": f"{len(workspace.get('tabs', []))} saved tabs",
+            }
+            for workspace in tab_sets.list_tab_sets(base_dir)
+            if workspace.get("kind") == "workspace"
+            and not workspace.get("auto")
+            and needle in str(workspace.get("title", "")).lower()
+        ]
+    except Exception:  # a broken optional collection store must not break search
+        research_hits = []
     entries: list[dict] = []
-    for hit in hits[:limit]:
+    for hit in hits[: max(0, limit - min(limit, len(research_hits))) ] + research_hits[:limit]:
         kind = str(hit.get("kind", ""))
         title = str(hit.get("title", "") or "").strip() or "(untitled)"
         subtitle = str(hit.get("subtitle", "") or "").strip()

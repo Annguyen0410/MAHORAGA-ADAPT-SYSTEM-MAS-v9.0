@@ -158,6 +158,7 @@ class TestUniversalSearch(_DeskTmp):
             "planner-block",
             "planner-course",
             "flashcard",
+            "research_workspace",
         }
         for row in shell_palette.content_entries(self.base, "krebs"):
             self.assertIn(row["payload"]["kind"], routed, "a row the shell cannot route is a lie")
@@ -165,6 +166,17 @@ class TestUniversalSearch(_DeskTmp):
     def test_one_letter_does_not_dump_the_whole_profile(self):
         personal_service.create_note(self.base, "Krebs cycle", "citrate")
         self.assertEqual(shell_palette.content_entries(self.base, "k"), [])
+
+    def test_named_research_workspaces_are_searchable_and_routable(self):
+        from litebrowser.services import tab_sets
+
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Chemistry field notes", [
+            {"url": "https://example.test/lab", "title": "Lab reference"},
+        ])
+        rows = shell_palette.content_entries(self.base, "chemistry")
+        research = next(row for row in rows if row["payload"]["kind"] == "research_workspace")
+        self.assertEqual(research["title"], "Chemistry field notes")
+        self.assertEqual(research["payload"]["id"], workspace["id"])
 
     def test_features_come_first_and_content_follows(self):
         personal_service.create_note(self.base, "review notes", "grading")
@@ -184,7 +196,7 @@ class TestStudyRitual(_DeskTmp):
     def test_a_pour_is_a_real_focus_session_with_the_cup_in_its_name(self):
         session = study_ritual.start_ritual(self.base, pour="ca-phe-sua", note="finish chapter 4")
         self.assertEqual(session["minutes"], 45, "the cup sets the pace")
-        self.assertIn("Cà phê sữa", session["label"])
+        self.assertIn("Milk coffee", session["label"])
         self.assertIn("finish chapter 4", session["label"])
         # The ritual has to start the app's *own* pour, not a private timer: the
         # status strip, the focus journal and the weekly review all read this.
@@ -198,7 +210,7 @@ class TestStudyRitual(_DeskTmp):
         study_ritual.start_ritual(self.base, pour="tra-dao")
         self.assertEqual(study_ritual.last_pour(self.base), "tra-dao")
         session = study_ritual.start_ritual(self.base, pour="khong-co-ly-nay")
-        self.assertIn("Trà đào", session["label"])
+        self.assertIn("Peach tea", session["label"])
 
     def test_minutes_can_override_the_cup_but_zero_means_the_cup(self):
         short = study_ritual.start_ritual(self.base, pour="bac-xiu", minutes=10)
@@ -210,7 +222,7 @@ class TestStudyRitual(_DeskTmp):
         session = study_ritual.start_ritual(self.base, pour="ca-phe-den")
         line = study_ritual.ritual_line(session)
         self.assertIn("25 minutes", line)
-        self.assertIn("Cà phê đen", line)
+        self.assertIn("Black coffee", line)
 
     def test_every_pour_has_a_length_and_a_menu_line(self):
         for pour in study_ritual.pour_ids():
@@ -309,6 +321,21 @@ class TestHomeDesk(unittest.TestCase):
         self.assertFalse(self.page._more_panel.isHidden())
         self.page.btn_all_features.setChecked(False)
         self.assertTrue(self.page._more_panel.isHidden())
+
+    def test_home_layout_preferences_hide_reorder_and_resize_cards(self):
+        prefs.save_pref(self.base, "home_dashboard", {
+            "order": ["due", "next", "today", "in_progress"],
+            "visible": ["due", "next"],
+            "size": "compact",
+        })
+        self.page._apply_home_preferences()
+        self.assertEqual(
+            [widget.property("deskBlock") for widget in self.page._desk_grid._widgets],
+            ["due", "next", "today", "in_progress"],
+        )
+        self.assertFalse(self.page._desk_cards["due"]["card"].isHidden())
+        self.assertFalse(self.page._desk_cards["today"]["card"].isVisible())
+        self.assertEqual(self.page._desk_cards["due"]["list"].minimumHeight(), 76)
 
     def test_the_blocks_render_what_the_service_reports(self):
         personal_plan.create_item(self.base, "Read chapter 4", scheduled_date=_today())
