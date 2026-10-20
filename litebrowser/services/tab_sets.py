@@ -345,17 +345,30 @@ def build_research_context(base_dir: str, max_chars: int = 12000) -> dict[str, A
             note = None
         if note and append(f"Linked note: {note.get('title', 'Untitled')[:160]}", str(note.get("content") or "")[:5000]):
             notes += 1
-    task_map = {str(task.get("id")): task for task in life_service.load_tasks(base_dir) if isinstance(task, dict)}
+    def load_map(loader):
+        try:
+            rows = loader(base_dir)
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(rows, list):
+            return {}
+        return {
+            str(row.get("id")): row
+            for row in rows
+            if isinstance(row, dict) and row.get("id")
+        }
+
+    task_map = load_map(life_service.load_tasks)
     for task_id in workspace.get("tasks", [])[:12]:
         task = task_map.get(task_id)
         if task and append("Linked task", f"Title: {str(task.get('title') or '')[:300]}\nNotes: {str(task.get('notes') or '')[:1200]}\nStatus: {'complete' if task.get('completed') else 'open'}"):
             tasks += 1
-    page_map = {str(page.get("id")): page for page in life_service.load_saved_pages(base_dir) if isinstance(page, dict)}
+    page_map = load_map(life_service.load_saved_pages)
     for page_id in workspace.get("saved_pages", [])[:12]:
         page = page_map.get(page_id)
         if page and append("Linked saved page", f"{str(page.get('title') or '')[:200]} — {str(page.get('url') or '')[:500]}\n{str(page.get('summary') or '')[:1000]}"):
             pages += 1
-    card_map = {str(card.get("id")): card for card in flashcard_service.load_cards(base_dir) if isinstance(card, dict)}
+    card_map = load_map(flashcard_service.load_cards)
     for card_id in workspace.get("flashcards", [])[:12]:
         card = card_map.get(card_id)
         if card and append("Linked flashcard", f"Front: {str(card.get('front') or '')[:500]}\nBack: {str(card.get('back') or '')[:800]}"):

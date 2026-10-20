@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from litebrowser.services import flashcard_service, life_service, personal_service, tab_sets
 
@@ -111,6 +112,18 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         context = tab_sets.build_research_context(self.base, max_chars=128)
 
         self.assertLessEqual(len(context["text"]), 128)
+
+    def test_unreadable_linked_store_does_not_hide_healthy_context(self):
+        note = personal_service.create_note(self.base, "Healthy note", "Available context.")
+        task = life_service.add_task(self.base, "Unreadable task")
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Partial desk", [], notes=[note["id"]], tasks=[task["id"]])
+        self.assertTrue(tab_sets.set_active_research_workspace(self.base, workspace["id"]))
+
+        with patch("litebrowser.services.life_service.load_tasks", side_effect=ValueError("bad task store")):
+            context = tab_sets.build_research_context(self.base)
+
+        self.assertIn("Available context.", context["text"])
+        self.assertEqual(context["counts"]["tasks"], 0)
 
 
 if __name__ == "__main__":
