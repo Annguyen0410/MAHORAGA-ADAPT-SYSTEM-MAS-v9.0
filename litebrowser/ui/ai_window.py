@@ -527,10 +527,18 @@ class AIWindow(QMainWindow):
                 label += " + " + context_label
             self.run_assistant_query(question, label, "\n\n".join(parts))
 
-        browser.page().runJavaScript(
-            "(function(){try{return (document.body && document.body.innerText) || '';}catch(e){return '';}})();",
-            _on_text,
-        )
+        try:
+            browser.page().runJavaScript(
+                "(function(){try{return (document.body && document.body.innerText) || '';}catch(e){return '';}})();",
+                _on_text,
+            )
+        except Exception:
+            # A tab may be closing or navigating while the user submits.
+            # Keep the local context, but don't attach stale tab metadata.
+            self.lbl_context_scope.setText("Context: browser page unavailable")
+            self.run_assistant_query(
+                question, context_label + " (browser page unavailable)", extra_context
+            )
 
     def _host_browser(self):
         """Return the shell's selected browser tab, if this AI pane is embedded."""

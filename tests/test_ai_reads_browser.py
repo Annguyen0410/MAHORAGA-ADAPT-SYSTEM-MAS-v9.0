@@ -243,6 +243,15 @@ class TestBrowserContextToggle(_AICase):
         self.assertEqual(self.browser._page.scripts, [])
         self.assertIn("privacy could not be verified", self.window.lbl_context_scope.text())
 
+    def test_closing_page_during_context_read_keeps_local_context(self):
+        self.browser._page.runJavaScript = mock.Mock(side_effect=RuntimeError("page closed"))
+        ask = self._ask()
+
+        _question, label, context = ask.call_args[0]
+        self.assertEqual(label, "Workspace-wide (browser page unavailable)")
+        self.assertEqual(context, "")
+        self.assertIn("browser page unavailable", self.window.lbl_context_scope.text())
+
     def test_the_page_is_read_through_javascript(self):
         self._ask()
         self.assertTrue(self.browser._page.scripts)
