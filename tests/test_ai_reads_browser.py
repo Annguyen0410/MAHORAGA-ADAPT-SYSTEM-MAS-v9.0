@@ -157,6 +157,24 @@ class TestBrowserContextToggle(_AICase):
         self.assertIn("Local note body", context)
         self.assertIn("Chemistry project", context)
 
+    def test_one_shot_context_research_and_browser_text_are_all_combined(self):
+        from litebrowser.services import personal_service, tab_sets
+
+        note = personal_service.create_note(self.base, "Lab notes", "Research record body.")
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Chemistry project", [], notes=[note["id"]])
+        tab_sets.set_active_research_workspace(self.base, workspace["id"])
+        self.window.chk_research_context.setChecked(True)
+        self.window._external_context_label = "Selected passage"
+        self.window._external_context = "Passage selected by the user."
+
+        ask = self._ask("Compare this passage with my desk")
+
+        _question, label, context = ask.call_args[0]
+        self.assertEqual(label, "Browser page + open tabs + research")
+        self.assertIn("Passage selected by the user.", context)
+        self.assertIn("Research record body.", context)
+        self.assertIn("Body of the page", context)
+
     def test_incognito_page_text_is_never_attached(self):
         self.shell.browser_page._browser = _FakeBrowser(private=True)
         ask = self._ask()
