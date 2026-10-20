@@ -356,7 +356,10 @@ def set_reading_progress(base_dir: str, url: str, percent: int) -> dict | None:
     url = (url or "").strip()
     if not url:
         return None
-    percent = max(0, min(100, int(percent or 0)))
+    try:
+        percent = max(0, min(100, int(percent or 0)))
+    except (TypeError, ValueError, OverflowError):
+        return None
     with profile_locked(base_dir):
         items = _read_list(saved_pages_path(base_dir))
         for item in items:
@@ -372,7 +375,10 @@ def continue_reading_page(base_dir: str) -> dict | None:
     """The saved page furthest along but not finished (5-95%)."""
     best = None
     for item in load_saved_pages(base_dir):
-        pct = int(item.get("read_percent", 0) or 0)
+        try:
+            pct = int(item.get("read_percent", 0) or 0)
+        except (TypeError, ValueError, OverflowError):
+            continue
         if 5 <= pct < 95:
             if best is None or pct > int(best.get("read_percent", 0) or 0):
                 best = item
