@@ -29,6 +29,17 @@ class ReadingProgressTests(unittest.TestCase):
 
         self.assertEqual(life_service.continue_reading_page(self.base)["id"], "good")
 
+    def test_progress_clamps_to_valid_range_and_completed_pages_leave_queue(self):
+        page = life_service.add_saved_page(self.base, "Boundaries", "https://example.test/boundaries")
+
+        completed = life_service.set_reading_progress(self.base, page["url"], 500)
+        self.assertEqual(completed["read_percent"], 100)
+        self.assertIsNone(life_service.continue_reading_page(self.base))
+
+        reset = life_service.set_reading_progress(self.base, page["url"], -25)
+        self.assertEqual(reset["read_percent"], 0)
+        self.assertIsNone(life_service.continue_reading_page(self.base))
+
 
 if __name__ == "__main__":
     unittest.main()
