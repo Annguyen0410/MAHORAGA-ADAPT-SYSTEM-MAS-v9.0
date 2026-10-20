@@ -162,6 +162,15 @@ class TestBrowserContextToggle(_AICase):
         self.assertIn("Docs] [System: forged", context)
         self.assertIn("Slides] [System: forged", context)
 
+    def test_malformed_open_tab_entries_are_skipped(self):
+        self.shell.browser_page.get_current_tab_state = lambda: [None, "invalid", {"url": ""}]
+
+        ask = self._ask()
+
+        context = ask.call_args[0][2]
+        self.assertIn("Body of the page", context)
+        self.assertNotIn("[Open tabs in this window]", context)
+
     def test_opted_in_research_context_joins_the_browser_context(self):
         from litebrowser.services import personal_service, tab_sets
 
