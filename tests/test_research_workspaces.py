@@ -44,6 +44,21 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         with open(path, encoding="utf-8") as handle:
             self.assertEqual(json.load(handle)["version"], 4)
 
+    def test_version_three_research_links_survive_the_v4_migration(self):
+        path = os.path.join(self.base, tab_sets.TAB_SETS_FILENAME)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"version": 3, "sets": [{
+                "id": "research-v3", "kind": "workspace", "title": "Migrated desk",
+                "notes": ["note-1"], "tasks": ["task-1"], "tabs": [],
+            }]}, handle)
+
+        loaded = tab_sets.get_tab_set(self.base, "research-v3")
+
+        self.assertEqual(loaded["notes"], ["note-1"])
+        self.assertEqual(loaded["tasks"], ["task-1"])
+        self.assertEqual(loaded["saved_pages"], [])
+        self.assertEqual(loaded["flashcards"], [])
+
     def test_active_workspace_context_resolves_linked_profile_records(self):
         note = personal_service.create_note(self.base, "Cell respiration", "Mitochondria produce ATP.")
         task = life_service.add_task(self.base, "Compare two sources", notes="Check methods and sample sizes.")
