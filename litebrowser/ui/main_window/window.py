@@ -2350,7 +2350,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
 
         def _store(pct):
             try:
-                life_service.set_reading_progress(self.base_dir, url, int(pct or 0))
+                life_service.set_reading_progress(self.base_dir, url, pct)
             except Exception:
                 pass
 
