@@ -121,6 +121,8 @@ class TestBrowserContextToggle(_AICase):
         tooltip = self.window.chk_browser_context.toolTip().lower()
         self.assertIn("browser", tooltip)
         self.assertIn("untrusted", tooltip, "reading a page must stay untrusted context")
+        self.assertIn("remote provider", tooltip)
+        self.assertIn("sent to that provider", tooltip)
 
     def test_research_context_is_off_by_default_and_disclosure_is_visible(self):
         self.assertFalse(self.window.chk_research_context.isChecked())
