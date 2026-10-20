@@ -90,6 +90,12 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         tab_sets.remove_tab_set(self.base, workspace["id"])
         self.assertIsNone(tab_sets.get_active_research_workspace(self.base))
 
+    def test_search_collection_cannot_become_the_active_research_workspace(self):
+        collection = tab_sets.add_tab_set(self.base, "search", "Saved search", [])
+
+        self.assertFalse(tab_sets.set_active_research_workspace(self.base, collection["id"]))
+        self.assertIsNone(tab_sets.get_active_research_workspace(self.base))
+
     def test_negative_research_context_limit_fails_closed_to_empty(self):
         workspace = tab_sets.add_tab_set(self.base, "workspace", "Bounded context", [])
         self.assertTrue(tab_sets.set_active_research_workspace(self.base, workspace["id"]))
