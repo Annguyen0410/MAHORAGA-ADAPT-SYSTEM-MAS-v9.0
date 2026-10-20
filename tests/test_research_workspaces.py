@@ -88,6 +88,15 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         self.assertFalse(tab_sets.add_research_reference(self.base, workspace["id"], "task", "task-overflow"))
         self.assertEqual(len(tab_sets.get_tab_set(self.base, workspace["id"])["tasks"]), 20)
 
+    def test_research_context_never_exceeds_requested_character_budget(self):
+        note = personal_service.create_note(self.base, "Long source", "research " * 2000)
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Bounded context", [], notes=[note["id"]])
+        self.assertTrue(tab_sets.set_active_research_workspace(self.base, workspace["id"]))
+
+        context = tab_sets.build_research_context(self.base, max_chars=128)
+
+        self.assertLessEqual(len(context["text"]), 128)
+
 
 if __name__ == "__main__":
     unittest.main()
