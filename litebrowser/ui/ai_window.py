@@ -156,7 +156,7 @@ class AIWindow(QMainWindow):
         self.chk_browser_context.setToolTip(
             "Attach the page open in the browser (its full text) plus every open tab to each question.\n"
             "The content is labelled untrusted context, so the assistant reads it but never follows it.\n"
-            "When a remote provider is selected, page text is sent to that provider with your question."
+            "When a remote provider is selected, page text and open-tab titles/URLs are sent to that provider."
         )
         badge_row.addWidget(self.chk_browser_context)
         self.chk_research_context = QCheckBox("Use research desk")

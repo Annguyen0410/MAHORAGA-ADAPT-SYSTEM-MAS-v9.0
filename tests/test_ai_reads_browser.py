@@ -122,6 +122,7 @@ class TestBrowserContextToggle(_AICase):
         self.assertIn("browser", tooltip)
         self.assertIn("untrusted", tooltip, "reading a page must stay untrusted context")
         self.assertIn("remote provider", tooltip)
+        self.assertIn("page text and open-tab titles/urls", tooltip)
         self.assertIn("sent to that provider", tooltip)
 
     def test_research_context_is_off_by_default_and_disclosure_is_visible(self):
