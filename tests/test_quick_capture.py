@@ -59,6 +59,26 @@ def test_link_capture_rejects_non_web_schemes_and_accepts_https(tmp_path):
     app.processEvents()
 
 
+def test_empty_note_task_and_flashcard_drafts_are_not_saved(tmp_path):
+    dialog = QuickCaptureDialog(str(tmp_path))
+
+    dialog._save()
+    assert dialog.capture_payload is None
+    assert "title" in dialog.lbl_error.text().lower()
+
+    dialog.cmb_kind.setCurrentIndex(dialog.cmb_kind.findData("task"))
+    dialog._save()
+    assert dialog.capture_payload is None
+    assert "task" in dialog.lbl_error.text().lower()
+
+    dialog.cmb_kind.setCurrentIndex(dialog.cmb_kind.findData("flashcard"))
+    dialog._save()
+    assert dialog.capture_payload is None
+    assert "front and back" in dialog.lbl_error.text().lower()
+    dialog.deleteLater()
+    app.processEvents()
+
+
 def test_private_context_is_not_rendered_or_prefilled(tmp_path):
     dialog = QuickCaptureDialog(
         str(tmp_path),
