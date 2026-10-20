@@ -36,6 +36,11 @@ from litebrowser.services import (
 from litebrowser.ui import components, theme, win_titlebar
 
 
+def _single_line_context_label(value, limit: int) -> str:
+    """Keep page supplied labels from forging structure in the AI prompt."""
+    return " ".join(str(value or "").split())[:limit]
+
+
 class AIWindow(QMainWindow):
     query_finished = pyqtSignal(object, str, str)
     _ollama_models_ready = pyqtSignal(list)
@@ -466,8 +471,10 @@ class AIWindow(QMainWindow):
             return []
         lines = []
         for tab in tabs[:20]:
-            title = (tab.get("title") or "").strip()[:120]
-            url = (tab.get("url") or "").strip()[:200]
+            if not isinstance(tab, dict):
+                continue
+            title = _single_line_context_label(tab.get("title"), 120)
+            url = _single_line_context_label(tab.get("url"), 200)
             if not url:
                 continue
             marker = "* " if tab.get("active") or tab.get("current") else "- "
@@ -507,8 +514,10 @@ class AIWindow(QMainWindow):
 
         def _on_text(text):
             try:
-                title = browser.title() or browser.url().toString() or "Current page"
-                url = browser.url().toString()
+                title = _single_line_context_label(
+                    browser.title() or browser.url().toString() or "Current page", 200
+                )
+                url = _single_line_context_label(browser.url().toString(), 500)
             except RuntimeError:
                 # The tab (or the pane) went away while the page was answering.
                 return
