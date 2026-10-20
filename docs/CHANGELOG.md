@@ -4,6 +4,30 @@ Mei (formerly Mei Cafe Edition) is a multi-workspace desktop shell built on `PyQ
 
 > **Run & build the desktop app**: see the dedicated **`RUN_AND_BUILD.md`** — app testing checklist, how to use `.venv`, common run errors, and the full PyInstaller command (`--collect-all PyQt6.QtWebEngine*`) to produce the `.exe`.
 
+> ## 1.0.0.0 Alpha — Next Horizon
+>
+> Mei 1.0.0.0 brings the Next Horizon desktop experience together around connected
+> research, planning, and study workflows. This is an **Alpha pre-release** for
+> evaluation; it is not offered through the automatic update channel.
+>
+> - **Research workspaces:** save regular browser tabs as a named desk, link existing
+>   notes, tasks, saved pages, and flashcards, then restore or merge the tabs later.
+> - **Connected Home and capture:** customize Home cards, capture work into existing
+>   profile stores, and link new records to the active research desk.
+> - **AI context controls:** opt in to browser and research context, see clear provider
+>   disclosure, and keep private-page content out of requests. Page content is treated
+>   as untrusted reference material.
+> - **Folder sync and integrations:** preview and apply profile sync with a user-selected
+>   folder; optionally capture from a phone or supported browser extension.
+> - **Theme families and accessibility:** add fifteen visual theme families, profile-
+>   scoped Home layout preferences, and reduced-motion behavior.
+> - **Reliability:** validate and migrate research-workspace data, bound linked records,
+>   and keep context construction within a character budget.
+>
+> The desktop pre-release does not include a signed MeiRemote APK. Passcodes gate
+> workspaces but do not encrypt every profile file at rest. See `README.md` and the
+> user guide for setup and privacy details.
+
 > ## Accessibility polish
 >
 > - **Profile-scoped reduced motion** — Settings → Interface → Motion can follow the Windows client-area animation setting, reduce Mei's nonessential motion, or allow it. Reduced motion removes animations from Mei's new-tab page and makes tab-desk collapse immediate; websites keep their own presentation. The setting is profile-local and does not affect browser content.
