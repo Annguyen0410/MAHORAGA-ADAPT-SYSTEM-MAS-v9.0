@@ -80,6 +80,14 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         context = tab_sets.build_research_context(self.base, max_chars=-1)
         self.assertEqual(context["text"], "")
 
+    def test_research_references_are_bounded_and_duplicate_adds_are_idempotent(self):
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Bounded links", [])
+        for index in range(20):
+            self.assertTrue(tab_sets.add_research_reference(self.base, workspace["id"], "task", f"task-{index}"))
+        self.assertTrue(tab_sets.add_research_reference(self.base, workspace["id"], "task", "task-0"))
+        self.assertFalse(tab_sets.add_research_reference(self.base, workspace["id"], "task", "task-overflow"))
+        self.assertEqual(len(tab_sets.get_tab_set(self.base, workspace["id"])["tasks"]), 20)
+
 
 if __name__ == "__main__":
     unittest.main()
