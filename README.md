@@ -106,3 +106,5 @@ The application version is defined in [`litebrowser/core/product.py`](litebrowse
 Release notes come from [`docs/CHANGELOG.md`](docs/CHANGELOG.md), and
 [`tools/publish_release.py`](tools/publish_release.py) validates the tag and build
 version before publishing the executable, companion assets, and update manifest.
+Pushing a four-part version tag starts the Windows release workflow; a tag with a
+suffix, such as `v1.0.0.0-alpha.1`, is published as a pre-release.

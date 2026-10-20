@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build and publish ${{ github.ref_name }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install build and test dependencies
+        shell: pwsh
+        run: >-
+          python -m pip install --upgrade pip
+          "PyQt6==6.11.0" "PyQt6-WebEngine==6.11.0"
+          "cryptography>=41" "segno>=1.6.0" "pytest>=7.0"
+          "ruff>=0.5" "pyinstaller==6.19.0"
+
+      - name: Lint source
+        run: python -m ruff check --select F401,F811,F841,F821 litebrowser tests tools
+
+      - name: Check daytime theme behavior
+        run: python tools/run_at_hour.py 10
+
+      - name: Check nighttime theme behavior
+        run: python tools/run_at_hour.py 22
+
+      - name: Run test suite
+        run: python -m pytest -p no:cacheprovider --no-header -q
+
+      - name: Build shared assets
+        run: python tools/build_shared_assets.py
+
+      - name: Build Windows application
+        shell: pwsh
+        run: |
+          $icon = (Resolve-Path "icon.ico").Path
+          $iconPng = (Resolve-Path "icon.png").Path
+          $chain = (Resolve-Path "litebrowser/data/chain.json").Path
+          $plugins = (Resolve-Path "litebrowser/data/plugins").Path
+          $webApp = (Resolve-Path "web_support/boitoan").Path
+          python -m PyInstaller --onefile --noconfirm --windowed `
+            --icon="$icon" --name=Mei `
+            --distpath dist --workpath build/release --specpath build/release `
+            --add-data "$iconPng;." `
+            --add-data "$chain;litebrowser/data" `
+            --add-data "$plugins;litebrowser/data/plugins" `
+            --add-data "$webApp;web_support/boitoan" `
+            --collect-all cryptography --collect-all segno `
+            --collect-all PyQt6.QtWebEngineCore `
+            --collect-all PyQt6.QtWebEngineWidgets `
+            --collect-all PyQt6.QtWebChannel `
+            --exclude-module PyQt5 --clean browser.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $releaseArgs = @(
+            "tools/publish_release.py",
+            "--tag", $env:GITHUB_REF_NAME,
+            "--exe", "dist/Mei.exe",
+            "--web-support", "web_support"
+          )
+          if ($env:GITHUB_REF_NAME -match "-") { $releaseArgs += "--prerelease" }
+          python @releaseArgs
