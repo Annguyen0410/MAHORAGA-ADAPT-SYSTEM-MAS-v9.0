@@ -40,6 +40,9 @@ def _normalize_tab(tab: Any) -> dict[str, Any] | None:
     url = _clean_text(tab.get("url"), 4096)
     if not url or url in {"about:blank", "about:newtab"}:
         return None
+    scheme = url.partition(":")[0].lower() if ":" in url else ""
+    if scheme in {"javascript", "data", "vbscript"}:
+        return None
     return {
         "kind": "tab",
         "url": url,

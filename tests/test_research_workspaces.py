@@ -29,6 +29,17 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         self.assertEqual(loaded["tasks"], ["task-1"])
         self.assertEqual(loaded["kind"], "workspace")
 
+    def test_saved_collections_reject_executable_tab_schemes(self):
+        tabs = tab_sets.normalize_tabs([
+            {"url": "https://example.test/"},
+            {"url": "file:///tmp/reader.html"},
+            {"url": "javascript:alert(1)"},
+            {"url": "data:text/html,<script>alert(1)</script>"},
+            {"url": "vbscript:msgbox(1)"},
+        ])
+
+        self.assertEqual([tab["url"] for tab in tabs], ["https://example.test/", "file:///tmp/reader.html"])
+
     def test_malformed_collection_kind_and_tabs_fall_back_safely(self):
         workspace = tab_sets.add_tab_set(self.base, [], "Malformed input", 42)
 
