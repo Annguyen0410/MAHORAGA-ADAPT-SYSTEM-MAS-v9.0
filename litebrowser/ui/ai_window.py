@@ -494,7 +494,7 @@ class AIWindow(QMainWindow):
                     question, context_label + " (private page excluded)", extra_context
                 )
                 return
-        except (AttributeError, RuntimeError):
+        except Exception:
             # An unknown profile is treated as private; never send a page whose
             # isolation state cannot be verified.
             self.lbl_context_scope.setText("Context: page privacy could not be verified")

@@ -228,6 +228,20 @@ class TestBrowserContextToggle(_AICase):
         self.assertNotIn("SECRET PRIVATE PAGE TEXT", context)
         self.assertNotIn("private.example", context)
 
+    def test_profile_check_failure_fails_closed_without_reading_page(self):
+        class _BrokenProfile:
+            def isOffTheRecord(self):
+                raise ValueError("profile state unavailable")
+
+        self.browser._page.profile = lambda: _BrokenProfile()
+        ask = self._ask()
+
+        _question, label, context = ask.call_args[0]
+        self.assertEqual(label, "Workspace-wide (page privacy unverified)")
+        self.assertEqual(context, "")
+        self.assertEqual(self.browser._page.scripts, [])
+        self.assertIn("privacy could not be verified", self.window.lbl_context_scope.text())
+
     def test_the_page_is_read_through_javascript(self):
         self._ask()
         self.assertTrue(self.browser._page.scripts)
