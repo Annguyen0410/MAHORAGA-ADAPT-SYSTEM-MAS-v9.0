@@ -29,6 +29,12 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         self.assertEqual(loaded["tasks"], ["task-1"])
         self.assertEqual(loaded["kind"], "workspace")
 
+    def test_malformed_collection_kind_and_tabs_fall_back_safely(self):
+        workspace = tab_sets.add_tab_set(self.base, [], "Malformed input", 42)
+
+        self.assertEqual(workspace["kind"], "collection")
+        self.assertEqual(workspace["tabs"], [])
+
     def test_version_two_collections_migrate_without_losing_tabs(self):
         path = os.path.join(self.base, tab_sets.TAB_SETS_FILENAME)
         with open(path, "w", encoding="utf-8") as handle:

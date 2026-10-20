@@ -56,6 +56,8 @@ def _normalize_tab(tab: Any) -> dict[str, Any] | None:
 
 def normalize_tabs(tabs: Iterable[dict]) -> list[dict[str, Any]]:
     """Sanitize collection input while retaining order and intentional duplicates."""
+    if not isinstance(tabs, Iterable):
+        return []
     result = []
     for tab in tabs or []:
         normalized = _normalize_tab(tab)
@@ -74,7 +76,8 @@ def _normalize_set(tab_set: Any) -> dict[str, Any] | None:
     if not isinstance(tab_set, dict):
         return None
     tab_id = _clean_text(tab_set.get("id"), 80) or uuid.uuid4().hex
-    kind = tab_set.get("kind") if tab_set.get("kind") in VALID_KINDS else "collection"
+    raw_kind = tab_set.get("kind")
+    kind = raw_kind if isinstance(raw_kind, str) and raw_kind in VALID_KINDS else "collection"
     title = _clean_text(tab_set.get("title")) or "Untitled collection"
     try:
         created_at = int(tab_set.get("created_at", 0) or 0)
@@ -223,7 +226,7 @@ def add_tab_set(
     """
     with profile_locked(base_dir):
         data = load_tab_sets(base_dir)
-        normalized_kind = kind if kind in VALID_KINDS else "collection"
+        normalized_kind = kind if isinstance(kind, str) and kind in VALID_KINDS else "collection"
         now = int(time.time())
         normalized_title = _clean_text(title) or "Untitled collection"
         tab_set = {
