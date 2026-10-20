@@ -50,6 +50,15 @@ def test_link_capture_rejects_non_web_schemes_and_accepts_https(tmp_path):
     assert dialog.capture_payload is None
     assert "http:// or https://" in dialog.lbl_error.text()
 
+    for unsafe_url in (
+        "https://user:password@example.test/article",
+        "https://example.test:not-a-port/article",
+        "https://example.test:70000/article",
+    ):
+        fields["url"].setText(unsafe_url)
+        dialog._save()
+        assert dialog.capture_payload is None
+
     fields["url"].setText("https://example.test/article")
     dialog._save()
     assert dialog.capture_payload == {

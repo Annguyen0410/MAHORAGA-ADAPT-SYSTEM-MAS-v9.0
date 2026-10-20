@@ -154,9 +154,18 @@ class QuickCaptureDialog(QtWidgets.QDialog):
             message = "Enter a title for this task."
         elif kind == "link":
             payload = {"kind": kind, "title": fields["title"].text().strip(), "url": fields["url"].text().strip()}
-            parsed = urlsplit(payload["url"])
-            valid = parsed.scheme in ("http", "https") and bool(parsed.hostname)
-            message = "Enter a valid http:// or https:// URL."
+            try:
+                parsed = urlsplit(payload["url"])
+                parsed.port  # Accessing this also rejects malformed/out-of-range ports.
+                valid = (
+                    parsed.scheme in ("http", "https")
+                    and bool(parsed.hostname)
+                    and parsed.username is None
+                    and parsed.password is None
+                )
+            except ValueError:
+                valid = False
+            message = "Enter a valid http:// or https:// URL without embedded credentials."
             if valid and not payload["title"]:
                 payload["title"] = payload["url"]
         else:
