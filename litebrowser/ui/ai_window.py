@@ -753,10 +753,12 @@ class AIWindow(QMainWindow):
         title = self._last_question[:60] or "AI note"
         body = "# " + title + "\n\n" + self._last_answer
         note = personal_service.create_note(self.base_dir, title, body)
-        linked_to = self._link_to_active_research("note", note.get("id", ""))
+        linked_to, linked = self._link_to_active_research("note", note.get("id", ""))
         message = "Saved answer to note: " + note["title"]
-        if linked_to:
+        if linked:
             message += f"\nLinked to research workspace: {linked_to}"
+        elif linked_to:
+            message += f"\nSaved, but could not link to research workspace: {linked_to}"
         QMessageBox.information(self, "AI Assistant", message)
 
     def create_task_from_answer(self):
@@ -765,25 +767,28 @@ class AIWindow(QMainWindow):
             return
         title = self._last_question[:80] or "AI follow-up"
         task = life_service.add_task(self.base_dir, title, bucket="work")
-        linked_to = self._link_to_active_research("task", task.get("id", ""))
+        linked_to, linked = self._link_to_active_research("task", task.get("id", ""))
         message = "Created a task from the current answer."
-        if linked_to:
+        if linked:
             message += f"\nLinked to research workspace: {linked_to}"
+        elif linked_to:
+            message += f"\nCreated, but could not link to research workspace: {linked_to}"
         QMessageBox.information(self, "AI Assistant", message)
 
-    def _link_to_active_research(self, entity_type: str, entity_id: str) -> str:
-        """Attach an explicitly saved AI output to the active research desk."""
+    def _link_to_active_research(self, entity_type: str, entity_id: str) -> tuple[str, bool]:
+        """Attach an explicitly saved AI output and report link failures truthfully."""
         try:
             from litebrowser.services import tab_sets
 
             workspace = tab_sets.get_active_research_workspace(self.base_dir)
-            if workspace and tab_sets.add_research_reference(
+            if not workspace:
+                return "", False
+            title = str(workspace.get("title") or "")
+            return title, tab_sets.add_research_reference(
                 self.base_dir, workspace["id"], entity_type, entity_id
-            ):
-                return str(workspace.get("title") or "")
+            )
         except (OSError, ValueError, RuntimeError):
-            return ""
-        return ""
+            return "", False
 
     def get_current_ai_state(self):
         return [

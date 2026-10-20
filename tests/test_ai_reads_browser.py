@@ -175,6 +175,18 @@ class TestBrowserContextToggle(_AICase):
         self.assertIn("Research record body.", context)
         self.assertIn("Body of the page", context)
 
+    def test_ai_save_can_distinguish_full_research_workspace_from_no_workspace(self):
+        from litebrowser.services import tab_sets
+
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Full desk", [])
+        tab_sets.set_active_research_workspace(self.base, workspace["id"])
+        for index in range(20):
+            tab_sets.add_research_reference(self.base, workspace["id"], "note", f"note-{index}")
+
+        self.assertEqual(self.window._link_to_active_research("note", "new-note"), ("Full desk", False))
+        tab_sets.set_active_research_workspace(self.base, "")
+        self.assertEqual(self.window._link_to_active_research("note", "new-note"), ("", False))
+
     def test_incognito_page_text_is_never_attached(self):
         self.shell.browser_page._browser = _FakeBrowser(private=True)
         ask = self._ask()
