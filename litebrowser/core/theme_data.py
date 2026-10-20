@@ -592,6 +592,9 @@ PALETTES.update({
     "solarized-focus": _art_palette("#F3F0E2", "#EAE6D6", "#EEEBDE", "#F8F5E9", "#D6D0BD", "#36464A", "#667577", "#287A78", "#1D6665", "#DDE8DF", "#E5E9DC", "#D4E1D5"),
     "high-contrast": _art_palette("#FFFFFF", "#EEEEEE", "#F4F4F4", "#FFFFFF", "#555555", "#101010", "#454545", "#003FCC", "#002E99", "#DCE6FF", "#E4E9F4", "#C8D7FF", danger="#A40000", success="#006A20"),
     "glasshouse": _art_palette("#EAF3EF", "#DDEBE5", "#E3EEE8", "#F6FBF8", "#BFD4C8", "#19362B", "#5C7568", "#397B5C", "#286746", "#D8E9DE", "#DDECE2", "#CDE2D3"),
+    "forest-sanctuary": _art_palette("#111A15", "#18241C", "#141F18", "#1D2A21", "#394B3D", "#F0F4EB", "#B1BDAE", "#A9C77A", "#C4DB92", "#2A3F2C", "#2A382D", "#334A35"),
+    "ocean-depths": _art_palette("#0D1722", "#142230", "#101C29", "#192837", "#344A5D", "#F0F5F8", "#AFC0CC", "#58B8CC", "#80D2E0", "#1B3A46", "#203646", "#294657"),
+    "sunset-dusk": _art_palette("#21151A", "#2D1B22", "#27181F", "#35212A", "#563541", "#FFF3EB", "#D9B9B1", "#F19C72", "#FFB88D", "#4B2930", "#432530", "#55313C"),
 })
 
 # Theme shown when a profile has never picked one (and for unknown names).
@@ -632,6 +635,9 @@ THEME_LABELS = {
     "solarized-focus": "Solarized Focus · low-glare reading",
     "high-contrast": "High Contrast · clear states",
     "glasshouse": "Glasshouse · botanical porcelain",
+    "forest-sanctuary": "Forest Sanctuary · moss and warm earth",
+    "ocean-depths": "Ocean Depths · deep marine and aqua",
+    "sunset-dusk": "Sunset Dusk · ember and plum",
 }
 
 

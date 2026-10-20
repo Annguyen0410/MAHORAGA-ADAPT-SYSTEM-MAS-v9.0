@@ -142,7 +142,7 @@ it. Turn it off for purely local questions.
 
 ## 6. Themes & focus
 
-The theme picker includes additional art-directed families such as Aurora Glass, Sakura Twilight, Cyberpunk Neon, Midnight AMOLED, Arctic Aurora, Retro Terminal, Paper Studio, Monochrome Pro, Dreamscape, Solarized Focus, High Contrast, and Glasshouse. The Glasshouse treatment uses opaque botanical surfaces for consistent readability across platforms. Themes recolor Mei's interface and new-tab page; they do not restyle third-party websites.
+The theme picker includes additional art-directed families such as Aurora Glass, Sakura Twilight, Cyberpunk Neon, Midnight AMOLED, Arctic Aurora, Forest Sanctuary, Ocean Depths, Retro Terminal, Paper Studio, Monochrome Pro, Sunset Dusk, Dreamscape, Solarized Focus, High Contrast, and Glasshouse. The Glasshouse treatment uses opaque botanical surfaces for consistent readability across platforms. Themes recolor Mei's interface and new-tab page; they do not restyle third-party websites.
 
 On Home, select **Customize Home** to hide, reorder (drag rows), or resize the four desk cards for the current profile. **Reset to default** restores only the dashboard layout.
 

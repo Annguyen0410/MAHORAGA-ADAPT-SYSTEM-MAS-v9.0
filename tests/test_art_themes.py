@@ -16,6 +16,7 @@ class ArtThemeTests(unittest.TestCase):
             "aurora-glass", "sakura-twilight", "cyberpunk-neon", "midnight-amoled",
             "arctic-aurora", "retro-terminal", "paper-studio", "monochrome-pro",
             "dreamscape", "solarized-focus", "high-contrast", "glasshouse",
+            "forest-sanctuary", "ocean-depths", "sunset-dusk",
         }
         self.assertTrue(expected.issubset(theme_data.PALETTES))
         for name in expected:
