@@ -138,6 +138,16 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         self.assertTrue(tab_sets.set_active_research_workspace(self.base, ""))
         self.assertIsNone(tab_sets.get_active_research_workspace(self.base))
 
+    def test_active_research_selection_is_profile_scoped(self):
+        other_profile = os.path.join(self.base, "other-profile")
+        first = tab_sets.add_tab_set(self.base, "workspace", "First profile", [])
+        second = tab_sets.add_tab_set(other_profile, "workspace", "Second profile", [])
+        tab_sets.set_active_research_workspace(self.base, first["id"])
+        tab_sets.set_active_research_workspace(other_profile, second["id"])
+
+        self.assertEqual(tab_sets.get_active_research_workspace(self.base)["id"], first["id"])
+        self.assertEqual(tab_sets.get_active_research_workspace(other_profile)["id"], second["id"])
+
     def test_negative_research_context_limit_fails_closed_to_empty(self):
         workspace = tab_sets.add_tab_set(self.base, "workspace", "Bounded context", [])
         self.assertTrue(tab_sets.set_active_research_workspace(self.base, workspace["id"]))
