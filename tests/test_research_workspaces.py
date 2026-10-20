@@ -48,6 +48,11 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         self.assertEqual(workspace["created_at"], 0)
         self.assertEqual(workspace["updated_at"], 0)
 
+    def test_save_rejects_non_list_collection_payloads(self):
+        tab_sets.save_tab_sets(self.base, {"sets": {"not": "a list"}})
+
+        self.assertEqual(tab_sets.list_tab_sets(self.base), [])
+
     def test_version_two_collections_migrate_without_losing_tabs(self):
         path = os.path.join(self.base, tab_sets.TAB_SETS_FILENAME)
         with open(path, "w", encoding="utf-8") as handle:

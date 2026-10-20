@@ -199,6 +199,8 @@ def load_tab_sets(base_dir: str) -> dict[str, Any]:
 
 def save_tab_sets(base_dir: str, data: dict[str, Any]) -> None:
     raw_sets = data.get("sets", []) if isinstance(data, dict) else []
+    if not isinstance(raw_sets, list):
+        raw_sets = []
     payload = {
         "sets": _trim_sets([item for item in (_normalize_set(tab_set) for tab_set in raw_sets) if item]),
     }
