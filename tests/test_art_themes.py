@@ -28,6 +28,21 @@ class ArtThemeTests(unittest.TestCase):
                 )
                 self.assertEqual(theme_data.theme_variant(name, dark=False), name)
 
+    def test_every_new_family_has_its_own_selectable_palette(self):
+        expected = {
+            "aurora-glass", "sakura-twilight", "cyberpunk-neon", "midnight-amoled",
+            "arctic-aurora", "forest-sanctuary", "ocean-depths", "retro-terminal",
+            "paper-studio", "monochrome-pro", "sunset-dusk", "dreamscape",
+            "solarized-focus", "high-contrast", "glasshouse",
+        }
+        signatures = set()
+        for name in expected:
+            with self.subTest(theme=name):
+                self.assertTrue(theme_data.theme_display_name(name))
+                signature = tuple(sorted(theme_data.PALETTES[name].items()))
+                self.assertNotIn(signature, signatures)
+                signatures.add(signature)
+
 
 if __name__ == "__main__":
     unittest.main()
