@@ -74,6 +74,12 @@ class ResearchWorkspaceStoreTests(unittest.TestCase):
         tab_sets.remove_tab_set(self.base, workspace["id"])
         self.assertIsNone(tab_sets.get_active_research_workspace(self.base))
 
+    def test_negative_research_context_limit_fails_closed_to_empty(self):
+        workspace = tab_sets.add_tab_set(self.base, "workspace", "Bounded context", [])
+        self.assertTrue(tab_sets.set_active_research_workspace(self.base, workspace["id"]))
+        context = tab_sets.build_research_context(self.base, max_chars=-1)
+        self.assertEqual(context["text"], "")
+
 
 if __name__ == "__main__":
     unittest.main()
