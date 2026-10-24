@@ -19,8 +19,9 @@ a real phone/LAN, an installer, or a second Qt binding not installed here.
   first complete run *after* the changes caught one old fixture that built a
   `web_support` bundle without the newly required `hub/index.html`; the fixture was
   corrected, not the check.
-- Local environment: Windows, Python 3.11, PyQt5 5.15.2 (the compatibility path).
-  The CI matrix separately installs PyQt5 and pinned PyQt6 6.11.0.
+- Local environment: Windows, Python 3.11, PyQt6 6.11.0 (Chromium 140) through the
+  PyQt5 compatibility shim; PyQt5 5.15.2 is also installed but is not the active
+  binding. The CI matrix separately installs both bindings.
 
 ## 2. Confirmed bugs and data-integrity risks (fixed)
 
@@ -317,12 +318,15 @@ QT_QPA_PLATFORM=offscreen .venv\Scripts\python.exe -m pytest -p no:cacheprovider
 - Source startup smoke: `python -m litebrowser.main --smoke-test` with a temporary
   `LITEBROWSER_DATA_DIR` exited 0 and wrote `ok 1.0.0.0` after showing both shells
   (2.03 s on the final run; 2.66 s on the first).
-- Both Qt bindings: PyQt5 5.15.2 ran here; PyQt6 6.11.0 is covered by the CI matrix
-  but was **not run locally** in this environment.
-- Packaged executable, installer compile, real phone/LAN pairing, and the actual
-  self-replacement flow were **not run** here. They are covered by automated tests
-  at the service/script level and by the release workflow; a real Windows
-  install/update and a physical phone remain manual checks.
+- Qt bindings: PyQt6 6.11.0 (Chromium 140) ran here; PyQt5 5.15.2 is covered by the
+  CI matrix but was **not the active local binding** in this environment.
+- Packaged executable: built with PyQt6 6.11.0, 208,101,945 bytes, SHA-256
+  `cab07bb9d5964b769c4824544fc6b14ebb8e12792a0bb9e76b8ee70ee9ad8b46`; the packaged
+  `--smoke-test` exited 0 and wrote `ok 1.0.0.0`. The installer compile/install,
+  real phone/LAN pairing, and the actual self-replacement flow were **not run**
+  here. They are covered by automated tests at the service/script level and by the
+  release workflow; a real Windows install/update and a physical phone remain
+  manual checks.
 
 ## 8. Deferred or still manual
 
