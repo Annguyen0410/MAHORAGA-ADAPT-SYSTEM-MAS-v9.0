@@ -26,7 +26,7 @@ import time
 import zipfile
 from datetime import datetime
 
-from litebrowser.core import app_paths, product
+from litebrowser.core import app_paths, product, secret_store
 
 # The newest log is the one that matters; older rotated files add size, not
 # signal. 256 KB is several thousand lines.
@@ -171,6 +171,10 @@ def profile_inventory(base_dir: str) -> dict:
         names = []
     for name in names:
         path = os.path.join(base_dir, name)
+        if name == secret_store.FILENAME:
+            # Do not describe the credential store at all: its name and mtime are
+            # not needed to debug Mei, and "not in the bundle" should be literal.
+            continue
         if os.path.isfile(path):
             stores.append(_file_entry(path, name))
 

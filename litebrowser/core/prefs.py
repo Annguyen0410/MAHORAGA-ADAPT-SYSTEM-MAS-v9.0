@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 import re
 import secrets
@@ -6,6 +7,7 @@ import shutil
 import time
 
 from litebrowser.core import app_paths
+from litebrowser.core import secret_store
 from litebrowser.core import theme_data as _theme_mod
 from litebrowser.core.log import get_logger
 from litebrowser.core.profile_lock import profile_locked, profile_transaction
@@ -42,14 +44,43 @@ def proxy_config_path(base_dir):
     return os.path.join(base_dir, "proxy_config.json")
 
 
+def _strip_plaintext_proxy_password(base_dir):
+    data = read_json(proxy_config_path(base_dir), {})
+    if isinstance(data, dict) and "password" in data:
+        data.pop("password", None)
+        write_json(proxy_config_path(base_dir), data)
+
+
 def get_proxy_config(base_dir) -> dict:
     data = read_json(proxy_config_path(base_dir), {"enabled": False})
-    return data if isinstance(data, dict) else {"enabled": False}
+    if not isinstance(data, dict):
+        return {"enabled": False}
+    legacy = data.pop("password", None) if "password" in data else None
+    if isinstance(legacy, str) and legacy:
+        secret_store.adopt(
+            base_dir,
+            "proxy_password",
+            legacy,
+            lambda: _strip_plaintext_proxy_password(base_dir),
+        )
+    secured = secret_store.get_secret(base_dir, "proxy_password")
+    if secured is not None:
+        data["password"] = secured
+    elif isinstance(legacy, str) and legacy:
+        data["password"] = legacy
+    return data
 
 
 @profile_transaction
 def set_proxy_config(base_dir, cfg: dict):
-    write_json(proxy_config_path(base_dir), cfg if isinstance(cfg, dict) else {"enabled": False})
+    payload = dict(cfg) if isinstance(cfg, dict) else {"enabled": False}
+    password = payload.pop("password", None)
+    if password is not None:
+        if str(password):
+            secret_store.set_secret(base_dir, "proxy_password", str(password))
+        else:
+            secret_store.delete_secret(base_dir, "proxy_password")
+    write_json(proxy_config_path(base_dir), payload)
 
 
 def get_auto_connect_vpn(base_dir) -> bool:
@@ -67,13 +98,44 @@ def get_last_vpn_proxy(base_dir) -> dict:
     """The last proxy the user connected with (kept even after disconnect so
     auto-connect can re-enable it on the next launch)."""
     data = load_prefs(base_dir).get("vpn_last_proxy", {})
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    data = dict(data)
+    legacy = data.pop("password", None) if "password" in data else None
+    if isinstance(legacy, str) and legacy:
+        secret_store.adopt(
+            base_dir,
+            "proxy_password",
+            legacy,
+            lambda: _strip_plaintext_last_vpn_password(base_dir),
+        )
+    secured = secret_store.get_secret(base_dir, "proxy_password")
+    if secured is not None:
+        data["password"] = secured
+    elif isinstance(legacy, str) and legacy:
+        data["password"] = legacy
+    return data
+
+
+def _strip_plaintext_last_vpn_password(base_dir):
+    data = load_prefs(base_dir)
+    last = data.get("vpn_last_proxy")
+    if isinstance(last, dict) and "password" in last:
+        last.pop("password", None)
+        save_prefs(base_dir, data)
 
 
 @profile_transaction
 def set_last_vpn_proxy(base_dir, cfg: dict):
     data = load_prefs(base_dir)
-    data["vpn_last_proxy"] = cfg if isinstance(cfg, dict) else {}
+    payload = dict(cfg) if isinstance(cfg, dict) else {}
+    password = payload.pop("password", None)
+    if password is not None:
+        if str(password):
+            secret_store.set_secret(base_dir, "proxy_password", str(password))
+        else:
+            secret_store.delete_secret(base_dir, "proxy_password")
+    data["vpn_last_proxy"] = payload
     save_prefs(base_dir, data)
 
 
@@ -784,15 +846,38 @@ def set_sync_endpoint(base_dir, value):
     save_prefs(base_dir, data)
 
 
+@profile_transaction
+def _drop_plaintext_pref(base_dir, key):
+    data = load_prefs(base_dir)
+    if key in data:
+        data.pop(key, None)
+        save_prefs(base_dir, data)
+
+
 def get_sync_token(base_dir):
-    return str(load_prefs(base_dir).get("sync_token", "") or "").strip()
+    secured = secret_store.get_secret(base_dir, "sync_token")
+    if secured is not None:
+        return secured.strip()
+    legacy = str(load_prefs(base_dir).get("sync_token", "") or "").strip()
+    if legacy:
+        return secret_store.adopt(
+            base_dir,
+            "sync_token",
+            legacy,
+            lambda: _drop_plaintext_pref(base_dir, "sync_token"),
+        ).strip()
+    return ""
 
 
 @profile_transaction
 def set_sync_token(base_dir, value):
+    secret_store.set_secret(base_dir, "sync_token", str(value or "").strip())
+    # Only after the protected write succeeded: remove the old plaintext copy. If
+    # set_secret raised, the legacy value (if any) is still where it was.
     data = load_prefs(base_dir)
-    data["sync_token"] = str(value or "").strip()
-    save_prefs(base_dir, data)
+    if "sync_token" in data:
+        data.pop("sync_token", None)
+        save_prefs(base_dir, data)
 
 
 def get_sync_enabled(base_dir):
@@ -1043,6 +1128,13 @@ def profiles_dir(app_dir):
     return app_paths.profiles_root(app_dir)
 
 
+def _strip_plaintext_ai_key(base_dir):
+    data = read_json(ai_settings_path(base_dir), {})
+    if isinstance(data, dict) and "openrouter_api_key" in data:
+        data.pop("openrouter_api_key", None)
+        write_json(ai_settings_path(base_dir), data)
+
+
 def load_ai_settings(base_dir):
     data = read_json(
         ai_settings_path(base_dir),
@@ -1058,14 +1150,50 @@ def load_ai_settings(base_dir):
             "show_sources": True,
         },
     )
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        data = {}
+    legacy = data.pop("openrouter_api_key", "") if "openrouter_api_key" in data else ""
+    if isinstance(legacy, str) and legacy:
+        secret_store.adopt(
+            base_dir,
+            "openrouter_api_key",
+            legacy,
+            lambda: _strip_plaintext_ai_key(base_dir),
+        )
+    secured = secret_store.get_secret(base_dir, "openrouter_api_key")
+    if secured is not None:
+        data["openrouter_api_key"] = secured
+    elif isinstance(legacy, str) and legacy:
+        data["openrouter_api_key"] = legacy
+    else:
+        data.setdefault("openrouter_api_key", "")
+    return data
 
 
 @profile_transaction
 def save_ai_settings(base_dir, settings):
+    """Write ordinary AI settings; the provider key lives in the secret store.
+
+    A failure to protect the key raises before the settings file is written, so
+    the previous configuration stays intact. A legacy plaintext key is preserved
+    in place when protection is unavailable rather than being silently dropped.
+    """
+    incoming = dict(settings or {})
+    provided_key = incoming.pop("openrouter_api_key", None)
+    if provided_key is not None:
+        secret_store.set_secret(base_dir, "openrouter_api_key", str(provided_key or "").strip())
+    secured = secret_store.get_secret(base_dir, "openrouter_api_key")
     with profile_locked(base_dir):
-        current = load_ai_settings(base_dir)
-        current.update(settings or {})
+        current = read_json(ai_settings_path(base_dir), {})
+        current = current if isinstance(current, dict) else {}
+        legacy = current.pop("openrouter_api_key", "") if "openrouter_api_key" in current else ""
+        current.update(incoming)
+        if provided_key is None and secured is None and isinstance(legacy, str) and legacy:
+            # Protection failed earlier; keeping the old value is safer than
+            # writing a settings file that has lost the only copy of the key.
+            current["openrouter_api_key"] = legacy
+        else:
+            current.pop("openrouter_api_key", None)
         write_json(ai_settings_path(base_dir), current)
 
 
@@ -1182,7 +1310,18 @@ def set_mobile_bridge_port(base_dir, port):
 
 
 def get_mobile_bridge_token(base_dir):
-    return (load_prefs(base_dir).get("mobile_bridge_token") or "").strip()
+    secured = secret_store.get_secret(base_dir, "mobile_bridge_token")
+    if secured is not None:
+        return secured.strip()
+    legacy = (load_prefs(base_dir).get("mobile_bridge_token") or "").strip()
+    if legacy:
+        return secret_store.adopt(
+            base_dir,
+            "mobile_bridge_token",
+            legacy,
+            lambda: _drop_plaintext_pref(base_dir, "mobile_bridge_token"),
+        ).strip()
+    return ""
 
 
 def generate_mobile_bridge_token():
@@ -1191,9 +1330,12 @@ def generate_mobile_bridge_token():
 
 @profile_transaction
 def set_mobile_bridge_token(base_dir, token):
+    value = (token or "").strip()
+    secret_store.set_secret(base_dir, "mobile_bridge_token", value)
     data = load_prefs(base_dir)
-    data["mobile_bridge_token"] = (token or "").strip()
-    save_prefs(base_dir, data)
+    if "mobile_bridge_token" in data:
+        data.pop("mobile_bridge_token", None)
+        save_prefs(base_dir, data)
 
 
 @profile_transaction
@@ -1264,6 +1406,7 @@ def set_google_account(base_dir, account):
 
 @profile_transaction
 def clear_google_account(base_dir):
+    secret_store.delete_secret(base_dir, "google_token_cache")
     data = load_prefs(base_dir)
     data.pop("google_account", None)
     data.pop("google_token_cache", None)
@@ -1271,12 +1414,39 @@ def clear_google_account(base_dir):
 
 
 def get_google_token_cache(base_dir):
-    value = load_prefs(base_dir).get("google_token_cache")
-    return value if isinstance(value, dict) else {}
+    secured = secret_store.get_secret(base_dir, "google_token_cache")
+    if secured:
+        try:
+            parsed = json.loads(secured)
+        except (ValueError, TypeError):
+            parsed = None
+        return parsed if isinstance(parsed, dict) else {}
+    legacy = load_prefs(base_dir).get("google_token_cache")
+    if isinstance(legacy, dict) and legacy:
+        protected = secret_store.adopt(
+            base_dir,
+            "google_token_cache",
+            json.dumps(legacy, ensure_ascii=False),
+            lambda: _drop_plaintext_pref(base_dir, "google_token_cache"),
+        )
+        try:
+            parsed = json.loads(protected)
+        except (ValueError, TypeError):
+            parsed = None
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
 
 
 @profile_transaction
 def set_google_token_cache(base_dir, token_cache):
+    payload = token_cache if isinstance(token_cache, dict) else {}
+    if payload:
+        secret_store.set_secret(
+            base_dir, "google_token_cache", json.dumps(payload, ensure_ascii=False)
+        )
+    else:
+        secret_store.delete_secret(base_dir, "google_token_cache")
     data = load_prefs(base_dir)
-    data["google_token_cache"] = token_cache if isinstance(token_cache, dict) else {}
-    save_prefs(base_dir, data)
+    if "google_token_cache" in data:
+        data.pop("google_token_cache", None)
+        save_prefs(base_dir, data)

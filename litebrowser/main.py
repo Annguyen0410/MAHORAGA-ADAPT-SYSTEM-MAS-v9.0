@@ -19,7 +19,7 @@ if _force_software_rendering():
     # is composited by the GPU like Chrome/Opera instead of the CPU.
     os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
-from PyQt5.QtCore import QCoreApplication, Qt
+from PyQt5.QtCore import QCoreApplication, QTimer, Qt
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import QApplication, QWidget
 
@@ -136,6 +136,28 @@ def _cleanup_webengine_cache(profile_dir, force=False):
         shutil.rmtree(gpu, ignore_errors=True)
 
 
+def _write_update_health_marker():
+    """Tell the updater this build reached a real GUI startup.
+
+    The previous rollback check looked for *any* process with the executable's
+    name, so a second instance (or a stale process) could make a broken build
+    look healthy. The swap script sets a one-time token; writing it here — after
+    the profile is claimed and both shells exist — is the health condition.
+    """
+    path = os.environ.pop("MEI_UPDATE_HEALTH_FILE", "").strip()
+    token = os.environ.pop("MEI_UPDATE_HEALTH_TOKEN", "").strip()
+    if not path or not token:
+        return
+    try:
+        from litebrowser.core.storage_utils import write_text_atomic
+
+        write_text_atomic(path, token)
+    except OSError:
+        # A health marker is useful, never required for the app to run. The
+        # updater's timeout will roll back if it cannot read one.
+        pass
+
+
 def _register_bundled_personal_sites(profile_dir, app_dir):
     """Seed Personal Hub → Sites with the six public project links.
 
@@ -175,6 +197,8 @@ def main(app_dir=None):
     _t0 = time.time()
     if app_dir is None:
         app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    smoke_test = "--smoke-test" in sys.argv
+    qt_argv = [arg for arg in sys.argv if arg != "--smoke-test"]
 
     chromium_flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip()
     if _force_software_rendering():
@@ -203,7 +227,7 @@ def main(app_dir=None):
     # QtWebEngine requires shared OpenGL contexts, set BEFORE QApplication is
     # constructed (v6.4 skipped this, risking GPU-compositor crashes).
     QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
-    app = QApplication(sys.argv)
+    app = QApplication(qt_argv)
     app.setApplicationName(app_version.APP_NAME)
     app.setApplicationVersion(app_version.APP_VERSION)
     app.setOrganizationName(app_version.APP_NAME)
@@ -272,6 +296,17 @@ def main(app_dir=None):
     ]
     for window in windows:
         window.show()
+    _write_update_health_marker()
+    if smoke_test:
+        # Release CI runs the frozen build with a throwaway data root and watches
+        # for this marker: it proves the window, profile layout and WebEngine all
+        # came up, not merely that the executable started.
+        from litebrowser.core.storage_utils import write_text_atomic
+
+        marker = os.environ.get("MEI_SMOKE_MARKER", "").strip()
+        if marker:
+            write_text_atomic(marker, f"ok {app_version.APP_VERSION}\n")
+        QTimer.singleShot(400, app.quit)
     # Cold-start metric (pre-1.0 quality tracking): startup duration to the
     # console so regressions surface immediately during development.
     print(f"Mei {app_version.APP_VERSION} ready in {time.time() - _t0:.2f}s", flush=True)

@@ -296,6 +296,18 @@ class TestAndroidBridgeHTTP(unittest.TestCase):
             self._req("/api/mobile/ping")
         self.assertEqual(ctx.exception.code, 401)
 
+    def test_rotating_the_token_rejects_the_old_pairing(self):
+        prefs.set_mobile_bridge_token(self.base, "rotated-secret-token")
+        self.assertTrue(android_bridge_service.restart(self.base))
+        addr = android_bridge_service.listen_address()
+        self.assertIsNotNone(addr)
+        self.port = addr[1]
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self._req("/api/mobile/ping", headers={"Authorization": "Bearer secret-test-token"})
+        self.assertEqual(ctx.exception.code, 401)
+        res = self._req("/api/mobile/ping", headers={"Authorization": "Bearer rotated-secret-token"})
+        self.assertEqual(res.status, 200)
+
     def test_ping_ok(self):
         res = self._req("/api/mobile/ping", headers={"Authorization": "Bearer secret-test-token"})
         self.assertEqual(res.status, 200)

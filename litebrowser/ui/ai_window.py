@@ -355,10 +355,23 @@ class AIWindow(QMainWindow):
             return None
 
     def _save_settings(self):
-        prefs.save_ai_settings(self.base_dir, self._collect_settings_payload())
+        from litebrowser.core import secret_store
+
+        try:
+            prefs.save_ai_settings(self.base_dir, self._collect_settings_payload())
+        except secret_store.SecretStorageError as exc:
+            QMessageBox.warning(
+                self,
+                "AI Assistant",
+                "The API key could not be protected on this device, so the previous key "
+                f"and settings were kept. Details: {exc}",
+            )
+            return False
+        return True
 
     def _save_settings_with_notice(self):
-        self._save_settings()
+        if not self._save_settings():
+            return
         QMessageBox.information(self, "AI Assistant", "AI provider settings saved.")
 
     def _on_provider_change(self):

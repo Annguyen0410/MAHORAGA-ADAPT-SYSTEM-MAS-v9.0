@@ -51,11 +51,49 @@ class TestChannelOwnership(unittest.TestCase):
                 "product": product.PRODUCT_ID,
                 "version": newer,
                 "download_url": f"https://github.com/x/y/releases/download/v{newer}/Mei.exe",
+                "sha256": "a" * 64,
+                "size": product.MIN_PACKAGE_BYTES,
             }
         )
         self.assertTrue(info.has_update)
         self.assertEqual(info.latest_version, newer)
         self.assertEqual(info.product, product.PRODUCT_ID)
+
+    def test_a_remote_update_without_a_hash_is_refused(self):
+        newer = _newer_than_current()
+        with self.assertRaises(ValueError) as ctx:
+            self._check(
+                {
+                    "product": product.PRODUCT_ID,
+                    "version": newer,
+                    "download_url": f"https://github.com/x/y/releases/download/v{newer}/Mei.exe",
+                }
+            )
+        self.assertIn("SHA-256", str(ctx.exception))
+
+    def test_a_manifest_with_a_prerelease_version_is_refused(self):
+        parts = app_version.APP_VERSION.split(".")
+        parts[-1] = str(int(parts[-1]) + 1)
+        with self.assertRaises(ValueError):
+            self._check(
+                {
+                    "product": product.PRODUCT_ID,
+                    "version": ".".join(parts) + "-alpha.1",
+                    "download_url": "",
+                }
+            )
+
+    def test_a_malformed_hash_is_refused(self):
+        newer = _newer_than_current()
+        with self.assertRaises(ValueError):
+            self._check(
+                {
+                    "product": product.PRODUCT_ID,
+                    "version": newer,
+                    "download_url": f"https://h/{newer}/Mei.exe",
+                    "sha256": "not-a-hash",
+                }
+            )
 
     def test_same_version_is_not_an_update(self):
         info = self._check(
@@ -182,8 +220,8 @@ class TestManifestHash(unittest.TestCase):
 
     def test_a_corrupt_download_is_deleted_and_not_returned(self):
         with self.assertRaises(ValueError):
-            update_service.download_update_package(self.package, "9.9.9", "0" * 64)
-        stale = os.path.join(tempfile.gettempdir(), app_version.APP_NAME, "updates", "Mei-9.9.9.exe")
+            update_service.download_update_package(self.package, "9.9.9.0", "0" * 64)
+        stale = os.path.join(tempfile.gettempdir(), app_version.APP_NAME, "updates", "Mei-9.9.9.0.exe")
         self.assertFalse(os.path.isfile(stale), "a failed download must not linger as an update")
 
     def test_install_refuses_when_the_hash_does_not_match(self):
@@ -210,21 +248,24 @@ class TestManifestHash(unittest.TestCase):
 
 
 class TestVersionComparison(unittest.TestCase):
-    def test_padding_prevents_phantom_updates(self):
-        self.assertFalse(update_service._version_is_newer("0.6.9", "0.6.9.0"))
-        self.assertFalse(update_service._version_is_newer("0.6.9.0", "0.6.9"))
+    def test_short_versions_are_refused_not_padded(self):
+        for value in ("0.6.9", "1.0.0"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    update_service._version_is_newer(value, "0.6.9.0")
 
     def test_real_bumps_are_detected(self):
         self.assertTrue(update_service._version_is_newer("0.6.9.1", "0.6.9.0"))
-        self.assertTrue(update_service._version_is_newer("1.0.0", "0.6.9.0"))
+        self.assertTrue(update_service._version_is_newer("1.0.0.0", "0.6.9.0"))
         self.assertTrue(update_service._version_is_newer(_newer_than_current(), app_version.APP_VERSION))
 
     def test_downgrades_are_not_updates(self):
         self.assertFalse(update_service._version_is_newer("0.6.8.9", "0.6.9.0"))
 
-    def test_existing_normalize_contract_unchanged(self):
+    def test_normalize_contract_is_strict(self):
         self.assertEqual(update_service._normalize_version("0.6.8.0"), (0, 6, 8, 0))
-        self.assertEqual(update_service._normalize_version("0.6.8.0-beta"), (0, 6, 8, 0))
+        with self.assertRaises(ValueError):
+            update_service._normalize_version("0.6.8.0-beta")
 
 
 class TestAssetIdentity(unittest.TestCase):
@@ -281,6 +322,28 @@ class TestPackageVerification(unittest.TestCase):
         path = self._write(b"MZ" + b"\0" * product.MIN_PACKAGE_BYTES)
         update_service.verify_package(path)  # must not raise
 
+    def test_advertised_size_mismatch_is_refused(self):
+        path = self._write(b"MZ" + b"\0" * product.MIN_PACKAGE_BYTES)
+        with self.assertRaises(ValueError) as ctx:
+            update_service.verify_package(path, expected_size=product.MIN_PACKAGE_BYTES + 1)
+        self.assertIn("advertised", str(ctx.exception))
+
+    def test_malformed_expected_hash_is_refused(self):
+        path = self._write(b"MZ" + b"\0" * product.MIN_PACKAGE_BYTES)
+        with self.assertRaises(ValueError):
+            update_service.verify_package(path, "not-a-sha256")
+
+    def test_manifest_size_above_the_ceiling_is_refused(self):
+        with mock.patch.object(update_service, "_read_remote_json", return_value={
+            "product": product.PRODUCT_ID,
+            "version": _newer_than_current(),
+            "download_url": "https://h/v/Mei.exe",
+            "sha256": "a" * 64,
+            "size": update_service.MAX_PACKAGE_BYTES + 1,
+        }):
+            with self.assertRaises(ValueError):
+                update_service.check_for_updates("https://example.invalid/update.json")
+
     def test_install_refuses_unverified_package_before_touching_the_exe(self):
         path = self._write(b"<html>nope</html>")
         with self.assertRaises(ValueError):
@@ -293,29 +356,51 @@ class TestPackageVerification(unittest.TestCase):
 
 
 class TestUpdateScriptSafety(unittest.TestCase):
-    def test_script_backs_up_and_can_roll_back(self):
-        script = update_service._update_script(r"C:\apps\Mei.exe", r"C:\tmp\Mei-0.6.9.1.exe", 4321)
-        self.assertIn('set "BAK=%TARGET%.bak"', script)
-        self.assertIn("copy /Y \"%TARGET%\" \"%BAK%\"", script)
-        self.assertIn(":rollback", script)
-        # Watchdog: a build that never comes up must restore the backup.
-        self.assertIn("tasklist /FI \"IMAGENAME eq %IMAGE%\"", script)
-        self.assertIn('copy /Y "%BAK%" "%TARGET%"', script)
+    def _decode(self, command):
+        import base64
 
-    def test_script_waits_for_this_process_to_exit(self):
-        script = update_service._update_script(r"C:\apps\Mei.exe", r"C:\tmp\pkg.exe", 99)
-        self.assertIn(":wait_loop", script)
-        self.assertIn('set "PID=99"', script)
+        return base64.b64decode(command[-1]).decode("utf-16le")
 
-    def test_script_deletes_the_previous_build_after_a_successful_swap(self):
-        script = update_service._update_script(
-            r"C:\apps\Mei.exe", r"C:\tmp\Mei-9.9.9.exe", 7, [r"C:\apps\update\Mei.exe"]
+    def test_script_quotes_paths_instead_of_interpolating_them(self):
+        script = update_service._update_script_text(
+            r"C:\apps\Mei's & 100%!\Mei.exe", r"C:\tmp\pkg %1 & more!.exe", 4321
         )
-        self.assertIn(r'del "C:\apps\update\Mei.exe" >nul 2>nul', script)
-        # Cleanup belongs to the success path: a rollback must keep everything.
-        self.assertLess(script.index(r'del "C:\apps\update\Mei.exe"'), script.index(":rollback"))
+        self.assertIn("$backup = $target + '.bak'", script)
+        self.assertIn("Copy-Item -LiteralPath $target -Destination $backup -Force", script)
+        self.assertIn("Copy-Item -LiteralPath $backup -Destination $target -Force", script)
+        self.assertIn(r"'C:\apps\Mei''s & 100%!\Mei.exe'", script)
+        self.assertIn(r"'C:\tmp\pkg %1 & more!.exe'", script)
+        self.assertNotIn("set \"", script, "the batch parser must not see paths at all")
 
-    def test_install_writes_the_stale_paths_into_the_script(self):
+    def test_script_waits_for_this_process_and_checks_a_health_marker(self):
+        script = update_service._update_script_text(
+            r"C:\apps\Mei.exe",
+            r"C:\tmp\pkg.exe",
+            99,
+            health_file=r"C:\tmp\mei-updater\startup.ok",
+            health_token="abc123",
+        )
+        self.assertIn("Get-Process -Id $processId", script)
+        self.assertIn("$processId = 99", script)
+        self.assertIn("MEI_UPDATE_HEALTH_FILE", script)
+        self.assertIn("'abc123'", script)
+        self.assertIn("if (-not $healthy)", script)
+
+    def test_script_deletes_stale_builds_only_after_a_healthy_start(self):
+        script = update_service._update_script_text(
+            r"C:\apps\Mei.exe",
+            r"C:\tmp\Mei-9.9.9.0.exe",
+            7,
+            [r"C:\apps\update\Mei.exe"],
+            health_file=r"C:\tmp\mei-updater\startup.ok",
+            health_token="token",
+        )
+        cleanup = "Remove-Item -LiteralPath 'C:\\apps\\update\\Mei.exe' -Force -ErrorAction SilentlyContinue"
+        self.assertIn(cleanup, script)
+        self.assertGreater(script.index(cleanup), script.index("if (-not $healthy)"))
+        self.assertGreater(script.index(cleanup), script.index("Remove-Item -LiteralPath $backup"))
+
+    def test_install_sends_an_encoded_command_with_the_stale_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             package = os.path.join(tmp, product.ASSET_NAME)
             with open(package, "wb") as handle:
@@ -324,10 +409,28 @@ class TestUpdateScriptSafety(unittest.TestCase):
                 update_service.sys, "executable", package
             ), mock.patch.object(update_service.subprocess, "Popen") as popen:
                 update_service.install_downloaded_update(package, [r"C:\apps\update\Mei.exe"])
-            script_path = popen.call_args[0][0][2]
-            with open(script_path, encoding="utf-8") as handle:
-                written = handle.read()
-        self.assertIn(r'del "C:\apps\update\Mei.exe"', written)
+            command = popen.call_args[0][0]
+            written = self._decode(command)
+        self.assertEqual(command[0], "powershell.exe")
+        self.assertIn("-EncodedCommand", command)
+        self.assertIn("MEI_UPDATE_HEALTH_TOKEN", written)
+        self.assertIn("Remove-Item -LiteralPath 'C:\\apps\\update\\Mei.exe'", written)
+
+
+class TestUrlRedaction(unittest.TestCase):
+    def test_token_shaped_query_values_are_redacted(self):
+        redacted = update_service.redact_url(
+            "https://example.com/Mei.exe?token=abc123&sig=deadbeef&x=1"
+        )
+        self.assertNotIn("abc123", redacted)
+        self.assertNotIn("deadbeef", redacted)
+        self.assertIn("x=1", redacted)
+
+    def test_credentials_in_the_authority_are_removed(self):
+        redacted = update_service.redact_url("https://user:pass@example.com/Mei.exe")
+        self.assertNotIn("user", redacted)
+        self.assertNotIn("pass", redacted)
+        self.assertTrue(redacted.startswith("https://example.com/"))
 
 
 class TestLocalChannel(unittest.TestCase):
@@ -350,7 +453,7 @@ class TestLocalChannel(unittest.TestCase):
     def _manifest(self, **overrides) -> str:
         payload = {
             "product": product.PRODUCT_ID,
-            "version": "9.9.9",
+            "version": "9.9.9.0",
             "download_url": os.path.join(self.update_dir, product.ASSET_NAME),
         }
         payload.update(overrides)
@@ -374,7 +477,7 @@ class TestLocalChannel(unittest.TestCase):
         self._manifest()
         info = update_service.check_for_updates(app_dir=self.app_dir)
         self.assertTrue(info.has_update)
-        self.assertEqual(info.latest_version, "9.9.9")
+        self.assertEqual(info.latest_version, "9.9.9.0")
         self.assertEqual(info.product, product.PRODUCT_ID)
 
     def test_an_explicit_remote_url_still_wins(self):
@@ -402,11 +505,16 @@ class TestLocalChannel(unittest.TestCase):
         package = os.path.join(self.app_dir, product.ASSET_NAME)
         with open(package, "wb") as handle:
             handle.write(b"MZ" + b"\0" * product.MIN_PACKAGE_BYTES)
-        target = update_service.download_update_package(package, "9.9.9")
+        seen = []
+        target = update_service.download_update_package(
+            package, "9.9.9.0", progress_callback=lambda received, total: seen.append((received, total))
+        )
         self.addCleanup(lambda: os.path.isfile(target) and os.remove(target))
         self.assertTrue(os.path.isfile(target))
         self.assertTrue(os.path.isfile(package), "the dropped build must survive the install")
         self.assertEqual(os.path.getsize(target), os.path.getsize(package))
+        self.assertEqual(seen[0], (0, os.path.getsize(package)))
+        self.assertEqual(seen[-1], (os.path.getsize(package), os.path.getsize(package)))
 
     def test_local_channel_packages_lists_only_executables(self):
         dropped = os.path.join(self.update_dir, product.ASSET_NAME)
@@ -488,7 +596,7 @@ class TestCleanupOldArtifacts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = os.path.join(tmp, app_version.APP_NAME, "updates")
             os.makedirs(folder)
-            package = os.path.join(folder, f"{app_version.APP_NAME}-9.9.9.exe")
+            package = os.path.join(folder, f"{app_version.APP_NAME}-9.9.9.0.exe")
             with open(package, "wb") as handle:
                 handle.write(b"MZ" + b"\0" * 4096)
             os.utime(package, (time.time() - 10_000, time.time() - 10_000))

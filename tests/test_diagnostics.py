@@ -6,13 +6,14 @@ must not carry a single note, task title, password or history URL. These tests
 put canaries in every one of those places and fail if one comes back out.
 """
 import json
+import logging
 import os
 import tempfile
 import unittest
 import zipfile
 from unittest import mock
 
-from litebrowser.core import prefs, product
+from litebrowser.core import log, prefs, product, secret_store
 from litebrowser.services import diagnostics
 
 CANARY = "CANARY-secret-value-do-not-ship"
@@ -46,6 +47,8 @@ class TestBundleContents(unittest.TestCase):
         with open(os.path.join(self.base, "history.txt"), "w", encoding="utf-8") as handle:
             handle.write(f"12345\thttps://example.com/{CANARY}\n")
         with open(os.path.join(self.base, "passwords.vault"), "wb") as handle:
+            handle.write(CANARY.encode("utf-8"))
+        with open(os.path.join(self.base, "secrets.dat"), "wb") as handle:
             handle.write(CANARY.encode("utf-8"))
         notes = os.path.join(self.base, "SafeVault", "notes")
         os.makedirs(notes, exist_ok=True)
@@ -95,6 +98,7 @@ class TestBundleContents(unittest.TestCase):
         self.assertEqual(planner["counts"], {"items": 2, "courses": 1, "time_blocks": 0})
         self.assertGreater(planner["bytes"], 0)
         self.assertTrue(inventory["profile"])
+        self.assertNotIn("secrets.dat", stores, "the credential store is not described at all")
 
     def test_folders_are_summarised_not_walked_into_the_bundle(self):
         inventory = json.loads(self._members()["inventory.json"].decode("utf-8"))
@@ -144,6 +148,58 @@ class TestLogTail(unittest.TestCase):
         name = diagnostics.default_bundle_name()
         self.assertIn(product.APP_VERSION, name)
         self.assertTrue(name.endswith(".zip"))
+
+
+class TestLogRedaction(unittest.TestCase):
+    """The log tail is the one bundle member that can carry free text.
+
+    Provider errors and redirect URLs are the usual way a bearer token reaches
+    a log. Masking happens in the file handler, before the bytes exist, so a
+    support archive cannot contain a credential even if a caller logged one.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = os.path.join(self._tmp.name, "profile")
+        os.makedirs(self.base)
+        # Use the real file handler (the redaction filter lives on it) without
+        # touching the process-wide logger other tests may rely on.
+        self.logs = os.path.join(self._tmp.name, "runtime_data", "logs")
+        self.handler = log._open_handler(self.logs)
+        self.logger = logging.getLogger("litebrowser.redaction-test")
+        self.logger.handlers = [self.handler]
+        self.logger.propagate = False
+        self.logger.setLevel(logging.DEBUG)
+
+    def tearDown(self):
+        self.logger.removeHandler(self.handler)
+        self.handler.close()
+
+    def test_recognisable_credentials_are_masked(self):
+        self.assertEqual(log.redact("Authorization: Bearer abcDEF123456"), "Authorization: Bearer [redacted]")
+        self.assertNotIn("hunter2", log.redact("proxy password=hunter2 host=x"))
+        self.assertNotIn("hunter2", log.redact("https://mei:hunter2@example.com/path"))
+        self.assertNotIn("AIza", log.redact("key sk-or-v1-AIzaSyDummyDummyDummy"))
+        self.assertNotIn("abc123", log.redact("token ya29.abc123.def456"))
+
+    def test_known_secret_values_are_masked_even_without_context(self):
+        secret_store._remember(CANARY)
+        self.assertEqual(log.redact(f"opaque provider text {CANARY}"), "opaque provider text [redacted]")
+
+    def test_the_diagnostics_log_tail_contains_no_credential(self):
+        bearer = "Bearer " + CANARY
+        self.logger.warning("request failed with %s", bearer)
+        self.logger.warning("api_key=%s", CANARY)
+        secret_store._remember(CANARY)
+        self.logger.warning("opaque echo %s", CANARY)
+        out = os.path.join(self._tmp.name, "diag.zip")
+        result = diagnostics.build_bundle(self.base, out, app_dir=self._tmp.name)
+        self.assertGreater(result["log_bytes"], 0)
+        with zipfile.ZipFile(out) as bundle:
+            for name in bundle.namelist():
+                with self.subTest(member=name):
+                    self.assertNotIn(CANARY, bundle.read(name).decode("utf-8", "replace"))
 
 
 if __name__ == "__main__":

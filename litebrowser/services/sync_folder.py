@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import time
 import uuid
@@ -79,6 +80,13 @@ CLOUD_HINTS = ("onedrive", "google drive", "googledrive", "dropbox", "icloud", "
 #: Rows are published as plain JSON, so a store cannot grow without bound by
 #: accident; notes carry content and are counted separately in the report.
 MAX_RECORDS_PER_STORE = 20_000
+#: A shared file is remote input. Refuse a payload larger than this before
+#: parsing it, then enforce the per-record limits while walking it.
+MAX_PAYLOAD_BYTES = 48 * 1024 * 1024
+MAX_STRING_CHARS = 4 * 1024 * 1024
+MAX_RECORD_ID_CHARS = 256
+MAX_NESTING_DEPTH = 32
+MAX_KEYS_PER_OBJECT = 256
 
 
 @dataclass(frozen=True)
@@ -124,6 +132,31 @@ def _cell(row: dict, ignore: frozenset = frozenset()) -> dict:
     """
     skip = ignore | VOLATILE_KEYS
     return {key: value for key, value in row.items() if key not in skip}
+
+
+def _within_limits(value, depth: int = 0) -> bool:
+    """Bound the shape of one remote record before it reaches a store.
+
+    A payload is a file another machine (or an editor) wrote. Deep nesting and
+    multi-megabyte strings can exhaust memory long before a merge decision is
+    made, so they are rejected per record instead of silently truncated.
+    """
+    if depth > MAX_NESTING_DEPTH:
+        return False
+    if isinstance(value, str):
+        return len(value) <= MAX_STRING_CHARS
+    if isinstance(value, dict):
+        return len(value) <= MAX_KEYS_PER_OBJECT and all(
+            isinstance(key, str) and len(key) <= 256 and _within_limits(item, depth + 1)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return len(value) <= MAX_RECORDS_PER_STORE and all(
+            _within_limits(item, depth + 1) for item in value
+        )
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return value is None or isinstance(value, (bool, int))
 
 
 # --------------------------------------------------------------------------- #
@@ -194,11 +227,18 @@ def _duplicate_plan_record(kind: str):
     return duplicate
 
 
+def _note_key(note_id) -> str:
+    """Sync ids always use ``/`` so a Windows/Unix pair agrees on identity."""
+    return str(note_id or "").replace("\\", "/").strip("/")
+
+
 def _note_records(base_dir: str) -> list[dict]:
     rows = []
     for note in personal_service.list_notes(base_dir):
         if isinstance(note, dict) and note.get("id"):
-            rows.append(dict(note))
+            published = dict(note)
+            published["id"] = _note_key(note["id"])
+            rows.append(published)
     return rows
 
 
@@ -209,8 +249,8 @@ def _replace_notes(base_dir: str, rows: list[dict]) -> None:
     baseline is rebuilt from what is actually on disk afterwards, which keeps a
     note whose file name had to change from being re-published forever.
     """
-    desired = {str(row.get("id")): row for row in rows if row.get("id")}
-    existing = {note["id"]: note for note in _note_records(base_dir)}
+    desired = {_note_key(row.get("id")): row for row in rows if row.get("id")}
+    existing = {_note_key(note["id"]): note for note in _note_records(base_dir)}
     for note_id, row in desired.items():
         title = str(row.get("title") or "").strip() or "note"
         category = str(row.get("category") or "General").strip() or "General"
@@ -219,10 +259,15 @@ def _replace_notes(base_dir: str, rows: list[dict]) -> None:
             if (existing[note_id].get("content") or "") != content or existing[note_id].get("category") != category:
                 personal_service.update_note(base_dir, note_id, content, category)
             continue
-        personal_service.create_note(base_dir, title, content, category)
+        # Keep the published id: it is what the other machine (and the baseline)
+        # knows this note by. Only fall back to a title-shaped id when the remote
+        # row carries an id this profile cannot use.
+        created = personal_service.create_note_with_id(base_dir, note_id, content)
+        if created is None:
+            personal_service.create_note(base_dir, title, content, category)
     for note_id in existing:
         if note_id not in desired:
-            personal_service.delete_note(base_dir, note_id)
+            personal_service.delete_note(base_dir, existing[note_id]["id"])
 
 
 def _duplicate_note(base_dir: str, row: dict) -> dict | None:
@@ -348,6 +393,14 @@ def read_payload(base_dir: str) -> dict:
     if not path or not os.path.isfile(path):
         return {}
     try:
+        size = os.path.getsize(path)
+    except OSError as exc:
+        raise SyncFormatError(f"The sync file could not be measured ({exc}). Nothing was changed.") from exc
+    if size > MAX_PAYLOAD_BYTES:
+        raise SyncFormatError(
+            "That sync file is too large to be one of Mei's payloads. Nothing was changed."
+        )
+    try:
         with open(path, "r", encoding="utf-8-sig") as handle:
             data = json.load(handle)
     except (OSError, ValueError, UnicodeError) as exc:
@@ -363,7 +416,19 @@ def read_payload(base_dir: str) -> dict:
     if version < 1:
         raise SyncFormatError("Invalid sync schema version. Nothing was changed.")
     stores = data.get("stores")
-    data["stores"] = stores if isinstance(stores, dict) else {}
+    if not isinstance(stores, dict):
+        raise SyncFormatError("Invalid store section in the sync file. Nothing was changed.")
+    for key, store in stores.items():
+        if not isinstance(key, str) or not isinstance(store, dict):
+            raise SyncFormatError("Invalid store section in the sync file. Nothing was changed.")
+        records = store.get("records", {})
+        if not isinstance(records, dict):
+            raise SyncFormatError("Invalid record list in the sync file. Nothing was changed.")
+        if len(records) > MAX_RECORDS_PER_STORE:
+            raise SyncFormatError(
+                f"The sync file has too many records for {key}. Nothing was changed."
+            )
+    data["stores"] = stores
     data["payload_id"] = str(data.get("payload_id") or "")
     return data
 
@@ -372,19 +437,55 @@ class SyncFormatError(RuntimeError):
     """The shared file is not a Mei payload we can trust."""
 
 
-def _remote_store(payload: dict, adapter: StoreAdapter) -> tuple[dict[str, dict], dict[str, str]]:
-    """``({id: record}, {id: hash})`` for one store out of a payload."""
+class SyncApplyError(RuntimeError):
+    """A write failed after the snapshot; the message names the recovery route."""
+
+    def __init__(self, message: str, snapshot: str = ""):
+        super().__init__(message)
+        self.snapshot = snapshot
+
+
+def _remote_store(
+    payload: dict, adapter: StoreAdapter
+) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
+    """``({id: record}, {id: canonical hash}, {id: rejection reason})``.
+
+    A declared ``_hash`` is an optimisation for the other machine, never proof:
+    the canonical hash is recomputed from the validated record content and a
+    mismatch rejects *that record* (the local copy is kept) instead of letting a
+    tampered row masquerade as an edit.
+    """
     store = payload.get("stores", {}).get(adapter.key, {})
     records = store.get("records") if isinstance(store, dict) else None
     records = records if isinstance(records, dict) else {}
+    if len(records) > MAX_RECORDS_PER_STORE:
+        raise SyncFormatError(f"There are too many {adapter.label} records in the sync file.")
     clean: dict[str, dict] = {}
     hashes: dict[str, str] = {}
+    rejected: dict[str, str] = {}
     for record_id, row in records.items():
-        if not isinstance(row, dict):
+        key = str(record_id)
+        if not key or len(key) > MAX_RECORD_ID_CHARS:
+            rejected[key or "<blank>"] = "invalid record id"
             continue
-        clean[str(record_id)] = row
-        hashes[str(record_id)] = str(row.get("_hash") or "") or _hash_record(row, adapter.ignore)
-    return clean, hashes
+        if not isinstance(row, dict):
+            rejected[key] = "record is not an object"
+            continue
+        if not _within_limits(row):
+            rejected[key] = "record exceeds safe size or nesting limits"
+            continue
+        canonical = _hash_record(row, adapter.ignore)
+        declared = row.get("_hash")
+        if declared not in (None, ""):
+            if not isinstance(declared, str) or len(declared) > 128:
+                rejected[key] = "declared hash is malformed"
+                continue
+            if declared.strip().lower() != canonical:
+                rejected[key] = "declared hash does not match the record content"
+                continue
+        clean[key] = row
+        hashes[key] = canonical
+    return clean, hashes, rejected
 
 
 # --------------------------------------------------------------------------- #
@@ -421,7 +522,7 @@ def _merge_store(base_dir: str, adapter: StoreAdapter, payload: dict, baseline: 
     """Classify one store and return the desired rows plus the change report."""
     local_rows = _local_rows(base_dir, adapter)
     local_by_id = {str(row["id"]): row for row in local_rows}
-    remote_records, remote_hashes = _remote_store(payload, adapter)
+    remote_records, remote_hashes, rejected = _remote_store(payload, adapter)
     local_hashes = _hashes(local_rows, adapter.ignore)
     old_baseline = baseline.get(adapter.key)
     old_baseline = old_baseline if isinstance(old_baseline, dict) else {}
@@ -431,6 +532,21 @@ def _merge_store(base_dir: str, adapter: StoreAdapter, payload: dict, baseline: 
     counts = {"added": 0, "updated": 0, "deleted": 0, "conflicts": 0, "kept": 0}
 
     for record_id in sorted(set(local_hashes) | set(remote_hashes) | set(old_baseline)):
+        if record_id in rejected:
+            # An untrusted remote row is not a deletion. Keep what is on this
+            # machine and tell the preview why the remote copy was ignored.
+            if record_id in local_by_id:
+                counts["kept"] += 1
+                changes.append(
+                    _change(
+                        adapter,
+                        record_id,
+                        "rejected",
+                        local_by_id[record_id],
+                        note=f"remote copy rejected ({rejected[record_id]}); the local copy was kept",
+                    )
+                )
+            continue
         local_hash = local_hashes.get(record_id)
         remote_hash = remote_hashes.get(record_id)
         verdict = _decide(local_hash, remote_hash, old_baseline.get(record_id))
@@ -521,7 +637,13 @@ def _merge_store(base_dir: str, adapter: StoreAdapter, payload: dict, baseline: 
             )
 
     rows = list(desired.values())
-    return {"rows": rows, "changes": changes, "counts": counts, "adapter": adapter}
+    return {
+        "rows": rows,
+        "changes": changes,
+        "counts": counts,
+        "adapter": adapter,
+        "rejected": rejected,
+    }
 
 
 def _change(adapter: StoreAdapter, record_id: str, action: str, row: dict, note: str = "") -> dict:
@@ -554,15 +676,24 @@ def compute(base_dir: str) -> dict:
     merged: dict[str, dict] = {}
     changes: list[dict] = []
     summary: dict[str, dict] = {}
+    rejected: dict[str, str] = {}
     for adapter in ADAPTERS:
         result = _merge_store(base_dir, adapter, payload, baseline)
         merged[adapter.key] = result
         changes.extend(result["changes"])
+        for record_id, reason in (result.get("rejected") or {}).items():
+            rejected[f"{adapter.key}:{record_id}"] = reason
         summary[adapter.key] = {
             "label": adapter.label,
             **result["counts"],
             "total": len(result["rows"]),
         }
+    warnings = _warnings(base_dir, folder, payload, state)
+    if rejected:
+        warnings.append(
+            f"{len(rejected)} remote record(s) failed an integrity check and were ignored; "
+            "the copies on this machine were kept."
+        )
     return {
         "enabled": True,
         "applied": False,
@@ -571,7 +702,8 @@ def compute(base_dir: str) -> dict:
         "merged": merged,
         "changes": changes,
         "summary": summary,
-        "warnings": _warnings(base_dir, folder, payload, state),
+        "warnings": warnings,
+        "rejected": rejected,
         "same_writer": bool(payload.get("device") and payload.get("device") == device_id(base_dir)),
     }
 
@@ -611,6 +743,33 @@ def _snapshot(base_dir: str, keys: tuple[str, ...]) -> str:
         with open(os.path.join(target, f"{key}.json"), "w", encoding="utf-8") as handle:
             json.dump({"store": key, "records": rows}, handle, ensure_ascii=False, indent=2)
     return target
+
+
+def _restore_snapshot(base_dir: str, snapshot: str, keys: list[str]) -> tuple[list[str], list[str]]:
+    """Put the pre-merge rows back through each store's own writer.
+
+    Restoring is best-effort per store and reports what it could not undo; the
+    snapshot directory itself is never deleted, so a failed automatic restore
+    still leaves the user a manual route.
+    """
+    restored: list[str] = []
+    errors: list[str] = []
+    for key in keys:
+        adapter = ADAPTERS_BY_KEY.get(key)
+        path = os.path.join(snapshot, f"{key}.json")
+        if adapter is None or not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            rows = payload.get("records") if isinstance(payload, dict) else None
+            if not isinstance(rows, list):
+                raise ValueError("snapshot has no record list")
+            adapter.replace(base_dir, [row for row in rows if isinstance(row, dict)])
+            restored.append(key)
+        except Exception as exc:  # noqa: BLE001 - report which store did not roll back
+            errors.append(f"{key}: {exc}")
+    return restored, errors
 
 
 def _build_payload(base_dir: str, stores: dict[str, list[dict]]) -> dict:
@@ -681,14 +840,38 @@ def sync(base_dir: str, apply: bool = True) -> dict:
     snapshot = _snapshot(base_dir, touched) if touched else ""
 
     written: dict[str, int] = {}
+    written_keys: list[str] = []
     for adapter in ADAPTERS:
         if adapter.key not in touched:
             continue
         rows = plan["merged"][adapter.key]["rows"]
         if len(rows) > MAX_RECORDS_PER_STORE:
             raise SyncFormatError(f"{adapter.label} holds more rows than folder sync will write.")
-        adapter.replace(base_dir, rows)
+        try:
+            adapter.replace(base_dir, rows)
+        except Exception as exc:  # noqa: BLE001 - roll back, then explain both facts
+            _restored, restore_errors = _restore_snapshot(
+                base_dir, snapshot, [*written_keys, adapter.key]
+            )
+            if restore_errors:
+                recovery = (
+                    "Automatic restore could not finish ("
+                    + "; ".join(restore_errors)
+                    + f"). Your pre-sync backup is at {snapshot}."
+                )
+            elif snapshot:
+                recovery = (
+                    f"The previous copies were restored from {snapshot}. "
+                    "Nothing was acknowledged as synced."
+                )
+            else:
+                recovery = "No store had been written yet."
+            raise SyncApplyError(
+                f"Folder sync stopped while writing {adapter.label}. {recovery}",
+                snapshot,
+            ) from exc
         written[adapter.key] = len(rows)
+        written_keys.append(adapter.key)
 
     # The baseline is rebuilt from what the stores hold *now* — after the writes —
     # so a record whose file had to be created under another name (a note) is not
@@ -767,6 +950,7 @@ __all__ = [
     "PAYLOAD_NAME",
     "STATE_NAME",
     "StoreAdapter",
+    "SyncApplyError",
     "SyncFormatError",
     "VOLATILE_KEYS",
     "compute",

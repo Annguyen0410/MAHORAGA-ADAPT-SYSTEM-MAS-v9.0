@@ -19,9 +19,11 @@ Three guarantees this module now enforces (each one was violated before):
 3. **Reversibility** — installing keeps a ``.bak`` next to the executable and a
    watchdog script restores it when the new build fails to come up.
 """
+import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +32,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass
 
 from litebrowser.core import app_version, product
@@ -54,6 +57,19 @@ STALE_PREFIXES = ("~",)
 # now would otherwise lose its own package mid-flight.
 CLEANUP_MIN_AGE_SECONDS = 600
 
+#: A release version is exactly four numeric parts. Tags may carry a pre-release
+#: suffix, but a suffix is never allowed into ``update.json``: the stable channel
+#: compares build versions, and turning ``-alpha`` into a zero is how a preview
+#: would quietly replace a stable install.
+RELEASE_VERSION_RE = re.compile(r"^(\d{1,9})\.(\d{1,9})\.(\d{1,9})\.(\d{1,9})$")
+SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+#: A 512 MB ceiling is generous for a PyInstaller build and still stops a
+#: malicious/broken channel from filling the disk before verification.
+MAX_PACKAGE_BYTES = 512 * 1024 * 1024
+
+_SENSITIVE_QUERY_PARTS = ("token", "secret", "signature", "sig", "key", "password", "auth")
+
 
 @dataclass
 class UpdateInfo:
@@ -70,6 +86,9 @@ class UpdateInfo:
     size: int = 0
     # A human-facing release page, when the channel carries one.
     release_url: str = ""
+    # A local ``update\\update.json`` may omit the hash for a hand-built package;
+    # that exception is narrow, visible, and never applies to a remote channel.
+    manual_channel: bool = False
 
 
 def file_sha256(path: str, chunk_size: int = 1024 * 1024) -> str:
@@ -96,28 +115,65 @@ def _manifest_sha256(metadata: dict) -> str:
     return declared.lower()
 
 
+def parse_version(version: str) -> tuple[int, int, int, int]:
+    """Parse the one release-version shape Mei publishes and accepts.
+
+    Four numeric parts, nothing else. Prereleases are GitHub pre-releases and
+    are deliberately absent from the stable channel's ``update.json``; a suffix
+    here is an error, not a zero. This removes the old behaviour where
+    ``1.0.0.1-alpha`` compared as ``1.0.0.1`` and could replace a stable user.
+    """
+    text = str(version or "").strip()
+    match = RELEASE_VERSION_RE.match(text)
+    if not match:
+        raise ValueError(
+            f"Version '{text or '(missing)'}' is not a four-part numeric release "
+            "version such as 1.2.3.4. Pre-release suffixes belong on a GitHub "
+            "pre-release tag, never in the stable update manifest."
+        )
+    return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
+
+
 def _normalize_version(version: str):
-    """Split a dotted version into ints; non-numeric chunks become 0."""
-    parts = []
-    for chunk in str(version or "").strip().split("."):
-        try:
-            parts.append(int(chunk))
-        except ValueError:
-            parts.append(0)
-    return tuple(parts)
+    """Backwards-compatible name for :func:`parse_version`."""
+    return parse_version(version)
 
 
 def _version_is_newer(latest: str, current: str) -> bool:
-    """Compare two versions of *different* lengths correctly.
+    """Compare two valid four-part versions; malformed values are refused."""
+    return parse_version(latest) > parse_version(current)
 
-    ``(0, 6, 9)`` must not be treated as newer than ``(0, 6, 9, 0)`` just because
-    the tuple is shorter/longer — pad both to the same width first.
-    """
-    left, right = _normalize_version(latest), _normalize_version(current)
-    width = max(len(left), len(right))
-    left = left + (0,) * (width - len(left))
-    right = right + (0,) * (width - len(right))
-    return left > right
+
+def redact_url(url: str) -> str:
+    """Hide credentials and token-shaped query values before showing a URL."""
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    try:
+        parts = urllib.parse.urlsplit(text)
+    except ValueError:
+        return "<redacted url>"
+    hostname = parts.hostname or ""
+    netloc = hostname
+    if ":" in hostname and not hostname.startswith("["):
+        netloc = f"[{hostname}]"
+    try:
+        if parts.port:
+            netloc = f"{netloc}:{parts.port}"
+    except ValueError:
+        pass
+    query = urllib.parse.urlencode(
+        [
+            (
+                key,
+                "REDACTED"
+                if any(part in key.lower() for part in _SENSITIVE_QUERY_PARTS)
+                else value,
+            )
+            for key, value in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        ]
+    )
+    return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
 
 
 def asset_name(url: str) -> str:
@@ -246,6 +302,9 @@ def check_for_updates(metadata_url: str | None = None, app_dir: str = "") -> Upd
     latest_version = str(metadata.get("version") or "").strip()
     if not latest_version:
         raise ValueError("Missing version in update metadata")
+    # Parse here, before comparing: a malformed or pre-release version in the
+    # channel is refused with a message naming the rule, not coerced to zero.
+    parse_version(latest_version)
 
     # Only asset-shaped keys become a download URL. ``release_url`` is a page, so
     # it is kept aside — inventing a download from it would offer the releases
@@ -255,18 +314,31 @@ def check_for_updates(metadata_url: str | None = None, app_dir: str = "") -> Upd
     notes = str(metadata.get("notes") or metadata.get("changelog") or "").strip()
     published_at = str(metadata.get("published_at") or metadata.get("date") or "").strip()
     sha256 = _manifest_sha256(metadata)
+    if sha256 and not SHA256_RE.match(sha256):
+        raise ValueError("The update manifest declares a malformed SHA-256 hash. Refusing it.")
     try:
         size = int(metadata.get("size") or 0)
     except (TypeError, ValueError):
         size = 0
+    if size < 0:
+        size = 0
+    if size > MAX_PACKAGE_BYTES:
+        raise ValueError("The update manifest advertises an implausibly large package. Refusing it.")
     current_version = app_version.APP_VERSION
     has_update = _version_is_newer(latest_version, current_version)
+    manual = bool(local_source(download_url) or local_channel_path(app_dir))
 
     if has_update and download_url and not asset_is_ours(download_url):
         raise ValueError(
             f"The channel offers '{asset_name(download_url)}' for {latest_version}, "
             f"but {product.PRODUCT_NAME} updates ship as {product.ASSET_NAME}. "
             "Refusing an update that is not this product's build."
+        )
+    if has_update and download_url and not sha256 and not manual:
+        raise ValueError(
+            "The update manifest does not declare a SHA-256 for the package. "
+            "A remote update must be identity-checked before it can replace "
+            "Mei, so this release is refused. Publish it with tools/publish_release.py."
         )
 
     return UpdateInfo(
@@ -280,10 +352,32 @@ def check_for_updates(metadata_url: str | None = None, app_dir: str = "") -> Upd
         sha256=sha256,
         size=size,
         release_url=release_url,
+        manual_channel=manual,
     )
 
 
-def download_update_package(download_url: str, version: str, expected_sha256: str = "") -> str:
+def download_update_package(
+    download_url: str,
+    version: str,
+    expected_sha256: str = "",
+    expected_size: int = 0,
+    timeout: int = 30,
+    progress_callback=None,
+) -> str:
+    """Download and verify a package, reporting bounded progress.
+
+    ``progress_callback(received, total)`` runs on the caller's worker thread, so
+    a GUI passes a signal emitter rather than touching widgets. It is called at
+    most ~20 times for a full package, not once per network chunk.
+    """
+    def report(received: int, total: int) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(int(received), int(total))
+        except Exception:  # noqa: BLE001  progress must never fail a download
+            pass
+
     if not download_url:
         raise ValueError("Missing download URL")
     if not asset_is_ours(download_url):
@@ -291,30 +385,68 @@ def download_update_package(download_url: str, version: str, expected_sha256: st
             f"Refusing to download '{asset_name(download_url)}' — "
             f"{product.PRODUCT_NAME} updates ship as {product.ASSET_NAME}."
         )
+    # The version is part of a file name; only the strict release shape may be
+    # used so a manifest cannot steer the write outside the update folder.
+    parse_version(version)
     target_dir = os.path.join(tempfile.gettempdir(), app_version.APP_NAME, "updates")
     os.makedirs(target_dir, exist_ok=True)
     file_name = f"{app_version.APP_NAME}-{version}.exe"
     target_path = os.path.join(target_dir, file_name)
     local = local_source(download_url)
-    if local:
-        # Already on this machine: copy, never move — the user's build stays put,
-        # and the swap script is the only thing allowed to delete it.
-        shutil.copyfile(local, target_path)
-        return _accept_download(target_path, expected_sha256)
-    request = urllib.request.Request(
-        download_url,
-        headers={"User-Agent": f"{app_version.APP_NAME}/{app_version.APP_VERSION}"},
-    )
-    with urllib.request.urlopen(request, timeout=30) as response, open(target_path, "wb") as output:
-        while True:
-            chunk = response.read(1024 * 256)
-            if not chunk:
-                break
-            output.write(chunk)
-    return _accept_download(target_path, expected_sha256)
+    try:
+        if local:
+            # Already on this machine: copy, never move — the user's build stays
+            # put, and the swap script is the only thing allowed to delete it.
+            total = os.path.getsize(local)
+            report(0, total)
+            shutil.copyfile(local, target_path)
+            report(total, total)
+            return _accept_download(target_path, expected_sha256, expected_size)
+        request = urllib.request.Request(
+            download_url,
+            headers={"User-Agent": f"{app_version.APP_NAME}/{app_version.APP_VERSION}"},
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            try:
+                declared = int(response.headers.get("Content-Length") or 0)
+            except (TypeError, ValueError):
+                declared = 0
+            if declared > MAX_PACKAGE_BYTES:
+                raise ValueError("The update download is larger than Mei will accept.")
+            if expected_size and declared and declared != expected_size:
+                raise ValueError(
+                    "The update server advertises a different size than the release manifest. "
+                    "Refusing this download."
+                )
+            total = expected_size or declared or 0
+            step = max(1024 * 1024, (total or MAX_PACKAGE_BYTES) // 20)
+            next_report = step
+            report(0, total)
+            received = 0
+            with open(target_path, "wb") as output:
+                while True:
+                    chunk = response.read(1024 * 256)
+                    if not chunk:
+                        break
+                    received += len(chunk)
+                    if received > MAX_PACKAGE_BYTES:
+                        raise ValueError("The update download is larger than Mei will accept.")
+                    output.write(chunk)
+                    if received >= next_report:
+                        report(received, total or received)
+                        next_report = received + step
+            report(received, total or received)
+        return _accept_download(target_path, expected_sha256, expected_size)
+    except Exception:
+        # A partial file must never linger as if it were a usable update.
+        try:
+            os.remove(target_path)
+        except OSError:
+            pass
+        raise
 
 
-def _accept_download(path: str, expected_sha256: str = "") -> str:
+def _accept_download(path: str, expected_sha256: str = "", expected_size: int = 0) -> str:
     """Verify a finished download and drop it when it cannot be a build.
 
     Failing here (instead of at install time) keeps a corrupt download from
@@ -322,7 +454,7 @@ def _accept_download(path: str, expected_sha256: str = "") -> str:
     while the user still has the download in front of them.
     """
     try:
-        verify_package(path, expected_sha256)
+        verify_package(path, expected_sha256, expected_size)
     except Exception:
         try:
             os.remove(path)
@@ -332,13 +464,14 @@ def _accept_download(path: str, expected_sha256: str = "") -> str:
     return path
 
 
-def verify_package(package_path: str, expected_sha256: str = "") -> None:
+def verify_package(package_path: str, expected_sha256: str = "", expected_size: int = 0) -> None:
     """Reject anything that cannot be a real build before it touches the exe.
 
     A truncated download, an HTML error page saved as ``.exe`` or a random file
     would otherwise be copied over the running application.  When the channel
     declared a hash, the bytes must match it too — that is what turns "probably
-    the right file" into the exact file the publisher measured.
+    the right file" into the exact file the publisher measured. The advertised
+    size and the absolute ceiling are checked before hashing.
     """
     if not os.path.isfile(package_path):
         raise FileNotFoundError(package_path)
@@ -348,6 +481,17 @@ def verify_package(package_path: str, expected_sha256: str = "") -> None:
             f"Downloaded update is only {size} bytes — far too small to be "
             f"{product.PRODUCT_NAME}. The download likely failed."
         )
+    if size > MAX_PACKAGE_BYTES:
+        raise ValueError("Downloaded update is larger than Mei will accept.")
+    try:
+        declared_size = int(expected_size or 0)
+    except (TypeError, ValueError):
+        declared_size = 0
+    if declared_size and size != declared_size:
+        raise ValueError(
+            f"Downloaded update is {size} bytes but its release manifest advertised "
+            f"{declared_size}. The download is incomplete or was tampered with."
+        )
     with open(package_path, "rb") as handle:
         if handle.read(2) != b"MZ":
             raise ValueError(
@@ -356,6 +500,8 @@ def verify_package(package_path: str, expected_sha256: str = "") -> None:
             )
     digest = (expected_sha256 or "").strip().lower()
     if digest:
+        if not SHA256_RE.match(digest):
+            raise ValueError("The expected SHA-256 is malformed; refusing to verify against it.")
         actual = file_sha256(package_path)
         if actual != digest:
             raise ValueError(
@@ -440,59 +586,124 @@ def cleanup_old_artifacts(
     return {"removed": removed, "freed_bytes": freed, "errors": errors}
 
 
-def _update_script(current_exe: str, package_path: str, pid: int, stale_paths=()) -> str:
-    # The old build and the hand-dropped package are dead weight once the new one
-    # has come up, so the success branch removes them with the backup.
-    cleanup = "".join(f'del "{path}" >nul 2>nul\r\n' for path in stale_paths)
+def _ps_quote(value: str) -> str:
+    """One PowerShell single-quoted literal; ``%``, ``&`` and ``!`` stay inert."""
+    return "'" + str(value or "").replace("'", "''") + "'"
 
-    return f"""@echo off
-setlocal
-set "TARGET={current_exe}"
-set "SOURCE={package_path}"
-set "BAK=%TARGET%.bak"
-set "PID={pid}"
-for %%A in ("%TARGET%") do set "IMAGE=%%~nxA"
 
-:wait_loop
-tasklist /FI "PID eq %PID%" | find "%PID%" >nul
-if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto wait_loop
-)
+def _update_script_text(
+    current_exe: str,
+    package_path: str,
+    pid: int,
+    stale_paths=(),
+    health_file: str = "",
+    health_token: str = "",
+) -> str:
+    """A PowerShell swap script with no shell interpolation of paths at all.
 
-copy /Y "%TARGET%" "%BAK%" >nul 2>nul
-copy /Y "%SOURCE%" "%TARGET%" >nul
-if errorlevel 1 goto rollback
+    The old ``.cmd`` builder pasted paths into a batch file, where ``%``, ``&``
+    and ``!`` are syntax. Here every path is a single-quoted PowerShell literal
+    and the whole script is run as ``-EncodedCommand``, so cmd.exe never parses
+    the path at all. Success is a *startup health marker* written by the new
+    build, not merely “a process with this name exists” (a second instance made
+    the old check pass for the wrong build).
+    """
+    cleanup = "".join(
+        f"Remove-Item -LiteralPath {_ps_quote(path)} -Force -ErrorAction SilentlyContinue\n"
+        for path in stale_paths
+    )
+    health_dir = os.path.dirname(health_file) if health_file else ""
+    return f"""$ErrorActionPreference = 'Stop'
+$target = {_ps_quote(current_exe)}
+$source = {_ps_quote(package_path)}
+$backup = $target + '.bak'
+$processId = {int(pid)}
+$healthFile = {_ps_quote(health_file)}
+$healthToken = {_ps_quote(health_token)}
+$workingDirectory = Split-Path -Parent $target
 
-start "" "%TARGET%"
-timeout /t 15 /nobreak >nul
-tasklist /FI "IMAGENAME eq %IMAGE%" | find /I "%IMAGE%" >nul
-if errorlevel 1 goto rollback
+while (Get-Process -Id $processId -ErrorAction SilentlyContinue) {{
+    Start-Sleep -Milliseconds 500
+}}
 
-del "%BAK%" >nul 2>nul
-del "%SOURCE%" >nul 2>nul
-{cleanup}goto done
+Copy-Item -LiteralPath $target -Destination $backup -Force
+try {{
+    Copy-Item -LiteralPath $source -Destination $target -Force
+}} catch {{
+    Copy-Item -LiteralPath $backup -Destination $target -Force
+    Start-Process -FilePath $target -WorkingDirectory $workingDirectory
+    exit 1
+}}
 
-:rollback
-if exist "%BAK%" copy /Y "%BAK%" "%TARGET%" >nul 2>nul
-start "" "%TARGET%"
+Remove-Item -LiteralPath $healthFile -Force -ErrorAction SilentlyContinue
+$env:MEI_UPDATE_HEALTH_FILE = $healthFile
+$env:MEI_UPDATE_HEALTH_TOKEN = $healthToken
+$started = Start-Process -FilePath $target -WorkingDirectory $workingDirectory -PassThru
+$healthy = $false
+if ($healthToken) {{
+    for ($i = 0; $i -lt 60; $i++) {{
+        Start-Sleep -Seconds 1
+        if (Test-Path -LiteralPath $healthFile) {{
+            try {{
+                $value = (Get-Content -LiteralPath $healthFile -Raw).Trim()
+                if ($value -eq $healthToken) {{ $healthy = $true; break }}
+            }} catch {{ }}
+        }}
+        if ($started.HasExited) {{ break }}
+    }}
+}} else {{
+    Start-Sleep -Seconds 15
+    $healthy = -not $started.HasExited
+}}
 
-:done
-(goto) 2>nul & del "%~f0"
+if (-not $healthy) {{
+    # Keep the backup: a failed health check is exactly when a user may need it.
+    Copy-Item -LiteralPath $backup -Destination $target -Force
+    Start-Process -FilePath $target -WorkingDirectory $workingDirectory
+    exit 2
+}}
+
+Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue
+{cleanup}if ({_ps_quote(health_dir)}) {{ Remove-Item -LiteralPath {_ps_quote(health_dir)} -Recurse -Force -ErrorAction SilentlyContinue }}
+exit 0
 """
 
 
-def install_downloaded_update(package_path: str, stale_paths=(), expected_sha256: str = "") -> None:
-    verify_package(package_path, expected_sha256)
+def install_downloaded_update(
+    package_path: str,
+    stale_paths=(),
+    expected_sha256: str = "",
+    expected_size: int = 0,
+) -> None:
+    verify_package(package_path, expected_sha256, expected_size)
     if not getattr(sys, "frozen", False):
         raise RuntimeError("Auto-replace only supports a built .exe.")
 
     current_exe = os.path.abspath(sys.executable)
-    script_dir = tempfile.mkdtemp(prefix="mei-updater-")
-    script_path = os.path.join(script_dir, "apply_update.cmd")
-    with open(script_path, "w", encoding="utf-8", newline="\r\n") as handle:
-        handle.write(_update_script(current_exe, package_path, os.getpid(), stale_paths))
-    subprocess.Popen(["cmd.exe", "/c", script_path], close_fds=True)
+    support_dir = tempfile.mkdtemp(prefix="mei-updater-")
+    health_file = os.path.join(support_dir, "startup.ok")
+    health_token = uuid.uuid4().hex
+    script = _update_script_text(
+        current_exe,
+        package_path,
+        os.getpid(),
+        stale_paths,
+        health_file=health_file,
+        health_token=health_token,
+    )
+    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-EncodedCommand",
+        encoded,
+    ]
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+    subprocess.Popen(command, close_fds=True, creationflags=creationflags)
 
 
 def format_error(exc: Exception) -> str:

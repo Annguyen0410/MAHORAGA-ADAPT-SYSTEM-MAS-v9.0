@@ -286,6 +286,111 @@ class TestSafety(_TwoMachines):
             self._sync(self.a)
         self.assertEqual(self._tasks(self.a), ["Buy ink"])
 
+    def test_an_oversized_payload_is_refused_before_parsing(self):
+        life_service.add_task(self.a, "Keep me")
+        with open(sync_folder.payload_path(self.a), "w", encoding="utf-8") as handle:
+            handle.write("{" + " " * 4096 + "}")
+        with mock.patch.object(sync_folder, "MAX_PAYLOAD_BYTES", 64):
+            with self.assertRaises(sync_folder.SyncFormatError) as ctx:
+                self._sync(self.a)
+        self.assertIn("too large", str(ctx.exception))
+        self.assertEqual(self._tasks(self.a), ["Keep me"])
+        self.assertFalse(os.path.exists(sync_folder.state_path(self.a)))
+
+    def test_a_malformed_store_section_is_refused(self):
+        life_service.add_task(self.a, "Keep me")
+        with open(sync_folder.payload_path(self.a), "w", encoding="utf-8") as handle:
+            json.dump(
+                {"kind": sync_folder.PAYLOAD_KIND, "version": 1, "stores": {"tasks": {"records": []}}},
+                handle,
+            )
+        with self.assertRaises(sync_folder.SyncFormatError):
+            self._sync(self.a)
+        self.assertEqual(self._tasks(self.a), ["Keep me"])
+
+    def test_a_tampered_hash_is_rejected_and_the_local_record_survives(self):
+        task = life_service.add_task(self.a, "Trusted local copy")
+        self._sync(self.a)
+        self._sync(self.b)
+        payload = self._payload()
+        payload["stores"]["tasks"]["records"][task["id"]]["title"] = "Tampered remote title"
+        payload["stores"]["tasks"]["records"][task["id"]]["_hash"] = "0" * 24
+        with open(sync_folder.payload_path(self.a), "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+
+        report = sync_folder.compute(self.b)
+        rejected = [change for change in report["changes"] if change["action"] == "rejected"]
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0]["id"], task["id"])
+        self.assertTrue(any("integrity check" in warning for warning in report["warnings"]))
+        self.assertEqual(self._tasks(self.b), ["Trusted local copy"])
+
+        applied = self._sync(self.b)
+        self.assertEqual(self._tasks(self.b), ["Trusted local copy"])
+        self.assertEqual(applied["summary"]["tasks"]["deleted"], 0)
+
+    def test_a_tampered_record_is_not_added_on_a_fresh_machine(self):
+        task = life_service.add_task(self.a, "Legitimate")
+        self._sync(self.a)
+        payload = self._payload()
+        payload["stores"]["tasks"]["records"][task["id"]]["_hash"] = "f" * 24
+        with open(sync_folder.payload_path(self.a), "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        report = sync_folder.compute(self.b)
+        self.assertTrue(report["rejected"])
+        self.assertEqual(self._tasks(self.b), [], "preview and apply keep the tampered row out")
+        self._sync(self.b)
+        self.assertEqual(self._tasks(self.b), [])
+
+    def test_a_failed_store_write_restores_the_previous_rows(self):
+        life_service.add_task(self.a, "Original task")
+        personal_service.create_note(self.a, "Original note", "text")
+        self._sync(self.a)
+        self._sync(self.b)
+
+        rows = life_service.load_tasks(self.a)
+        rows[0]["title"] = "Changed on A"
+        life_service.save_tasks(self.a, rows)
+        note = [n for n in personal_service.list_notes(self.a) if n["title"] == "Original note"][0]
+        personal_service.update_note(self.a, note["id"], "changed")
+        self._sync(self.a)
+
+        original_notes_adapter = sync_folder.ADAPTERS_BY_KEY["notes"]
+
+        def failing_replace(base_dir, records):
+            raise OSError("simulated disk failure")
+
+        broken = sync_folder.StoreAdapter(
+            key="notes",
+            label="Notes",
+            load=original_notes_adapter.load,
+            replace=failing_replace,
+            ignore=original_notes_adapter.ignore,
+        )
+        patched = tuple(broken if adapter.key == "notes" else adapter for adapter in sync_folder.ADAPTERS)
+        patched_by_key = {**sync_folder.ADAPTERS_BY_KEY, "notes": broken}
+        with mock.patch.object(sync_folder, "ADAPTERS", patched), mock.patch.object(
+            sync_folder, "ADAPTERS_BY_KEY", patched_by_key
+        ):
+            with self.assertRaises(sync_folder.SyncApplyError) as ctx:
+                self._sync(self.b)
+
+        self.assertIn("pre-sync backup", str(ctx.exception))
+        self.assertEqual(self._tasks(self.b), ["Original task"], "the earlier write was rolled back")
+        self.assertTrue(self._backup_dirs(self.b), "the pre-sync snapshot is retained")
+        self.assertEqual([n["title"] for n in personal_service.list_notes(self.b)], ["Original note"])
+
+    def test_a_remote_note_keeps_its_stable_id(self):
+        note = personal_service.create_note(self.a, "Stable note", "body")
+        self._sync(self.a)
+        self._sync(self.b)
+        self.assertEqual(
+            [n["id"] for n in personal_service.list_notes(self.b)], [note["id"]]
+        )
+        # A second pull must not create a duplicate under a title-shaped id.
+        self.assertFalse(self._sync(self.b)["applied"])
+        self.assertEqual(len(personal_service.list_notes(self.b)), 1)
+
     def test_a_folder_inside_the_profile_is_called_out(self):
         sync_folder.set_folder(self.a, os.path.join(self.a, "somewhere"))
         report = sync_folder.compute(self.a)

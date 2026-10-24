@@ -8,9 +8,51 @@ Every call here is safe: if the log file cannot be created, the app still runs.
 import logging
 import logging.handlers
 import os
+import re
 
 _HANDLER = None
 _LOG_DIR = None
+
+# Credentials reach log lines through provider errors, redirect URLs and stack
+# traces. A diagnostics bundle is meant to be handed to a stranger, so the file
+# handler masks anything shaped like one before it is written. This is a
+# defence-in-depth layer, not a reason to log tokens in the first place.
+_REDACTION_PATTERNS = (
+    (re.compile(r"(?i)\b(bearer\s+)([A-Za-z0-9\-._~+/]+=*)"), r"\1[redacted]"),
+    (re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|passwd|secret)(\s*[=:]\s*)([^\s,;\"']+)"), r"\1\2[redacted]"),
+    (re.compile(r"(?i)\b(https?://)([^/\s:@]+):([^/\s@]+)@"), r"\1[redacted]@"),
+    (re.compile(r"\b(?:sk|ghp|gho|ghu|ghs|ghr|xox[baprs])[-_][A-Za-z0-9_-]{12,}\b"), "[redacted]"),
+    (re.compile(r"\bya29\.[A-Za-z0-9_.-]{10,}\b"), "[redacted]"),
+)
+
+
+def redact(text: str) -> str:
+    """Mask configured secret values and recognisable credential shapes."""
+    cleaned = str(text or "")
+    try:
+        from litebrowser.core import secret_store
+
+        for value in secret_store.known_secret_values():
+            if value:
+                cleaned = cleaned.replace(value, "[redacted]")
+    except Exception:  # noqa: BLE001  logging must never fail on its own defence
+        pass
+    for pattern, replacement in _REDACTION_PATTERNS:
+        cleaned = pattern.sub(replacement, cleaned)
+    return cleaned
+
+
+class _RedactionFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+            cleaned = redact(message)
+            if cleaned != message:
+                record.msg = cleaned
+                record.args = ()
+        except Exception:  # noqa: BLE001  never suppress a log record over redaction
+            pass
+        return True
 
 
 def _open_handler(logs_dir: str) -> logging.handlers.RotatingFileHandler:
@@ -21,6 +63,7 @@ def _open_handler(logs_dir: str) -> logging.handlers.RotatingFileHandler:
     handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     )
+    handler.addFilter(_RedactionFilter())
     handler.setLevel(logging.DEBUG)
     return handler
 

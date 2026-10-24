@@ -1684,6 +1684,11 @@ class SettingsPage(QWidget):
         security_layout.addWidget(self.lbl_lock_status)
         self.btn_lock_now = ghost_button("Lock now", "Re-lock Personal and AI without restarting Mei")
         security_layout.addWidget(self.btn_lock_now, 0, Qt.AlignLeft)
+        self.lbl_secret_status = QLabel("")
+        self.lbl_secret_status.setWordWrap(True)
+        self.lbl_secret_status.setObjectName("MutedLabel")
+        self.lbl_secret_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        security_layout.addWidget(self.lbl_secret_status)
         content_layout.addWidget(security_card)
 
         monitors_card = QFrame()
@@ -1749,8 +1754,10 @@ class SettingsPage(QWidget):
             components.section_header("Mobile / Android bridge", "Phone ↔ desktop sync over HTTP + JSON")
         )
         mobile_help = QLabel(
-            "Set the same token in the app and desktop. Enable “Listen on LAN” only on trusted "
-            "networks; use your PC’s IPv4 in the app (e.g. 192.168.x.x)."
+            "Loopback mode is reachable only from this PC. “Listen on LAN” opens the bridge to "
+            "your Wi‑Fi/LAN using unencrypted HTTP: anyone who can capture traffic or read the "
+            "token can act as a paired device. Enable it only on a network you trust (or through "
+            "a VPN), and use your PC’s IPv4 in the app (e.g. 192.168.x.x)."
         )
         mobile_help.setWordWrap(True)
         mobile_help.setObjectName("MutedLabel")
@@ -2311,12 +2318,16 @@ class SettingsPage(QWidget):
     def _show_folder_preview(self, report):
         self.lbl_sync_status.setText(sync_folder.summary_line(report))
         changes = report.get("changes", [])
-        if not changes:
+        warnings = report.get("warnings") or []
+        if not changes and not warnings:
             QMessageBox.information(self, "Folder sync", "Nothing to merge — this machine is already in step.")
             return
         lines = [f"{change['action']}: {change['title']}  ({change['store_label']})" for change in changes[:12]]
         if len(changes) > 12:
             lines.append(f"… and {len(changes) - 12} more")
+        if warnings:
+            lines.append("")
+            lines.extend(f"⚠ {warning}" for warning in warnings[:6])
         QMessageBox.information(
             self,
             "Folder sync — preview",
@@ -2343,7 +2354,7 @@ class SettingsPage(QWidget):
         # Small non-executor hosts (tests/embedded pages) remain synchronous.
         try:
             report = sync_folder.sync(self.shell.profile_dir)
-        except sync_folder.SyncFormatError as exc:
+        except (sync_folder.SyncFormatError, sync_folder.SyncApplyError) as exc:
             QMessageBox.warning(self, "Folder sync", str(exc))
             return
         except OSError as exc:  # noqa: BLE001 - a missing folder drive is not a crash
@@ -2357,7 +2368,7 @@ class SettingsPage(QWidget):
         self._refresh_folder_sync()
         try:
             report = future.result()
-        except (sync_folder.SyncFormatError, OSError, ValueError) as exc:
+        except (sync_folder.SyncFormatError, sync_folder.SyncApplyError, OSError, ValueError) as exc:
             self.lbl_sync_status.setText("Sync was not completed. Your backup is retained.")
             QMessageBox.warning(self, "Folder sync", str(exc))
             return
@@ -2524,7 +2535,18 @@ class SettingsPage(QWidget):
         )
 
     def _google_sign_out(self):
-        prefs.clear_google_account(self.shell.profile_dir)
+        from litebrowser.core import secret_store
+
+        try:
+            prefs.clear_google_account(self.shell.profile_dir)
+        except secret_store.SecretStorageError as exc:
+            QMessageBox.warning(
+                self,
+                "Google account",
+                "The saved Google token could not be removed from the OS credential store. "
+                f"Nothing else was changed. Details: {exc}",
+            )
+            return
         self._refresh_google()
 
     def _refresh_security(self):
@@ -2536,6 +2558,22 @@ class SettingsPage(QWidget):
         else:
             self.lbl_lock_status.setText("No passcode yet: the first visit to Personal or AI offers to set one.")
         self.btn_lock_now.setEnabled(has_passcode and not locked)
+        from litebrowser.core import secret_store
+
+        info = secret_store.status(self.shell.profile_dir)
+        hint = secret_store.recovery_hint(self.shell.profile_dir)
+        if hint:
+            self.lbl_secret_status.setText(hint)
+        elif info.get("protected"):
+            self.lbl_secret_status.setText(
+                "Saved credentials (AI key, sync and bridge tokens, proxy password) are "
+                "protected by Windows for this user account. They are not part of sync or backups."
+            )
+        else:
+            self.lbl_secret_status.setText(
+                info.get("warning")
+                or "Saved credentials are stored in this profile; this platform has no OS vault."
+            )
 
     def _lock_now(self):
         security.lock(self.shell.profile_dir)
@@ -2549,7 +2587,10 @@ class SettingsPage(QWidget):
         self.monitors_list.clear()
         for monitor in monitors:
             row = QListWidgetItem(monitor.get("title") or monitor.get("url", ""))
-            row.setToolTip(monitor.get("url", ""))
+            tip = monitor.get("url", "")
+            if monitor.get("last_error"):
+                tip += "\nLast check failed: " + monitor["last_error"]
+            row.setToolTip(tip)
             row.setData(Qt.UserRole, monitor.get("id", ""))
             self.monitors_list.addItem(row)
         if not monitors:
@@ -2602,7 +2643,8 @@ class SettingsPage(QWidget):
         )
         self.lbl_pairing_code.setText(
             "Pairing code — paste into Mei Remote (Settings) or the Mei Bridge extension "
-            "in Chrome / Opera GX:\n" + self._current_pairing_code
+            "in Chrome / Opera GX. It contains your access token, so treat it like a password "
+            "and never post it publicly:\n" + self._current_pairing_code
         )
         try:
             png = android_bridge_service.pairing_qr_png(self._current_pairing_code)
@@ -2624,16 +2666,62 @@ class SettingsPage(QWidget):
 
     def _generate_mobile_token(self):
         self.ed_mobile_token.setText(prefs.generate_mobile_bridge_token())
+        QMessageBox.information(
+            self,
+            "Mobile bridge token",
+            "A new token is ready. It takes effect only when you save — and saving it "
+            "disconnects every phone and extension that was paired with the old token.",
+        )
 
     def save_mobile_bridge(self):
-        prefs.set_mobile_bridge_enabled(self.shell.profile_dir, self.chk_mobile_bridge.isChecked())
-        prefs.set_mobile_bridge_port(self.shell.profile_dir, self.spin_mobile_port.value())
-        prefs.set_mobile_bridge_lan(self.shell.profile_dir, self.chk_mobile_lan.isChecked())
+        was_lan = prefs.get_mobile_bridge_lan(self.shell.profile_dir)
+        enabling_lan = self.chk_mobile_lan.isChecked() and not was_lan
+        if enabling_lan:
+            answer = QMessageBox.warning(
+                self,
+                "Enable LAN mode?",
+                "LAN mode uses plain HTTP. The bearer token and the data you send travel "
+                "unencrypted across the network, and anyone who reads the token can act as "
+                "a paired device.\n\nUse this only on a network you trust, or through a VPN. "
+                "Keep loopback mode for this PC only.\n\nEnable LAN mode?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                self.chk_mobile_lan.setChecked(False)
+                return
         token = self.ed_mobile_token.text().strip()
         if self.chk_mobile_bridge.isChecked() and not token:
             token = prefs.generate_mobile_bridge_token()
             self.ed_mobile_token.setText(token)
-        prefs.set_mobile_bridge_token(self.shell.profile_dir, token)
+        existing_token = prefs.get_mobile_bridge_token(self.shell.profile_dir)
+        if existing_token and token and token != existing_token:
+            answer = QMessageBox.question(
+                self,
+                "Replace the bridge token?",
+                "Saving this new token disconnects every phone and browser extension paired "
+                "with the old one; they will need the new pairing code.\n\nContinue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                self.ed_mobile_token.setText(existing_token)
+                return
+        prefs.set_mobile_bridge_enabled(self.shell.profile_dir, self.chk_mobile_bridge.isChecked())
+        prefs.set_mobile_bridge_port(self.shell.profile_dir, self.spin_mobile_port.value())
+        prefs.set_mobile_bridge_lan(self.shell.profile_dir, self.chk_mobile_lan.isChecked())
+        from litebrowser.core import secret_store
+
+        try:
+            prefs.set_mobile_bridge_token(self.shell.profile_dir, token)
+        except secret_store.SecretStorageError as exc:
+            QMessageBox.warning(
+                self,
+                "Mobile bridge",
+                "The bridge token could not be protected on this device, so the previous "
+                f"token was kept and the listener was not restarted. Details: {exc}",
+            )
+            return
         ok = android_bridge_service.restart(self.shell.profile_dir)
         self.shell.refresh_shell()
         self._refresh_mobile_bridge_status()
@@ -2662,9 +2750,39 @@ class SettingsPage(QWidget):
             self.lbl_sync_status.setText("Never synced yet — save settings, then press \u201cSync now\u201d.")
 
     def save_sync(self):
+        from litebrowser.services import sync_service
+
+        endpoint = self.ed_sync_endpoint.text().strip()
+        _, error = sync_service.validate_endpoint(endpoint)
+        if endpoint and error:
+            QMessageBox.warning(self, "Sync", error)
+            return
+        warning = sync_service.endpoint_warning(endpoint)
+        if warning:
+            answer = QMessageBox.question(
+                self,
+                "Sync endpoint is not encrypted",
+                warning + "\n\nSave this endpoint anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+        from litebrowser.core import secret_store
+
         prefs.set_sync_enabled(self.shell.profile_dir, self.chk_sync_enabled.isChecked())
-        prefs.set_sync_endpoint(self.shell.profile_dir, self.ed_sync_endpoint.text())
-        prefs.set_sync_token(self.shell.profile_dir, self.ed_sync_token.text())
+        prefs.set_sync_endpoint(self.shell.profile_dir, endpoint)
+        try:
+            prefs.set_sync_token(self.shell.profile_dir, self.ed_sync_token.text())
+        except secret_store.SecretStorageError as exc:
+            QMessageBox.warning(
+                self,
+                "Sync",
+                "The bearer token could not be protected on this device, so the previous "
+                f"token was kept. The endpoint and switch were saved. Details: {exc}",
+            )
+            self._refresh_sync_status()
+            return
         self.shell.refresh_shell()
         QMessageBox.information(self, "Sync", "Sync settings saved.")
 

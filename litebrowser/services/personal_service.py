@@ -153,6 +153,35 @@ def create_note(base_dir: str, title: str, content: str = "", category: str = "G
     return read_note(base_dir, note_id)
 
 
+def create_note_with_id(base_dir: str, note_id: str, content: str = ""):
+    """Create a note at an explicit, already-safe id (sync/import path).
+
+    Normal editing derives a filename from the title, which is right for a
+    person and wrong for sync: the other machine knows the note by its id, so
+    creating it under a different name would make every pull add it again. The
+    id is validated as a child of the notes folder (no traversal, no absolute
+    paths) and an existing file is never overwritten; callers read and merge it
+    instead. Returns the note record, or ``None`` for an unusable id/extension.
+    """
+    path = _note_path(base_dir, note_id)
+    if not path or not path.lower().endswith(NOTE_EXTENSIONS):
+        return None
+    with profile_locked(base_dir):
+        if os.path.exists(path):
+            return read_note(base_dir, note_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        write_text_atomic(path, content or "")
+    _invalidate_cache()
+    history_service.log_event(
+        base_dir,
+        "note",
+        os.path.splitext(os.path.basename(note_id))[0],
+        "Note received from sync",
+        {"note_id": note_id},
+    )
+    return read_note(base_dir, note_id)
+
+
 def save_note(base_dir: str, note_id: str, content: str, *, expected_content: str | None = None) -> bool:
     with profile_locked(base_dir):
         path = _note_path(base_dir, note_id)

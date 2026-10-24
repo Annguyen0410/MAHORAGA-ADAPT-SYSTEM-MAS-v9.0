@@ -3741,9 +3741,16 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
             return
         from litebrowser.services import page_monitor
 
-        monitor = page_monitor.add_monitor(self.base_dir, url, browser.title() or url)
+        try:
+            monitor = page_monitor.add_monitor(self.base_dir, url, browser.title() or url)
+        except page_monitor.MonitorError as exc:
+            self._flash_status(f"Not watching that page — {exc}")
+            return
         shell = self._host_shell()
-        if monitor and shell is not None and hasattr(shell, "system_notify"):
+        if not monitor:
+            self._flash_status("That page is already in the watch list")
+            return
+        if shell is not None and hasattr(shell, "system_notify"):
             shell.system_notify("Watching page 👀", "You'll get a toast when it changes (checked ~every 15 min).")
 
     def _save_selection_to_vault(self):

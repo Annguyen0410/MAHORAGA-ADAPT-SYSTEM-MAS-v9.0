@@ -416,6 +416,41 @@ def _clear_notes_directory(notes_dir: str) -> None:
             pass
 
 
+#: Preference keys that are credentials, not configuration. A backup is a file
+#: users copy to another machine or attach to a support thread; it must never
+#: carry a live bearer token, an API key or a passcode verifier.
+REDACTED_PREF_KEYS = (
+    "sync_token",
+    "mobile_bridge_token",
+    "google_token_cache",
+    "passcode_hash",
+    "passcode_salt",
+    "passcode_rounds",
+)
+
+
+def _export_safe_prefs(base_dir: str) -> tuple[dict, list[str]]:
+    data = prefs.load_prefs(base_dir)
+    redacted: list[str] = []
+    for key in REDACTED_PREF_KEYS:
+        if key in data:
+            data.pop(key, None)
+            redacted.append(f"prefs.{key}")
+    last_proxy = data.get("vpn_last_proxy")
+    if isinstance(last_proxy, dict) and "password" in last_proxy:
+        last_proxy.pop("password", None)
+        redacted.append("prefs.vpn_last_proxy.password")
+    return data, redacted
+
+
+def _export_safe_ai_settings(base_dir: str) -> tuple[dict, list[str]]:
+    data = prefs.load_ai_settings(base_dir)
+    redacted: list[str] = []
+    if data.pop("openrouter_api_key", ""):
+        redacted.append("ai_settings.openrouter_api_key")
+    return data, redacted
+
+
 @profile_transaction
 def export_profile_payload(base_dir: str, *, inline_vault_files: bool = True):
     from litebrowser.services import (
@@ -431,12 +466,14 @@ def export_profile_payload(base_dir: str, *, inline_vault_files: bool = True):
     notes = []
     for note in personal_service.list_notes(base_dir):
         notes.append({"id": note["id"], "title": note["title"], "content": note.get("content", "")})
+    export_prefs, redacted_prefs = _export_safe_prefs(base_dir)
+    export_ai, redacted_ai = _export_safe_ai_settings(base_dir)
     payload = {
         "version": 1,
         "backup_format_version": 3,
         "exported_at": int(time.time()),
         "profile_meta": prefs.load_profile_meta(base_dir),
-        "prefs": prefs.load_prefs(base_dir),
+        "prefs": export_prefs,
         "history_entries": prefs.load_history_entries(base_dir),
         "bookmarks": prefs.load_bookmarks(base_dir),
         "session": prefs.session_load(base_dir),
@@ -451,7 +488,7 @@ def export_profile_payload(base_dir: str, *, inline_vault_files: bool = True):
         "saved_pages": life_service.load_saved_pages(base_dir),
         "sync_state": life_service.load_sync_state(base_dir),
         "sync_account": life_service.load_sync_account(base_dir),
-        "ai_settings": prefs.load_ai_settings(base_dir),
+        "ai_settings": export_ai,
         "ai_index": read_json(prefs.ai_index_path(base_dir), {"version": 1, "built_at": 0, "docs": []}),
         "activity_history": load_activity(base_dir),
         "notes": notes,
@@ -465,8 +502,19 @@ def export_profile_payload(base_dir: str, *, inline_vault_files: bool = True):
             {"version": 1, "batches": []},
         ),
         "vault_files": _export_vault_files_excluding_notes(base_dir) if inline_vault_files else [],
+        "redacted_fields": sorted([*redacted_prefs, *redacted_ai]),
     }
     return payload
+
+
+def _restore_prefs_payload(base_dir: str, incoming: dict) -> None:
+    """Apply restored preferences without erasing a passcode the backup redacted."""
+    payload = dict(incoming)
+    current = prefs.load_prefs(base_dir)
+    for key in REDACTED_PREF_KEYS:
+        if key not in payload and key in current:
+            payload[key] = current[key]
+    prefs.save_prefs(base_dir, payload)
 
 
 def import_profile_payload(
@@ -487,7 +535,7 @@ def import_profile_payload(
     )
 
     writers = {
-        "prefs": (dict, prefs._prefs_path(base_dir), prefs.save_prefs),
+        "prefs": (dict, prefs._prefs_path(base_dir), _restore_prefs_payload),
         "profile_meta": (dict, prefs.profile_meta_path(base_dir), lambda b, v: write_json(prefs.profile_meta_path(b), v)),
         "history_entries": (list, prefs.history_path(base_dir), prefs.save_history_entries),
         "bookmarks": (list, prefs.bookmarks_path(base_dir), prefs.save_bookmarks),

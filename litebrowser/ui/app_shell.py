@@ -61,6 +61,7 @@ from litebrowser.ui.shell.pages import (
 
 class AppShell(QMainWindow):
     update_checked = pyqtSignal(object, bool)
+    update_progress = pyqtSignal(int, int)
     update_downloaded = pyqtSignal(object, object)
     sync_finished = pyqtSignal(bool, str)
     monitor_checked = pyqtSignal(object)
@@ -85,6 +86,7 @@ class AppShell(QMainWindow):
         self._insight_cache_time = 0
         self._insights_user_toggled = False
         self.update_checked.connect(self._finish_update_check)
+        self.update_progress.connect(self._on_update_progress)
         self.update_downloaded.connect(self._finish_downloaded_update)
         self.sync_finished.connect(self._show_sync_result)
         self.monitor_checked.connect(self._on_monitor_checked)
@@ -742,22 +744,27 @@ class AppShell(QMainWindow):
         self._monitor_timer.setInterval(5 * 60 * 1000)
         self._monitor_timer.timeout.connect(self._check_page_monitors)
         self._monitor_timer.start()
+        self._monitor_check_running = False
 
     def _check_page_monitors(self):
+        """Check a small batch off the GUI thread; never queue overlapping runs."""
+        if getattr(self, "_closing", False) or getattr(self, "_monitor_check_running", False):
+            return
         from litebrowser.services import page_monitor
 
         due = page_monitor.due_monitors(self.profile_dir)
         if not due:
             return
+        # A slow page must not make the timer stack workers: four per tick keeps
+        # the executor free for sync/update work and the queue bounded.
+        batch = due[:4]
+        self._monitor_check_running = True
 
         def _run():
             outcomes = []
-            for monitor in due:
-                content_hash = page_monitor.fetch_and_hash(monitor["url"])
-                if content_hash is None:
-                    continue
-                outcome = page_monitor.record_check(self.profile_dir, monitor["id"], content_hash)
-                outcomes.append((monitor["title"], outcome))
+            for monitor in batch:
+                result = page_monitor.check_monitor(self.profile_dir, monitor["id"])
+                outcomes.append((monitor["title"], result))
             return outcomes
 
         # Marshal back to the GUI thread via a queued signal (same pattern as
@@ -767,14 +774,19 @@ class AppShell(QMainWindow):
         future.add_done_callback(lambda f: self.monitor_checked.emit(f))
 
     def _on_monitor_checked(self, future):
+        self._monitor_check_running = False
         if self._closing:
             return
         try:
             outcomes = future.result() or []
-        except Exception:
+        except Exception as exc:
+            # A crashed worker must not leave the guard stuck forever.
+            from litebrowser.core.log import get_logger
+
+            get_logger("app_shell").debug("page monitor worker failed: %s", exc)
             return
-        for title, outcome in outcomes:
-            if outcome == "changed":
+        for title, result in outcomes:
+            if result.get("status") == "changed":
                 self.system_notify("Page changed 📄", title)
 
     def _init_routines_timer(self):
@@ -1020,12 +1032,40 @@ class AppShell(QMainWindow):
             self.open_release_page(info.release_url or info.download_url)
             return
         self._update_install_running = True
-        self.update_status_text = f"Downloading {info.latest_version}..."
+        self.update_status_text = f"Downloading {info.latest_version} — verifying before install..."
         self.refresh_shell()
         future = self._executor.submit(
-            update_service.download_update_package, info.download_url, info.latest_version, info.sha256
+            update_service.download_update_package,
+            info.download_url,
+            info.latest_version,
+            info.sha256,
+            info.size,
+            progress_callback=lambda received, total: self.update_progress.emit(received, total),
         )
         future.add_done_callback(lambda done: self.update_downloaded.emit(done, info))
+
+    def _on_update_progress(self, received: int, total: int):
+        if self._closing:
+            return
+        received = max(0, int(received or 0))
+        total = max(0, int(total or 0))
+        if not received and not total:
+            return
+        if total:
+            percent = min(100, int(received * 100 / total))
+            text = (
+                f"Downloading update — {percent}% "
+                f"({received / (1024 * 1024):.1f} of {total / (1024 * 1024):.1f} MB). "
+                "Verifying after download."
+            )
+        else:
+            text = (
+                f"Downloading update — {received / (1024 * 1024):.1f} MB. "
+                "Verifying after download."
+            )
+        if text != self.update_status_text:
+            self.update_status_text = text
+            self.refresh_shell()
 
     def _finish_update_check(self, future, manual: bool):
         if self._closing:
@@ -1046,6 +1086,7 @@ class AppShell(QMainWindow):
             self._pending_update_info = info
             published = f"\nPublished: {info.published_at}" if info.published_at else ""
             notes = f"\n\nNotes:\n{info.notes}" if info.notes else ""
+            safe_url = update_service.redact_url(info.download_url)
             self.update_status_text = f"A new version {info.latest_version} is available. You are on {info.current_version}."
             self.refresh_shell()
             # Startup checks are automatic: default to "No" so a stray Enter can
@@ -1055,7 +1096,7 @@ class AppShell(QMainWindow):
             result = QMessageBox.question(
                 self,
                 "Update available",
-                f"Mei {info.latest_version} is available.{published}\nDownload: {info.download_url}{notes}\n\nDownload and install now?",
+                f"Mei {info.latest_version} is available.{published}\nDownload: {safe_url}{notes}\n\nDownload and install now?",
                 QMessageBox.Yes | QMessageBox.No,
                 default_button,
             )
@@ -1087,11 +1128,11 @@ class AppShell(QMainWindow):
         if not all(window.persist_state() for window in windows):
             self.update_status_text = "Update downloaded. Save your pending edits before installing."
             return
-        self.update_status_text = f"Downloaded {info.latest_version}. Applying update..."
+        self.update_status_text = f"Update {info.latest_version} verified. Applying update..."
         self.refresh_shell()
         try:
             update_service.install_downloaded_update(
-                package_path, update_service.local_channel_packages(), info.sha256
+                package_path, update_service.local_channel_packages(), info.sha256, info.size
             )
         except Exception as exc:
             self.update_status_text = update_service.format_error(exc)

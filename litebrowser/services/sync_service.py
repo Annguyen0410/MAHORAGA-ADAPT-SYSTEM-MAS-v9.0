@@ -10,9 +10,11 @@ machines can stay in step without any cloud.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import urllib.error
+import urllib.parse
 from datetime import datetime
 import time
 import urllib.request
@@ -31,6 +33,14 @@ from litebrowser.services import (
 )
 
 SYNC_API_VERSION = 1
+
+#: A snapshot is remote input. These caps are checked before anything is
+#: applied, so an oversized or deeply nested body fails without touching the
+#: local profile.
+MAX_BUNDLE_ROWS = 20_000
+MAX_BUNDLE_STRING = 4 * 1024 * 1024
+MAX_BUNDLE_DEPTH = 24
+MAX_BUNDLE_KEYS = 256
 
 
 @dataclass(frozen=True)
@@ -65,37 +75,104 @@ def _rows_entity(key: str, counter: str, load, save) -> SyncEntity:
     return SyncEntity(key, counter, build, merge)
 
 
+def _note_key(note_id) -> str:
+    """Sync ids always use ``/``; local Windows ids use ``\\``."""
+    return str(note_id or "").replace("\\", "/").strip("/")
+
+
+def _note_identity(note: dict) -> tuple[str, str]:
+    return (_text(note.get("title")), _text(note.get("category"), "General") or "General")
+
+
+def _conflict_note(base_dir: str, title: str, category: str, content: str, known: list[dict]):
+    """Keep the other device's differing text as a clearly named note once.
+
+    The check is against the whole local list (including notes created earlier
+    in this merge), so pulling the same unchanged remote snapshot repeatedly
+    cannot grow a new conflict copy every time.
+    """
+    conflict_title = f"{title} (other device)"
+    for note in known:
+        if (
+            _text(note.get("title")) == conflict_title
+            and (_text(note.get("category"), "General") or "General") == category
+            and (note.get("content") or "") == content
+        ):
+            return note
+    created = personal_service.create_note(base_dir, conflict_title, content, category)
+    if created:
+        known.append(created)
+    return created
+
+
 def _merge_notes(base_dir: str, incoming) -> int:
-    """Merge notes by (title, category); content is last-writer-wins."""
+    """Merge notes by stable id, with a non-destructive legacy fallback.
+
+    The bundle has always carried a note ``id``, but this merge used to ignore
+    it and match on ``(title, category)``. A rename therefore looked like a new
+    note and two distinct notes that happened to share a title could collapse
+    into one. Current-format records now merge by id: an edit updates the same
+    note, a rename survives, and a genuinely divergent edit is preserved as a
+    ``(other device)`` copy. Records from an older peer that lack an id keep the
+    old title/category fallback, which only ever adds or preserves text.
+    """
     applied = 0
-    local_notes = personal_service.list_notes(base_dir)
-    local_notes_by_key = {
-        (_text(note.get("title")), _text(note.get("category"), "General") or "General"): note
-        for note in local_notes
-        if isinstance(note, dict)
-    }
+    local_notes = [
+        note for note in personal_service.list_notes(base_dir) if isinstance(note, dict) and note.get("id")
+    ]
+    by_id = {_note_key(note["id"]): note for note in local_notes}
+    by_title: dict[tuple[str, str], dict] = {}
+    for note in local_notes:
+        by_title.setdefault(_note_identity(note), note)
+
     for note in _dict_rows(incoming):
         title = _text(note.get("title"))
         category = _text(note.get("category"), "General") or "General"
         content = note.get("content") if isinstance(note.get("content"), str) else ""
+        note_id = _note_key(note.get("id"))
+
+        if note_id and len(note_id) <= 512:
+            existing = by_id.get(note_id)
+            if existing is None:
+                created = personal_service.create_note_with_id(base_dir, note_id, content)
+                if created:
+                    by_id[note_id] = created
+                    by_title.setdefault(_note_identity(created), created)
+                    local_notes.append(created)
+                    applied += 1
+                continue
+            if (existing.get("content") or "") == content:
+                continue
+            remote_time = _timestamp(note)
+            local_time = _timestamp(existing)
+            if remote_time and (not local_time or remote_time > local_time):
+                updated = personal_service.update_note(base_dir, existing["id"], content)
+                if updated:
+                    existing.clear()
+                    existing.update(updated)
+                    applied += 1
+                continue
+            _conflict_note(base_dir, title or _text(existing.get("title")) or "note", category, content, local_notes)
+            applied += 1
+            continue
+
+        # Legacy peer: no id. Match by title/category only when the local note
+        # is still in that location; otherwise a rename would be duplicated.
         if not title:
             continue
-        existing = local_notes_by_key.get((title, category))
+        existing = by_title.get((title, category))
         if existing:
-            if existing.get("content", "") == content:
+            if (existing.get("content") or "") == content:
                 continue
-            # Preserve both edited texts; mtime alone cannot prove that one
-            # device's note is the ancestor of the other device's note.
-            conflict_title = f"{title} (other device)"
-            conflict = local_notes_by_key.get((conflict_title, category))
-            if not conflict or conflict.get("content") != content:
-                created = personal_service.create_note(base_dir, conflict_title, content, category)
-                local_notes_by_key[(conflict_title, category)] = created
-        else:
-            created = personal_service.create_note(base_dir, title, content, category)
-            if created:
-                local_notes_by_key[(title, category)] = created
-        applied += 1
+            _conflict_note(base_dir, title, category, content, local_notes)
+            applied += 1
+            continue
+        created = personal_service.create_note(base_dir, title, content, category)
+        if created:
+            by_id[_note_key(created["id"])] = created
+            by_title[_note_identity(created)] = created
+            local_notes.append(created)
+            applied += 1
     return applied
 
 
@@ -281,6 +358,79 @@ def _apply_bundle(base_dir: str, bundle: dict) -> dict:
     return applied
 
 
+def validate_endpoint(endpoint: str) -> tuple[str, str]:
+    """Return ``(base_url, error)`` for a user-entered sync endpoint.
+
+    Only explicit http(s) base URLs are accepted. Credentials in the URL,
+    query strings and fragments are refused before the bearer token is ever
+    attached; a redirect is still blocked separately in ``_NoRedirect``.
+    """
+    text = str(endpoint or "").strip().rstrip("/")
+    if not text:
+        return "", "No sync endpoint set."
+    try:
+        parsed = urllib.parse.urlsplit(text)
+        _ = parsed.port
+    except ValueError:
+        return "", "The sync endpoint is not a valid URL."
+    if parsed.scheme not in ("http", "https"):
+        return "", "The sync endpoint must start with http:// or https://."
+    if not parsed.hostname:
+        return "", "The sync endpoint has no host name."
+    if parsed.username or parsed.password:
+        return "", "Remove the username or password from the endpoint; the bearer token is the credential."
+    if parsed.query or parsed.fragment:
+        return "", "Enter the base endpoint only, without a query string or fragment."
+    return text, ""
+
+
+def endpoint_warning(endpoint: str) -> str:
+    """A clear caution for a non-loopback cleartext endpoint, else ``""``.
+
+    The bearer token travels with every request. HTTP on a LAN is a deliberate
+    small-server choice, not something Mei should hide from the user.
+    """
+    base, error = validate_endpoint(endpoint)
+    if error:
+        return error
+    parsed = urllib.parse.urlsplit(base)
+    if parsed.scheme != "http":
+        return ""
+    host = (parsed.hostname or "").strip().rstrip(".").lower()
+    if host == "localhost":
+        return ""
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return ""
+    except ValueError:
+        pass
+    return (
+        "This endpoint uses cleartext HTTP, so the bearer token and your notes travel "
+        "unencrypted on the network. Use HTTPS, or an HTTP endpoint only on a trusted "
+        "local network or through a VPN."
+    )
+
+
+def _bundle_within_limits(value, depth: int = 0) -> bool:
+    """Bound a remote snapshot before any store is touched."""
+    if depth > MAX_BUNDLE_DEPTH:
+        return False
+    if isinstance(value, str):
+        return len(value) <= MAX_BUNDLE_STRING
+    if isinstance(value, dict):
+        return len(value) <= MAX_BUNDLE_KEYS and all(
+            isinstance(key, str) and len(key) <= 256 and _bundle_within_limits(item, depth + 1)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return len(value) <= MAX_BUNDLE_ROWS and all(
+            _bundle_within_limits(item, depth + 1) for item in value
+        )
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return value is None or isinstance(value, (bool, int))
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         # A sync endpoint must not forward a profile/token to another host.
@@ -318,9 +468,9 @@ def _request(url: str, token: str, method: str = "GET", payload=None) -> tuple[b
 
 
 def push(base_dir: str, endpoint: str, token: str) -> tuple[bool, str]:
-    endpoint = (endpoint or "").strip().rstrip("/")
-    if not endpoint:
-        return False, "No sync endpoint set."
+    endpoint, error = validate_endpoint(endpoint)
+    if error:
+        return False, error
     ok, _resp, err = _request(endpoint + "/api/sync/push", token, method="POST", payload=_bundle(base_dir))
     if not ok:
         return False, "Push failed: %s" % (err or "connection error")
@@ -329,14 +479,16 @@ def push(base_dir: str, endpoint: str, token: str) -> tuple[bool, str]:
 
 
 def pull(base_dir: str, endpoint: str, token: str) -> tuple[bool, str]:
-    endpoint = (endpoint or "").strip().rstrip("/")
-    if not endpoint:
-        return False, "No sync endpoint set."
+    endpoint, error = validate_endpoint(endpoint)
+    if error:
+        return False, error
     ok, resp, err = _request(endpoint + "/api/sync/latest", token)
     if not ok:
         return False, "Pull failed: %s" % (err or "connection error")
     if not isinstance(resp, dict) or resp.get("kind") != "snapshot" or resp.get("api", 1) != SYNC_API_VERSION or resp.get("app", "litebrowser") not in ("litebrowser", "mei"):
         return False, "Remote did not return a snapshot."
+    if not _bundle_within_limits(resp):
+        return False, "Remote snapshot is malformed or too large. Nothing was changed."
     applied = _apply_bundle(base_dir, resp)
     _record_sync(base_dir, pulled_at=int(time.time()))
     counts = " · ".join("%s=%s" % (k, v) for k, v in applied.items() if v)
