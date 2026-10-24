@@ -204,6 +204,24 @@ def verify_build(exe_path: str) -> dict:
     return {"size": os.path.getsize(exe_path), "sha256": update_service.file_sha256(exe_path)}
 
 
+def verify_web_support_zip(path: str) -> None:
+    """Refuse a bundle with private files, traversal entries or no entry point.
+
+    The source walk already filters, but the ZIP is what users extract beside a
+    170 MB executable. Re-reading the finished archive catches a writer bug
+    before it is uploaded, and the previous good ZIP is kept on failure.
+    """
+    from tools.sync_web_support import is_public_relative
+
+    with zipfile.ZipFile(path) as bundle:
+        names = [info.filename for info in bundle.infolist() if not info.is_dir()]
+    bad = sorted(name for name in names if not is_public_relative(name))
+    if bad:
+        raise ValueError("web_support ZIP contains non-public entries: " + ", ".join(bad[:5]))
+    if "hub/index.html" not in names:
+        raise ValueError("web_support ZIP is missing its hub/index.html entry point")
+
+
 def zip_web_support(folder: str, out_path: str) -> str:
     """Package only public web assets; preserve the previous ZIP on failure."""
     from tools.sync_web_support import public_files
@@ -221,6 +239,7 @@ def zip_web_support(folder: str, out_path: str) -> str:
         with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as bundle:
             for relative in public_files(folder):
                 bundle.write(os.path.join(folder, relative), relative.as_posix())
+        verify_web_support_zip(temporary)
         os.replace(temporary, out_path)
     finally:
         if os.path.exists(temporary):

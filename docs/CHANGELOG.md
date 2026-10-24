@@ -23,6 +23,38 @@ Mei (formerly Mei Cafe Edition) is a multi-workspace desktop shell built on `PyQ
 >   scoped Home layout preferences, and reduced-motion behavior.
 > - **Reliability:** validate and migrate research-workspace data, bound linked records,
 >   and keep context construction within a character budget.
+> - **Page Monitor correctness:** watch URLs are parsed (not split by hand), limited to
+>   `http`/`https`, and corrupt rows are skipped instead of aborting every monitor. A
+>   timeout, redirect loop or oversized page is reported as a failed check and never
+>   updates the stored hash, so the next check can still detect the real change.
+> - **Sync integrity:** folder and self-hosted sync recompute a canonical record hash
+>   instead of trusting the payload's `_hash`, cap payload/record/nesting sizes before
+>   merging, and keep the previous store rows when an apply fails partway. Notes in the
+>   current format merge by stable ID, so a changed title and two distinct notes that
+>   share a title no longer collapse into or duplicate one record; legacy rows keep a
+>   tested fallback.
+> - **Update safety:** one four-part version policy, mandatory SHA-256 and size checks,
+>   `MZ`/minimum-size validation, bounded downloads with partial-file cleanup, a
+>   path-safe PowerShell replacement helper, and a startup health marker before the
+>   backup is removed. The download shows a bounded percentage/byte count, hashing
+>   stays off the UI thread, and a failed launch restores the previous executable;
+>   pre-release builds stay off the stable channel.
+> - **Credentials at rest:** the AI key, Google token cache, sync token, mobile bridge
+>   token and proxy password move to `secrets.dat`, protected by Windows DPAPI (or
+>   owner-only file permissions elsewhere). Migration is non-destructive: the legacy
+>   value is removed only after the protected copy reads back, and a failure keeps it
+>   in place with a recovery message. `secrets.dat` is excluded from backups, sync and
+>   diagnostics.
+> - **Log and export hygiene:** the log file masks bearer tokens, API keys, passwords
+>   and known secret values before writing; profile backups list redacted fields and
+>   omit the passcode verifier, tokens and provider keys.
+> - **Bridge clarity:** loopback and LAN modes are explained where they are enabled;
+>   LAN mode requires an explicit unencrypted-HTTP warning, and rotating the token
+>   warns that every paired phone and extension must pair again.
+> - **Release verification:** the release workflow pins its actions, runs with
+>   least-privilege permissions, validates the `web_support` ZIP (no private files,
+>   traversal or missing `hub/index.html`), and launches the frozen build with
+>   `--smoke-test` against a throwaway profile before publishing.
 >
 > The desktop pre-release does not include a signed MeiRemote APK. Passcodes gate
 > workspaces but do not encrypt every profile file at rest. See `README.md` and the

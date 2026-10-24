@@ -55,6 +55,25 @@ def _private_file(name: str) -> bool:
     return name.startswith(".") or name.lower() in PRIVATE_FILES or is_skipped(name) or Path(name).suffix.lower() not in PUBLIC_SUFFIXES
 
 
+def is_public_relative(relative: str) -> bool:
+    """True when a path inside a release bundle is a public static asset.
+
+    Used to re-check the finished ZIP, so a bug in the writer cannot ship a
+    profile, a backend folder or a traversal entry next to the executable.
+    """
+    text = str(relative or "").replace("\\", "/")
+    path = Path(text)
+    # A colon is a drive or an alternate data stream, never a released asset.
+    if not text or ":" in text or path.is_absolute() or text.startswith("/"):
+        return False
+    parts = [part for part in text.split("/") if part]
+    if not parts or any(part in (".", "..") for part in parts):
+        return False
+    if any(_private_directory(part) for part in parts[:-1]):
+        return False
+    return not _private_file(parts[-1])
+
+
 def public_files(source: str):
     """Yield safe relative paths without following links or entering private dirs."""
     root_path = Path(source).resolve()

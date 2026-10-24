@@ -1,8 +1,8 @@
 name: CI
 
-# The suite is the project's whole safety net (785 tests, including the gates
-# that keep the layers, the capability ledger and the command registry honest),
-# and until this workflow existed it only ever ran on the machine that wrote it.
+# The suite is the project's whole safety net, including the gates that keep the
+# layers, the capability ledger and the command registry honest. Until this
+# workflow existed it only ever ran on the machine that wrote it.
 # Both Qt bindings are exercised: the shipped .exe is built with PyQt6 (the shim
 # rewrites PyQt5 imports onto it), while a source checkout often only has PyQt5.
 
@@ -13,6 +13,9 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -46,9 +49,10 @@ jobs:
     steps:
       # v5 / v6: the v4 and v5 majors still target Node 20, which runners now
       # force onto Node 24 and report as a deprecation warning on every run.
-      - uses: actions/checkout@v5
+      # Pinned to the tag's commit so the test environment cannot move silently.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
           python-version: "3.11"
           cache: pip

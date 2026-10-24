@@ -166,7 +166,8 @@ class TestWebSupportZip(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, "web_support")
             os.makedirs(os.path.join(src, "boitoan"))
-            for rel, name in (("index.html", "index.html"), ("boitoan/app.js", "app.js"), ("run.log", "run.log")):
+            os.makedirs(os.path.join(src, "hub"))
+            for rel in ("index.html", "hub/index.html", "boitoan/app.js", "run.log"):
                 with open(os.path.join(src, rel), "w", encoding="utf-8") as handle:
                     handle.write("x")
             out = os.path.join(tmp, "site.zip")
@@ -176,6 +177,7 @@ class TestWebSupportZip(unittest.TestCase):
             with zipfile.ZipFile(out) as bundle:
                 names = bundle.namelist()
         self.assertIn("index.html", names)
+        self.assertIn("hub/index.html", names, "every release carries the Hub entry point")
         self.assertIn("boitoan/app.js", names, "zip member names are always forward-slashed")
         self.assertNotIn("run.log", names)
 

@@ -1,0 +1,26 @@
+version: 2
+# Dependency and action updates arrive as reviewable pull requests. They are not
+# part of the release gate: a red release build stays red until a human merges a
+# fix, and an update PR must still pass the normal CI matrix before it can ship.
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-runtime:
+        patterns:
+          - "PyQt*"
+          - "cryptography"
+          - "segno"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"

@@ -30,6 +30,10 @@ QtWebEngine and supports the PyQt5 and PyQt6 compatibility paths.
 - **Optional integrations:** folder sync, an Android bridge, and the Mei browser
   extension. These features are configured by the user and are not required to use
   the desktop app.
+- **Credential protection:** on Windows, the AI provider key, Google token cache,
+  sync token, bridge token, and proxy password are protected with the signed-in
+  user's Windows credentials (DPAPI). They are excluded from backups, sync and
+  diagnostics.
 
 ## Download
 
@@ -68,12 +72,27 @@ workspace provides separate controls for browser and research context. Review th
 controls before submitting sensitive material. A Mei passcode gates workspaces but
 does not encrypt every profile file at rest.
 
+Credentials (AI provider key, Google token cache, self-hosted sync token, mobile
+bridge token, and proxy password) are kept in `secrets.dat` inside the profile. On
+Windows they are protected with DPAPI for the current Windows user, so another
+Windows account cannot read them; on other platforms Mei uses owner-only file
+permissions and reports that the file is not encrypted. `secrets.dat` is deliberately
+**not** included in profile backups, folder/self-hosted sync, or diagnostics bundles.
+If protection fails, Mei keeps the previous value rather than silently signing you
+out. Log files are credential-redacted before they are written, and the diagnostics
+archive contains only versions, store shapes, and the redacted log tail.
+
+The Android bridge defaults to loopback (this PC only). LAN mode uses plain HTTP;
+Mei warns before enabling it, and rotating the bridge token disconnects every phone
+or extension paired with the old token. Treat a pairing code as a credential.
+
 ## Documentation
 
 - [User guide](docs/USER_GUIDE.md)
 - [Command and shortcut reference](docs/COMMAND_REFERENCE.md)
 - [Run and build guide](RUN_AND_BUILD.md)
 - [Architecture](ARCHITECTURE.md)
+- [Major update audit](docs/reports/MAJOR_UPDATE_AUDIT.md)
 - [Changelog](docs/CHANGELOG.md)
 - [Why Mei](docs/WHY_MEI.md)
 
@@ -86,7 +105,10 @@ Run the test suite and lint checks from the repository root:
 .\.venv\Scripts\ruff.exe check --select F401,F811,F841,F821 litebrowser tests tools
 ```
 
-GitHub Actions runs the test suite on Windows with both supported Qt bindings.
+GitHub Actions runs the test suite on Windows with both supported Qt bindings. The
+release workflow also builds the frozen executable with PyInstaller, validates the
+`web_support` archive, launches the packaged app against a throwaway data root with
+`--smoke-test`, and requires the ready marker before publishing.
 
 ## Project layout
 
@@ -107,4 +129,8 @@ Release notes come from [`docs/CHANGELOG.md`](docs/CHANGELOG.md), and
 [`tools/publish_release.py`](tools/publish_release.py) validates the tag and build
 version before publishing the executable, companion assets, and update manifest.
 Pushing a four-part version tag starts the Windows release workflow; a tag with a
-suffix, such as `v1.0.0.0-alpha.1`, is published as a pre-release.
+suffix, such as `v1.0.0.0-alpha.1`, is published as a pre-release. The publisher
+requires a SHA-256 and a plausible size for the executable, and the `web_support`
+ZIP is re-read before upload to reject private files, traversal entries, or a
+missing `hub/index.html` entry point. Earlier good files are preserved when either
+check fails.

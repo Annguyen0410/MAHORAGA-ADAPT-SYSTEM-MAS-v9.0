@@ -56,6 +56,7 @@ litebrowser/core/                     Foundation: paths, storage, lock, version
    ├─ commands.py                      Slash-command registry (name / arg / kind / example)
    ├─ app_paths.py                     Workspace chain manifest + profile paths
    ├─ store.py / migrations.py        Versioned JSON stores + stepwise upgrades
+   ├─ secret_store.py                 OS-protected credentials (DPAPI on Windows)
    ├─ greetings.py                    Shared cafe greeting (no services↔browser cycle)
    └─ ...                             prefs, time_utils, log, profile_lock
 litebrowser/data/chain.json           Workspace-app manifest (shipped as package data)
@@ -103,6 +104,29 @@ tab descriptions plus bounded references to existing notes, tasks, saved pages, 
 they do not copy those records. The active research workspace ID is a profile preference,
 resolved against the collection store before use. v1–v3 collections migrate forward
 stepwise.
+
+### Secrets at rest (`core/secret_store.py`)
+
+Credentials do not live in the ordinary preference files. `core/prefs.py` routes the
+AI provider key, Google token cache, self-hosted sync token, mobile bridge token and
+proxy password through `secret_store`, which keeps them in `secrets.dat`.
+
+- **Windows:** each value is protected with `CryptProtectData` (DPAPI, current-user
+  scope). Mei never derives, stores or hard-codes a master key.
+- **Other platforms:** the file is written with owner-only permissions (0600) and
+  `status()` states plainly that it is not encrypted at rest.
+- **Migration is additive:** `adopt()` protects the value, reads it back, and only then
+  removes the legacy plaintext. A protection or read-back failure leaves the original
+  value in place and exposes a recovery hint; it never clears a working token.
+- **Excluded by design:** `secrets.dat` is not part of folder sync, self-hosted sync,
+  profile backups or diagnostics. DPAPI blobs are machine/user-bound, so a restored
+  profile asks for credentials again instead of carrying them between devices.
+- **Log hygiene:** `core/log.py` masks known secret values and recognisable credential
+  shapes (bearer tokens, `key=…`, `https://user:pass@`, common provider prefixes)
+  before writing the file, so a diagnostics log tail cannot contain a credential.
+
+A profile passcode remains a workspace gate, not full-profile encryption. Do not
+describe it as encryption in UI copy or documentation.
 
 ---
 

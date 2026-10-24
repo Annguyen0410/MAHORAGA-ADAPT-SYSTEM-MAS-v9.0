@@ -5,21 +5,27 @@ on:
     tags:
       - "v*"
 
+# Least privilege: the workflow only needs to read the tree until the publish
+# step, which needs to write the release. Keep the default read-only.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-and-publish:
     name: Build and publish ${{ github.ref_name }}
+    permissions:
+      contents: write
     runs-on: windows-latest
     timeout-minutes: 45
     env:
       QT_QPA_PLATFORM: offscreen
       PYTHONIOENCODING: utf-8
     steps:
-      - uses: actions/checkout@v5
+      # Pinned to the v5/v6 commit, not a moving major tag: a release job can
+      # publish artefacts, so the action it runs must not change underneath it.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
           python-version: "3.11"
           cache: pip
@@ -68,6 +74,35 @@ jobs:
             --collect-all PyQt6.QtWebChannel `
             --exclude-module PyQt5 --clean browser.py
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+
+      - name: Record packaged artifact hash
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "dist/Mei.exe" -Algorithm SHA256).Hash.ToLower()
+          $size = (Get-Item "dist/Mei.exe").Length
+          "Mei.exe: $size bytes, sha256 $hash" | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Smoke-test the packaged application
+        shell: pwsh
+        # A successful PyInstaller exit only proves the bundle was written. This
+        # launches the frozen build against a throwaway data root and waits for
+        # the marker main.py writes after both windows are shown, then requires
+        # a clean exit. A GUI/installer test still needs a real desktop.
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "mei-release-smoke"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $env:LITEBROWSER_DATA_DIR = $root
+          $env:MEI_SMOKE_MARKER = Join-Path $root "ready.txt"
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $env:QTWEBENGINE_CHROMIUM_FLAGS = "--disable-gpu --disable-software-rasterizer"
+          $process = Start-Process -FilePath "dist/Mei.exe" -ArgumentList "--smoke-test" -PassThru
+          if (-not $process.WaitForExit(120000)) {
+            Stop-Process -Id $process.Id -Force
+            throw "Packaged smoke test did not exit within 120 seconds"
+          }
+          if ($process.ExitCode -ne 0) { throw "Packaged smoke test exited $($process.ExitCode)" }
+          if (-not (Test-Path $env:MEI_SMOKE_MARKER)) { throw "Packaged smoke test never reported ready" }
+          "Packaged smoke test passed: $((Get-Content $env:MEI_SMOKE_MARKER -Raw).Trim())"
 
       - name: Publish GitHub release
         shell: pwsh

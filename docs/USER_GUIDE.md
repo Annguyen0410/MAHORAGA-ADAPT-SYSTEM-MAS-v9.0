@@ -170,14 +170,23 @@ desk collapse immediately; it does not change animation or styling on websites.
 - **Permissions manager** — per-origin camera/mic/notifications decisions.
 - **Google account** (Settings) — device-code sign-in; Mei never sees your password, and
   **Verify token** reuses the cached token without a network call whenever it is still fresh.
+- **Saved credentials** — the AI provider key, Google token cache, sync token, bridge token
+  and proxy password are kept in the profile's `secrets.dat`. On Windows they are protected
+  by DPAPI for your Windows user; on other systems the file is owner-only but not encrypted,
+  and Settings → Diagnostics says so. These values are left out of backups, sync and
+  diagnostics bundles. If Windows cannot protect a value, Mei keeps the previous one rather
+  than signing you out and shows a recovery message.
 - **Passcode lock** (Settings) — **Lock now** re-locks Personal and AI without restarting Mei.
+  A passcode gates the workspace; it is not full-profile encryption.
 - **Diagnostics** (Settings) — the card names the engine you are running (Chromium, Qt, binding).
   If it says you are on the old branch — Qt 5.15 is Chromium 87 — some sites will refuse Mei,
   and installing the `PyQt6-WebEngine` package moves you onto the current engine.
-  **Export diagnostics zip** writes one small archive with the log tail, every component version
-  and the size/schema of each store, for a bug report. It never contains note text, passwords,
-  vault files or browsing history; **Open log folder** shows where `mei.log` lives (that file
-  does name pages you had open, so read it before sharing).
+  **Export diagnostics zip** writes one small archive with the redacted log tail, every
+  component version and the size/schema of each store, for a bug report. It never contains
+  note text, passwords, vault files, browsing history or `secrets.dat`. The log handler masks
+  bearer tokens, API keys, passwords and known secret values before writing; the tail can
+  still name pages you had open, so read it before sharing. **Open log folder** shows where
+  `mei.log` lives.
 
 ## 8. Sync, export & automation
 
@@ -205,6 +214,12 @@ desk collapse immediately; it does not change animation or styling on websites.
 - **Your phone can read the desk** — after pairing, `GET /api/mobile/today` on the bridge
   answers with today's plate, what is due, what is left open, cards due and the loop's next
   step, so MeiRemote opens on today instead of an empty screen.
+- **Bridge network mode** — the bridge starts on loopback (`127.0.0.1`), reachable only from
+  this PC. **Listen on LAN** asks for confirmation because it serves plain HTTP on your
+  network; anyone who captures the bearer token can act as a paired device. Use it only on
+  a trusted network or through a VPN. **Generate token** creates a new credential, and saving
+  it disconnects every phone and extension paired with the old token — pair them again with
+  the new code. A pairing code is a credential: do not post it publicly.
 
 ---
 
