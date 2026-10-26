@@ -29,7 +29,7 @@ from litebrowser.services import anki_service, study_ritual
 from litebrowser.ui import theme
 from litebrowser.ui.dialogs.common import _stylesheet
 
-STEPS = ("Welcome to your café ☕", "Bring your stuff", "Pair your phone (optional)")
+STEPS = ("Welcome to your quiet table", "Bring your stuff", "Pair your phone (optional)")
 
 
 def _swatch_icon(mode_id: str, accent_id: str) -> QPixmap:
@@ -55,15 +55,17 @@ def show_onboarding(shell) -> None:
         return
     dlg = QDialog(shell)
     dlg.setWindowTitle(f"Welcome to {app_version.APP_NAME} — setup")
-    dlg.resize(620, 480)
+    dlg.resize(620, 500)
     dlg.setStyleSheet(_stylesheet(shell))
     layout = QVBoxLayout(dlg)
+    layout.setContentsMargins(24, 22, 24, 18)
+    layout.setSpacing(8)
 
     title = QLabel(STEPS[0])
-    title.setObjectName("HeroTitle")
+    title.setObjectName("DialogTitle")
     layout.addWidget(title)
     step_lbl = QLabel("Step 1 of 3")
-    step_lbl.setObjectName("MutedLabel")
+    step_lbl.setObjectName("DialogEyebrow")
     layout.addWidget(step_lbl)
 
     body = QWidget()
@@ -74,7 +76,7 @@ def show_onboarding(shell) -> None:
     # --- Step 1: theme ---
     theme_page = QWidget()
     tp_layout = QVBoxLayout(theme_page)
-    tp_layout.addWidget(QLabel("Pick the look of your café — you can change it anytime with /theme and /accent."))
+    tp_layout.addWidget(QLabel("Pick the paper and ink you like working on — change it anytime with /theme and /accent."))
     combo_theme = QComboBox()
     combo_accent = QComboBox()
     preview = QLabel()
@@ -106,8 +108,8 @@ def show_onboarding(shell) -> None:
     tp_layout.addWidget(chk_auto)
     tp_layout.addWidget(
         QLabel(
-            "\nWhich cup do you usually study over? Every cup is a pace, and this is "
-            "what the Study session button on Home will offer you:"
+            "\nHow long do you usually sit down for? The Study session button on Home "
+            "opens with this pace:"
         )
     )
     combo_pour = QComboBox()
@@ -174,11 +176,13 @@ def show_onboarding(shell) -> None:
     state = {"step": 1}
 
     nav_row = QHBoxLayout()
+    nav_row.setSpacing(8)
     btn_back = QPushButton("Back")
-    btn_back.setEnabled(False)
     btn_next = QPushButton("Next")
-    btn_next.setObjectName("TopAccentButton")
+    btn_next.setObjectName("PrimaryButton")
+    btn_next.setDefault(True)
     btn_skip = QPushButton("Skip setup")
+    btn_skip.setObjectName("QuietButton")
     nav_row.addWidget(btn_skip)
     nav_row.addStretch(1)
     nav_row.addWidget(btn_back)
@@ -193,7 +197,7 @@ def show_onboarding(shell) -> None:
             page.setVisible(key == n)
         step_lbl.setText(f"Step {n} of 3 — {STEPS[n - 1]}")
         btn_back.setEnabled(n > 1)
-        btn_next.setText("Finish ✨" if n == 3 else "Next")
+        btn_next.setText("Finish" if n == 3 else "Next")
 
     def _on_next():
         step = state["step"]

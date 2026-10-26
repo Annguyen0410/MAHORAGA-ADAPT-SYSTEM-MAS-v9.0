@@ -24,7 +24,7 @@ def test_onboarding_preserves_current_choices_and_completes():
             if dialog is None:
                 return
             buttons = dialog.findChildren(QtWidgets.QPushButton)
-            next_button = next(button for button in buttons if button.text() in ("Next", "Finish ✨"))
+            next_button = next(button for button in buttons if button.text() in ("Next", "Finish"))
             steps.append(next_button.text())
             next_button.click()
         timer = QtCore.QTimer()
@@ -34,7 +34,7 @@ def test_onboarding_preserves_current_choices_and_completes():
             onboarding.show_onboarding(shell)
         finally:
             timer.stop()
-        assert steps == ["Next", "Next", "Finish ✨"]
+        assert steps == ["Next", "Next", "Finish"]
         assert prefs.get_accent(base) == "teal"
         assert prefs.get_pref(base, "onboarding_done", False)
         shell.deleteLater()

@@ -1,16 +1,17 @@
-
 # Pure data + color logic moved to litebrowser.core.theme_data so the data
 # layer can validate theme/accent names without importing Qt. Re-exported
 # here so every existing ``theme.<name>`` reference keeps working unchanged.
 from litebrowser.core.theme_data import (  # noqa: F401
     _ACCENT_KEYS,
     ACCENTS,
+    DEFAULT_ACCENT,
     DEFAULT_THEME,
     DEFAULTS,
     PALETTES,
     THEME_LABELS,
     _accent_override,
     _blend_hex,
+    _derive_semantics,
     _is_light_color,
     _palette,
     accent_display_name,
@@ -73,19 +74,19 @@ def accent_bar_color(tokens: dict, is_today: bool):
     """
     from PyQt5.QtGui import QColor
 
-    color = QColor(tokens.get("ACCENT", "#A66A2E"))
+    color = QColor(tokens.get("ACCENT", "#5F6E55"))
     if not is_today:
         color.setAlphaF(0.55)
     return color
 
 
-# ---------- 6.7 dialog verbs: one action, one row --------------------------
+# ---------- dialog verbs: one action, one row -------------------------------
 # Dialogs had grown rows of five to seven identical buttons, so the action the
 # dialog existed for was indistinguishable from "Delete everything" two pixels
-# away. ``ui/dialogs/common.py`` now gives every verb a role: exactly one filled
-# primary per dialog, ghosts for the verbs worth keeping visible, subdued quiet
-# buttons (Close), and the occasional verbs inside one "⋯ More" menu. Kept as a
-# single block appended to both sheets so the dialog chrome cannot drift from
+# away. ``ui/dialogs/common.py`` gives every verb a role: exactly one filled
+# primary per dialog, quiet ghosts for the verbs worth keeping visible, subdued
+# buttons for Close, and the occasional verbs inside one "⋯ More" menu. Kept as
+# a single block appended to both sheets so the dialog chrome cannot drift from
 # the full workspace.
 _VERB_QSS = """
 QPushButton#PrimaryButton {
@@ -94,375 +95,781 @@ QPushButton#PrimaryButton {
     border: 1px solid %(ACCENT)s;
     border-radius: %(RADIUS_SM)s;
     padding: 6px 16px;
-    font-weight: 800;
+    font-weight: 700;
 }
 QPushButton#PrimaryButton:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
 QPushButton#PrimaryButton:disabled {
-    background-color: %(MAIN_BG_ALT)s; color: %(TEXT_DIM)s; border-color: %(BORDER_SOFT)s;
+    background-color: %(MAIN_BG_ALT)s; color: %(TEXT_DIM)s; border-color: %(RULE)s;
 }
 QPushButton#GhostButton {
     background-color: transparent;
-    color: %(TEXT_MUTED)s;
-    border: 1px solid %(BORDER_SOFT)s;
+    color: %(TEXT)s;
+    border: 1px solid %(RULE)s;
     border-radius: %(RADIUS_SM)s;
     padding: 6px 13px;
-    font-weight: 700;
+    font-weight: 600;
 }
-QPushButton#GhostButton:hover { background-color: %(ITEM_HOVER)s; border-color: %(ACCENT)s; color: %(TEXT)s; }
+QPushButton#GhostButton:hover { background-color: %(ITEM_HOVER)s; border-color: %(RULE_STRONG)s; color: %(TEXT)s; }
 QPushButton#QuietButton {
     background-color: transparent;
     color: %(TEXT_MUTED)s;
     border: 1px solid transparent;
     border-radius: %(RADIUS_SM)s;
     padding: 5px 12px;
-    font-weight: 700;
+    font-weight: 600;
 }
 QPushButton#QuietButton:hover { background-color: %(ITEM_HOVER)s; color: %(TEXT)s; }
 QPushButton#DangerButton {
     background-color: transparent;
     color: %(DANGER)s;
-    border: 1px solid %(BORDER_SOFT)s;
+    border: 1px solid %(RULE)s;
     border-radius: %(RADIUS_SM)s;
     padding: 6px 13px;
-    font-weight: 700;
+    font-weight: 600;
 }
-QPushButton#DangerButton:hover { background-color: %(DANGER)s; border-color: %(DANGER)s; color: %(TEXT_ON_DANGER)s; }
+QPushButton#DangerButton:hover { background-color: %(DANGER_SOFT)s; border-color: %(DANGER)s; color: %(DANGER)s; }
 QPushButton[compactIcon="true"] { padding: 0; min-width: 0; min-height: 0; font-size: 15px; }
 QToolButton[compactIcon="true"] { padding: 0; min-width: 0; min-height: 0; }
 QCalendarWidget QAbstractItemView { selection-background-color: %(ACCENT)s; selection-color: %(TEXT_ON_ACCENT)s; outline: none; }
-QCalendarWidget QToolButton { color: %(TEXT)s; background-color: %(MAIN_BG_ALT)s; border: none; padding: 0 5px; }
+QCalendarWidget QToolButton { color: %(TEXT)s; background-color: transparent; border: none; padding: 0 5px; }
 QCalendarWidget QToolButton:hover { background-color: %(ITEM_HOVER)s; }
 QMenu#DialogOverflowMenu { padding: 6px; }
 QMenu#DialogOverflowMenu::item { padding: 6px 22px 6px 12px; }
-QMenu#DialogOverflowMenu::separator { height: 1px; margin: 5px 8px; background-color: %(BORDER_SOFT)s; }
+QMenu#DialogOverflowMenu::separator { height: 1px; margin: 5px 8px; background-color: %(RULE)s; }
 """
 
 
-def main_qss(mode: str = "cafe-night", accent: str | None = None):
+def main_qss(mode: str = "minimal", accent: str | None = None):
     p = _palette(mode, accent)
     return """
-/* ================= Mei 6.3 — modern chrome ================= */
+/* ==========================================================================
+   MEI — THE QUIET TABLE
+   --------------------------------------------------------------------------
+   One grammar for the whole application: warm paper surfaces, hairline rules
+   instead of boxes-in-boxes, a serif display voice over a plain working sans,
+   and a single accent used like ink (a mark, a seal, a filled primary) rather
+   than as decoration.  Radii, spacing and type come from core/theme_data so a
+   page cannot invent a second design.
+   Palette accent ink: %(ACCENT_BASE)s
+   ========================================================================== */
 
-/* ---------- base: flat minimal layers ---------- */
+/* ---------- foundation ---------- */
 QMainWindow, QWidget {
     background-color: %(MAIN_BG)s;
     color: %(TEXT)s;
+    font-family: %(FONT_FAMILY)s;
     font-size: 13px;
 }
-#ShellRoot, #MainWidget {
+#ShellRoot, #MainWidget, #ContentArea, #HomeDashboard, #SettingsContent,
+#AIWorkspace, #PersonalWorkspace, #LibraryWorkspace, #SettingsWorkspace,
+#HistoryWorkspace, #HomeScrollContent {
     background-color: %(MAIN_BG)s;
 }
-#ShellTopBar {
-    background-color: %(CARD_BG)s;
-    border-bottom: 1px solid %(BORDER_SOFT)s;
-    padding: 6px 12px;
-}
-#ShellBrand { color: %(TEXT)s; letter-spacing: 0.4px; font-weight: 600; }
-#BrandGlyph { color: %(ACCENT_HOVER)s; font-size: 26px; }
-#BrandName { color: %(TEXT)s; font-size: 16px; font-weight: 800; letter-spacing: 0.3px; }
-#BrandSub { color: %(TEXT_MUTED)s; font-size: 10px; letter-spacing: 0.5px; }
-#StatusPill {
-    background-color: %(ACCENT_SOFT)s; color: %(ACCENT_HOVER)s;
-    border: 1px solid %(INPUT_BORDER)s; border-radius: 999px;
-    padding: 2px 12px; font-size: 11px; font-weight: 700;
-}
+QMainWindow::separator { background-color: %(RULE)s; width: 1px; height: 1px; }
+QLabel { color: %(TEXT)s; background: transparent; border: none; }
+QWidget#qt_scrollarea_viewport { background-color: %(MAIN_BG)s; }
 
-/* ---------- inputs & editors ---------- */
-#ShellOmnibar, #UrlBar, QLineEdit, QTextEdit, QListWidget, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit {
-    background-color: %(INPUT_BG)s;
-    color: %(TEXT)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: %(RADIUS_SM)s;
-    padding: 5px 9px;
-    selection-background-color: %(MENU_ITEM_SEL)s;
-    selection-color: %(TEXT)s;
-}
-#ShellOmnibar:hover, #UrlBar:hover, QLineEdit:hover, QTextEdit:hover, QListWidget:hover, QComboBox:hover, QSpinBox:hover, QDateEdit:hover, QTimeEdit:hover, QDateTimeEdit:hover {
-    border-color: %(ACCENT)s;
-}
-#ShellOmnibar:focus, #UrlBar:focus, QLineEdit:focus, QTextEdit:focus, QListWidget:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
-    border-color: %(INPUT_FOCUS)s;
-    background-color: %(CARD_BG)s;
-}
-#ShellOmnibar { min-height: 28px; font-size: 12px; padding: 5px 10px; }
-QComboBox::drop-down { border: none; width: 22px; }
-QComboBox::down-arrow { width: 10px; height: 10px; }
-QComboBox QAbstractItemView {
+QToolTip {
     background-color: %(MENU_BG)s;
     color: %(TEXT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: %(RADIUS_SM)s;
-    padding: 4px;
-    selection-background-color: %(MENU_ITEM_SEL)s;
-    selection-color: %(TEXT)s;
-}
-QScrollArea#SettingsScroll {
-    border: none;
-    background-color: %(MAIN_BG)s;
-}
-QScrollArea#SettingsScroll > QWidget > QWidget { background-color: %(MAIN_BG)s; }
-QScrollArea#HomeScroll {
-    border: none;
-    background-color: %(MAIN_BG)s;
-}
-QScrollArea#HomeScroll > QWidget > QWidget { background-color: %(MAIN_BG)s; }
-
-/* ---------- labels ---------- */
-QLabel { color: %(TEXT)s; background: transparent; }
-#MutedLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
-#SectionTitle { color: %(ACCENT_HOVER)s; font-weight: 700; letter-spacing: 0.4px; font-size: 12px; text-transform: uppercase; }
-#HeroTitle { color: %(TEXT)s; font-family: %(TITLE_FONT)s; }
-#HeroSubtitle { color: %(TEXT_MUTED)s; font-size: 13px; }
-#HeroBadge {
-    background-color: %(ACCENT_SOFT)s; color: %(ACCENT_HOVER)s;
-    border: 1px solid %(INPUT_BORDER)s; border-radius: %(RADIUS_SM)s;
-    padding: 3px 10px; font-size: 11px; font-weight: 700;
-}
-
-/* ---------- shared components (ui/components.py) ---------- */
-#PageHeader { background: transparent; }
-#PageGlyph { color: %(ACCENT_HOVER)s; font-size: 20px; }
-#PageTitle { color: %(TEXT)s; }
-#PageSubtitle { color: %(TEXT_MUTED)s; font-size: 11px; }
-
-#StatRow { background: transparent; }
-#StatTile {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: %(RADIUS_SM)s;
-}
-#StatTile:hover { border-color: %(ACCENT)s; }
-#StatValue { color: %(ACCENT_HOVER)s; }
-#StatLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
-
-#SectionHeaderRow { background: transparent; }
-#EmptyState {
-    background-color: %(CARD_BG)s;
-    border: 1px dashed %(BORDER_SOFT)s;
-    border-radius: %(RADIUS_SM)s;
-}
-#EmptyGlyph { color: %(ACCENT_SOFT)s; font-size: 26px; }
-
-/* ---------- action tiles (dashboard launchers) ---------- */
-#ActionTile {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: %(RADIUS)s;
-    padding: 6px;
-}
-#ActionTile:hover {
-    border-color: %(ACCENT)s;
-    background-color: %(ITEM_HOVER)s;
-}
-#ActionTile:pressed { background-color: %(ITEM_SELECTED)s; }
-#ActionGlyph { color: %(ACCENT_HOVER)s; font-size: 25px; font-weight: 700; }
-#ActionLabel { color: %(TEXT)s; font-weight: 700; font-size: 13px; }
-#ActionHint { color: %(TEXT_MUTED)s; font-size: 10px; }
-
-/* ---------- chips (filter toggles) ---------- */
-#Chip {
-    background-color: %(MAIN_BG_ALT)s;
-    color: %(TEXT_MUTED)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 999px;
-    padding: 4px 11px;
+    border: 1px solid %(RULE_STRONG)s;
+    border-radius: %(RADIUS_XS)s;
+    padding: 6px 10px;
     font-size: 11px;
+}
+QScrollBar:vertical { width: 10px; margin: 2px; background: transparent; }
+QScrollBar::handle:vertical {
+    min-height: 28px; background: %(RULE_STRONG)s; border-radius: 5px; margin: 2px;
+}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:vertical:pressed { background: %(TEXT_MUTED)s; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QScrollBar:horizontal { height: 10px; margin: 2px; background: transparent; }
+QScrollBar::handle:horizontal {
+    min-width: 28px; background: %(RULE_STRONG)s; border-radius: 5px; margin: 2px;
+}
+QScrollBar::handle:horizontal:hover, QScrollBar::handle:horizontal:pressed { background: %(TEXT_MUTED)s; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
+QSplitter::handle { background-color: transparent; }
+QSplitter::handle:horizontal { width: 6px; }
+QSplitter::handle:vertical { height: 6px; }
+QSplitter::handle:hover { background-color: %(ACCENT_QUIET)s; }
+
+QScrollArea { border: none; background: transparent; }
+QScrollArea#HomeScroll, QScrollArea#SettingsScroll { border: none; background-color: %(MAIN_BG)s; }
+QScrollArea#HomeScroll > QWidget > QWidget, QScrollArea#SettingsScroll > QWidget > QWidget { background-color: %(MAIN_BG)s; }
+QStackedWidget { background-color: %(MAIN_BG)s; }
+
+/* ---------- the masthead voice: serif display, clay marks ---------- */
+#Masthead, #HomeMasthead { background: transparent; }
+#Eyebrow, #MastheadEyebrow {
+    color: %(CLAY)s;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+#DisplayTitle, #MastheadTitle {
+    color: %(TEXT)s;
+    font-family: %(FONT_DISPLAY)s;
+    font-size: 31px;
     font-weight: 600;
 }
-#Chip:hover { border-color: %(ACCENT)s; color: %(TEXT)s; background-color: %(ITEM_HOVER)s; }
-#Chip:checked {
-    background-color: %(ACCENT_SOFT)s;
-    color: %(ACCENT_HOVER)s;
-    border-color: %(ACCENT)s;
+#DisplayDeck, #MastheadDeck { color: %(TEXT_MUTED)s; font-size: 13px; }
+#MastheadDate { color: %(TEXT_MUTED)s; font-size: 11px; }
+#MastheadRule { background-color: %(RULE_STRONG)s; border: none; }
+#HeroTitle {
+    color: %(TEXT)s;
+    font-family: %(FONT_DISPLAY)s;
+    font-size: 26px;
+    font-weight: 600;
 }
+#HeroSubtitle { color: %(TEXT_MUTED)s; font-size: 12px; }
+#QuietRule { background-color: %(RULE)s; border: none; }
+#PageHeader { background: transparent; }
+#PageGlyph {
+    color: %(ACCENT_HOVER)s;
+    background-color: transparent;
+    font-size: 13px;
+}
+#PageTitle {
+    color: %(TEXT)s;
+    font-family: %(FONT_DISPLAY)s;
+    font-size: 23px;
+    font-weight: 600;
+}
+#PageSubtitle, #MutedLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
+#SectionTitle { color: %(TEXT)s; font-size: 12px; font-weight: 700; }
+#SectionHeaderRow { background: transparent; }
+#SectionKicker { color: %(TEXT_MUTED)s; font-size: 10px; }
+#Numeric, #StatValue { font-family: %(FONT_DISPLAY)s; color: %(TEXT)s; }
 
-/* ---------- badges ---------- */
-#Badge {
+/* ---------- shell top bar ---------- */
+#ShellTopBar {
+    min-height: 54px;
+    background-color: %(SURFACE)s;
+    border: none;
+    border-bottom: 1px solid %(RULE)s;
+    padding: 8px 18px;
+}
+#BrandWrap { background: transparent; }
+#BrandGlyph {
+    color: %(TEXT)s;
+    font-family: %(FONT_DISPLAY)s;
+    font-size: 19px;
+    font-weight: 700;
+    background: transparent;
+    border: none;
+    min-width: 30px;
+    min-height: 30px;
+    qproperty-alignment: AlignCenter;
+}
+#BrandName {
+    color: %(TEXT)s;
+    font-family: %(FONT_DISPLAY)s;
+    font-size: 19px;
+    font-weight: 700;
+}
+#BrandSub {
+    color: %(CLAY)s;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+#ShellOmnibar {
+    min-height: 36px;
+    padding: 7px 12px;
+    border-radius: %(RADIUS_SM)s;
     background-color: %(MAIN_BG_ALT)s;
+    border: 1px solid %(RULE)s;
+    color: %(TEXT)s;
+    font-size: 12px;
+}
+#ShellOmnibar:hover { background-color: %(SURFACE)s; border-color: %(RULE_STRONG)s; }
+#ShellOmnibar:focus { background-color: %(SURFACE)s; border: 1px solid %(ACCENT)s; }
+QPushButton#TopAccentButton {
+    min-height: 26px;
+    background-color: %(ACCENT)s;
+    color: %(TEXT_ON_ACCENT)s;
+    border: 1px solid %(ACCENT)s;
+    border-radius: %(RADIUS_SM)s;
+    padding: 6px 14px;
+    font-weight: 700;
+}
+QPushButton#TopAccentButton:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
+QPushButton#TopAccentButton:disabled { background-color: %(MAIN_BG_ALT)s; color: %(TEXT_DIM)s; border-color: %(RULE)s; }
+
+/* ---------- the wayfinding spine (left rail) ---------- */
+#LeftRail, #Sidebar {
+    background-color: %(NAV_BG)s;
+    border: none;
+    border-right: 1px solid %(RULE)s;
+}
+#RailSectionLabel {
     color: %(TEXT_MUTED)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 999px;
-    padding: 2px 8px;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    padding: 14px 10px 4px 10px;
+}
+#RailMeta { background: transparent; border: none; color: %(TEXT_MUTED)s; font-size: 10px; padding: 0 2px; }
+#RailBrand {
+    color: %(TEXT)s;
+    font-family: %(FONT_DISPLAY)s;
+    font-size: 17px;
+    font-weight: 700;
+    padding: 2px 6px 0 6px;
+}
+#RailProfile { color: %(TEXT_MUTED)s; font-size: 10px; padding: 0 6px 6px 6px; }
+#NavButton {
+    min-height: 32px;
+    text-align: left;
+    color: %(TEXT_MUTED)s;
+    background: transparent;
+    border: none;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 600;
+}
+#NavButton:hover {
+    color: %(TEXT)s;
+    background-color: %(ITEM_HOVER)s;
+    border-left-color: %(RULE_STRONG)s;
+}
+#NavButton:checked {
+    color: %(ACCENT_HOVER)s;
+    background-color: %(ACCENT_WASH)s;
+    border-left: 2px solid %(ACCENT)s;
+    font-weight: 700;
+}
+#NavButton:focus { border-left-color: %(ACCENT)s; color: %(TEXT)s; }
+#NavButton[iconOnly="true"] {
+    padding: 7px 0;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+}
+#NavButton[iconOnly="true"]:checked { border-left-width: 2px; }
+#NavToggle {
+    color: %(TEXT_MUTED)s;
+    background: transparent;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_XS)s;
+    min-width: 24px;
+    max-width: 26px;
+    min-height: 24px;
+    max-height: 26px;
+    padding: 0;
+    font-size: 11px;
+    font-weight: 700;
+}
+#NavToggle:hover { color: %(TEXT)s; background-color: %(ITEM_HOVER)s; border-color: %(RULE_STRONG)s; }
+
+/* ---------- status strip: a footnote, not a card ---------- */
+#StatusStrip {
+    min-height: 26px;
+    background-color: transparent;
+    border: none;
+    border-top: 1px solid %(RULE)s;
+    border-radius: 0;
+    padding: 4px 6px;
+}
+#StatusPill {
+    background-color: transparent;
+    color: %(CLAY)s;
+    border: none;
+    padding: 3px 2px;
     font-size: 10px;
     font-weight: 700;
 }
-#BadgeAccent {
-    background-color: %(ACCENT_SOFT)s;
-    color: %(ACCENT_HOVER)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: 999px;
-    padding: 2px 8px;
-    font-size: 10px;
-    font-weight: 800;
-}
+#TabCounter, #ZoomLabel { color: %(TEXT_MUTED)s; font-size: 10px; font-weight: 600; }
+#SiteStatePill, #Pill { background-color: %(MAIN_BG_ALT)s; color: %(TEXT_MUTED)s; border: 1px solid %(RULE)s; padding: 3px 10px; font-size: 10px; font-weight: 700; }
+#ZoomLabel { background-color: transparent; border: none; padding: 2px 6px; }
+#SiteStatePill, #ZoomLabel, #StatusPill, #Chip, #Pill { border-radius: %(RADIUS_PILL)s; }
 
-/* ---------- rail footer / meta chips ---------- */
-#RailMeta {
+/* ---------- companion rail (insights) ---------- */
+#InsightPanel {
+    background-color: %(NAV_BG)s;
+    border: none;
+    border-left: 1px solid %(RULE)s;
+    border-radius: 0;
+    padding: 4px;
+}
+#InsightPanel #SectionCard {
+    background-color: %(SURFACE)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+}
+#InsightPanel QLabel#SectionTitle { font-size: 12px; }
+#InsightPanel QListWidget { background: transparent; border: none; }
+
+/* ---------- surfaces ---------- */
+#SectionCard, #StatCard, #ActionTile, #StatTile, #InsightPanel { border-radius: %(RADIUS)s; }
+#SectionCard {
+    background-color: %(SURFACE)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+}
+#SectionCard:hover { border-color: %(RULE_STRONG)s; }
+#StatCard { background-color: %(SURFACE)s; border: 1px solid %(RULE)s; }
+#StatCard:hover { border-color: %(RULE_STRONG)s; }
+#StatCard QLabel { font-weight: 600; }
+#HeroCard {
+    background-color: %(SURFACE)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_LG)s;
+}
+#HeroBadge, #Badge, #BadgeAccent {
+    border-radius: %(RADIUS_PILL)s;
+    padding: 3px 10px;
+    font-size: 9px;
+    font-weight: 700;
+}
+#HeroBadge, #BadgeAccent {
     background-color: %(MAIN_BG_ALT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: %(RADIUS_SM)s;
-    padding: 5px 8px;
-    font-size: 11px;
     color: %(TEXT_MUTED)s;
+    border: 1px solid %(RULE)s;
 }
+#Badge {
+    background-color: transparent;
+    color: %(TEXT_MUTED)s;
+    border: 1px solid %(RULE)s;
+}
+#StatTile {
+    min-height: 54px;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: %(RADIUS_XS)s;
+}
+#StatTile:hover { border-color: %(RULE)s; background-color: %(ITEM_HOVER)s; }
+#StatValue { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 22px; font-weight: 600; }
+#StatLabel { color: %(TEXT_MUTED)s; font-size: 10px; }
+#StatRow { background: transparent; }
+#EmptyState {
+    background-color: %(SURFACE_SUNK)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+}
+#EmptyGlyph { color: %(TEXT_DIM)s; font-size: 16px; }
 
-/* ---------- left rail / nav ---------- */
-#LeftRail {
-    background-color: %(SIDEBAR_BG)s;
-    border-right: 1px solid %(BORDER_SOFT)s;
+/* The desk: one emphasised panel, open groupings for the rest. */
+#DeskPanel {
+    background-color: %(SURFACE)s;
+    border: 1px solid %(RULE)s;
+    border-left: 3px solid %(ACCENT)s;
+    border-radius: %(RADIUS)s;
 }
-#NavButton {
-    text-align: left; padding: 7px 11px; font-weight: 600;
-    border: 1px solid transparent; border-radius: %(RADIUS_SM)s;
-    color: %(TEXT_MUTED)s; background: transparent;
+#DeskPanel[emphasis="quiet"] {
+    border-left: 1px solid %(RULE)s;
+    background-color: %(SURFACE)s;
 }
-#NavButton:hover { background-color: %(ITEM_HOVER)s; color: %(TEXT)s; }
-#NavButton:checked {
-    background-color: %(ITEM_SELECTED)s;
-    border: 1px solid %(ITEM_SELECTED_BORDER)s;
-    color: %(ACCENT_HOVER)s;
+#DeskPanel[emphasis="open"] {
+    border: none;
+    border-radius: 0;
+    background-color: transparent;
 }
+#DeskEyebrow { color: %(CLAY)s; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+#DeskTitle { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 19px; font-weight: 600; }
+#DeskLine { color: %(TEXT_MUTED)s; font-size: 12px; }
+#DeskHint { color: %(TEXT_MUTED)s; font-size: 11px; }
+#QuietPanel { background: transparent; border: none; }
+#RowTitle { color: %(TEXT)s; font-size: 12px; font-weight: 600; }
+#RowMeta { color: %(TEXT_MUTED)s; font-size: 10px; }
+
+/* ---------- chips / filters ---------- */
+#Chip, #ChipButton, #SettingsTab {
+    min-height: 22px;
+    background-color: transparent;
+    color: %(TEXT_MUTED)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_PILL)s;
+    padding: 3px 11px;
+    font-size: 10px;
+    font-weight: 600;
+}
+#Chip:hover, #ChipButton:hover, #SettingsTab:hover { color: %(TEXT)s; border-color: %(RULE_STRONG)s; background-color: %(ITEM_HOVER)s; }
+#Chip:checked, #ChipButton:checked, #SettingsTab:checked { color: %(ACCENT_HOVER)s; background-color: %(ACCENT_WASH)s; border-color: %(ACCENT)s; }
+#SettingsTab { min-height: 26px; padding: 5px 15px; font-size: 11px; }
 
 /* ---------- buttons ---------- */
 QPushButton, #CafeButton {
+    min-height: 24px;
     background-color: %(BUTTON_BG)s;
     color: %(BUTTON_TEXT)s;
-    border: 1px solid %(INPUT_BORDER)s;
+    border: 1px solid %(RULE)s;
     border-radius: %(RADIUS_SM)s;
-    padding: 5px 10px;
-    min-height: 16px;
+    padding: 6px 12px;
+    font-size: 12px;
     font-weight: 600;
 }
-QPushButton:hover, #CafeButton:hover { background-color: %(BUTTON_HOVER)s; border-color: %(ACCENT)s; }
+QPushButton:hover, #CafeButton:hover { background-color: %(BUTTON_HOVER)s; border-color: %(RULE_STRONG)s; }
 QPushButton:pressed, #CafeButton:pressed { background-color: %(ITEM_SELECTED)s; }
-QPushButton:disabled { color: %(TEXT_DIM)s; background-color: %(MAIN_BG_ALT)s; border-color: %(BORDER_SOFT)s; }
-QPushButton#TopAccentButton {
-    background-color: %(ACCENT)s;
-    color: #141414; border: none; font-weight: 800;
-}
-QPushButton#TopAccentButton:hover { background-color: %(ACCENT_HOVER)s; }
-
-#StatusStrip {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: %(RADIUS_SM)s;
-    padding: 3px 8px;
-}
-
-/* ---------- cards / panels: elevated surfaces ---------- */
-#InsightPanel, #HeroCard, #SectionCard, #StatCard, #TopBar, #TopBarCluster, #AddressCluster {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: %(RADIUS)s;
-}
-#InsightPanel { border-left: none; border-radius: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
-/* WebEngine draws its own surface; avoid rounded card chrome that skews layout perception. */
-#WebContainer { background-color: %(MAIN_BG)s; border: none; border-radius: 0; }
-
-#HeroCard {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(INPUT_BORDER)s;
-}
-#StatCard {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-}
-#StatCard:hover { border-color: %(ACCENT)s; }
-#StatCard QLabel { font-weight: 600; }
-
-/* ---------- top bar (browser chrome) ---------- */
-#TopBar { background-color: %(CARD_BG)s; border: 1px solid %(BORDER_SOFT)s; padding: 4px; }
-#TopBarCluster, #AddressCluster { background-color: %(MAIN_BG_ALT)s; border: 1px solid %(BORDER_SOFT)s; }
-#AddressCluster #UrlBar { background: transparent; border: none; padding: 6px 8px; font-size: 12px; font-weight: 600; }
-#TopBar #SearchEngine, #SearchEngine, #WorkspaceCombo {
-    min-height: 30px; background-color: %(INPUT_BG)s; color: %(TEXT)s;
-    border: 1px solid %(INPUT_BORDER)s; border-radius: %(RADIUS_SM)s; padding: 4px 22px 4px 10px;
-    font-size: 11px; font-weight: 600;
-}
-#SearchEngine::drop-down, #WorkspaceCombo::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border: none; background: transparent; }
-#SearchEngine::down-arrow, #WorkspaceCombo::down-arrow { width: 10px; height: 10px; }
-
-/* ---------- lists ---------- */
-/* Inline omnibar feature finder: a card-popup list under the search box. */
-#FeaturePopupList {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: 10px;
-    padding: 4px;
-    outline: none;
-}
-#FeaturePopupList::item {
-    background-color: transparent;
-    border-radius: 7px;
+QPushButton:disabled { color: %(TEXT_DIM)s; background-color: transparent; border-color: %(RULE)s; }
+QPushButton:focus, QToolButton:focus, #CafeButton:focus, #TopIconButton:focus,
+#SidebarPanelBtn:focus, #SidebarCollapse:focus {
+    border: 1px solid %(ACCENT)s;
     color: %(TEXT)s;
 }
-#FeaturePopupList::item:hover { background-color: %(ITEM_HOVER)s; }
-#FeaturePopupList::item:selected {
-    background-color: %(ITEM_SELECTED)s;
-    border: 1px solid %(ITEM_SELECTED_BORDER)s;
+QPushButton:default {
+    background-color: %(ACCENT)s;
+    color: %(TEXT_ON_ACCENT)s;
+    border-color: %(ACCENT)s;
 }
-
-#CafeList, #TabList { background-color: transparent; border: none; outline: none; }
-#CafeList::item {
-    background-color: transparent; border-radius: %(RADIUS_SM)s;
-    padding: 5px 8px; margin: 2px 2px; border-left: 3px solid transparent; color: %(TEXT_MUTED)s;
-}
-/* #TabList rows are custom item widgets (favicon + title + close); QSS
-   padding/margins here shrink the widget rect and slice the title in half
-   (rows rendered ~12px tall for a 32px item). The row widget carries its
-   own internal margins, so the ::item rule must stay padding-free. */
-#TabList::item {
-    background-color: transparent; border-radius: %(RADIUS_SM)s;
-    border-left: 3px solid transparent; color: %(TEXT_MUTED)s;
-}
-#CafeList::item:hover, #TabList::item:hover { background-color: %(ITEM_HOVER)s; color: %(TEXT)s; }
-#CafeList::item:selected, #TabList::item:selected {
-    background-color: %(ITEM_SELECTED)s; color: %(TEXT)s; border-left-color: %(ACCENT)s;
-}
-
-/* ---------- browser sidebar ---------- */
-#Sidebar { background-color: %(SIDEBAR_BG)s; border-right: 1px solid %(BORDER_SOFT)s; }
-#TabCounter, #ZoomLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
-#NewTabBtn {
-    background-color: %(ACCENT_SOFT)s; color: %(ACCENT_HOVER)s; border: 1px solid %(INPUT_BORDER)s;
-    border-radius: %(RADIUS_SM)s; padding: 9px 10px; font-weight: 700;
-}
-#NewTabBtn:hover { background-color: %(ITEM_SELECTED)s; border-color: %(ACCENT)s; }
-
-#SidebarPanelBtn, #TopBar QToolButton {
-    background-color: transparent; color: %(TEXT_MUTED)s; border: none;
-    border-radius: %(RADIUS_SM)s; padding: 5px 9px; min-width: 28px; min-height: 28px; font-size: 10px; font-weight: 700;
-}
-#SidebarPanelBtn:hover, #TopBar QToolButton:hover { background-color: %(ITEM_HOVER)s; color: %(TEXT)s; }
-#SidebarPanelBtn:checked { color: %(ACCENT_HOVER)s; background-color: %(ITEM_SELECTED)s; border: 1px solid %(ITEM_SELECTED_BORDER)s; }
-#SidebarCollapse {
-    background-color: %(MAIN_BG_ALT)s; color: %(TEXT)s;
-    border: 1px solid %(BORDER_SOFT)s; border-radius: %(RADIUS_SM)s;
-    min-width: 22px; min-height: 22px; padding: 0 4px; font-size: 13px; font-weight: 700;
-}
-#SidebarCollapse:hover { background-color: %(ITEM_HOVER)s; border-color: %(ACCENT)s; color: %(ACCENT_HOVER)s; }
+QPushButton:default:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
+QPushButton::menu-indicator, QToolButton::menu-indicator { image: none; width: 0; height: 0; }
 
 #TopIconButton {
-    background-color: %(BUTTON_BG)s; color: %(TEXT)s; border: 1px solid %(INPUT_BORDER)s;
-    border-radius: %(RADIUS_SM)s; min-width: 30px; min-height: 30px; padding: 3px 6px; font-weight: 700; font-size: 10px;
+    min-width: 28px;
+    min-height: 28px;
+    background-color: transparent;
+    color: %(TEXT_MUTED)s;
+    border: 1px solid transparent;
+    border-radius: %(RADIUS_XS)s;
+    padding: 4px 6px;
+    font-size: 13px;
+    font-weight: 700;
 }
-#TopIconButton:hover { background-color: %(BUTTON_HOVER)s; border-color: %(ACCENT)s; }
+#TopIconButton:hover { background-color: %(ITEM_HOVER)s; border-color: %(RULE)s; color: %(TEXT)s; }
+#TopIconButton:checked { background-color: %(ACCENT_WASH)s; border-color: %(ACCENT)s; color: %(ACCENT_HOVER)s; }
+#SidebarPanelBtn {
+    min-width: 32px; min-height: 30px;
+    background-color: transparent;
+    color: %(TEXT_MUTED)s;
+    border: 1px solid transparent;
+    border-radius: %(RADIUS_XS)s;
+    padding: 4px 6px;
+    font-size: 14px;
+    font-weight: 700;
+}
+#SidebarPanelBtn:hover { color: %(TEXT)s; background-color: %(ITEM_HOVER)s; border-color: %(RULE)s; }
+#SidebarPanelBtn:checked { color: %(ACCENT_HOVER)s; background-color: %(ACCENT_WASH)s; border-color: %(ACCENT)s; }
+#SidebarCollapse {
+    min-width: 22px; min-height: 22px;
+    background-color: transparent; color: %(TEXT_MUTED)s;
+    border: 1px solid %(RULE)s; border-radius: %(RADIUS_XS)s;
+    padding: 0 4px; font-size: 12px; font-weight: 700;
+}
+#SidebarCollapse:hover { color: %(TEXT)s; background-color: %(ITEM_HOVER)s; border-color: %(RULE_STRONG)s; }
+#OptionsBtn {
+    min-height: 30px;
+    background-color: transparent;
+    color: %(TEXT_MUTED)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_XS)s;
+    padding: 5px 12px;
+    font-weight: 600;
+}
+#OptionsBtn:hover { background-color: %(ITEM_HOVER)s; border-color: %(RULE_STRONG)s; color: %(TEXT)s; }
+QPushButton, #CafeButton, #TopIconButton { border-radius: %(RADIUS_SM)s; }
 
-/* ---------- menus ---------- */
-QMenu {
+/* ---------- inputs ---------- */
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit {
+    min-height: 24px;
+    background-color: %(INPUT_BG)s;
+    color: %(TEXT)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_SM)s;
+    padding: 6px 10px;
+    selection-background-color: %(ACCENT_WASH)s;
+    selection-color: %(TEXT)s;
+}
+QTextEdit, QPlainTextEdit { padding: 8px; }
+QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover, QComboBox:hover, QSpinBox:hover,
+QDateEdit:hover, QTimeEdit:hover, QDateTimeEdit:hover { border-color: %(RULE_STRONG)s; }
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus,
+QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
+    background-color: %(INPUT_BG)s;
+    border: 1px solid %(ACCENT)s;
+}
+QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled { color: %(TEXT_DIM)s; background-color: %(MAIN_BG_ALT)s; }
+QComboBox::drop-down { border: none; width: 22px; }
+QComboBox::down-arrow { width: 9px; height: 9px; }
+QComboBox QAbstractItemView {
+    background-color: %(MENU_BG)s;
+    color: %(TEXT)s;
+    border: 1px solid %(RULE_STRONG)s;
+    border-radius: %(RADIUS_XS)s;
+    padding: 4px;
+    outline: none;
+    selection-background-color: %(ACCENT_WASH)s;
+    selection-color: %(TEXT)s;
+}
+QComboBox QAbstractItemView::item { min-height: 24px; padding: 4px 8px; border-radius: 6px; }
+QComboBox QAbstractItemView::item:selected { background-color: %(ACCENT_WASH)s; color: %(TEXT)s; }
+#SearchEngine, #WorkspaceCombo {
+    min-height: 28px;
+    background-color: transparent;
+    color: %(TEXT_MUTED)s;
+    border: 1px solid transparent;
+    border-radius: %(RADIUS_XS)s;
+    padding: 4px 22px 4px 9px;
+    font-size: 11px;
+    font-weight: 600;
+}
+#SearchEngine:hover, #WorkspaceCombo:hover { background-color: %(ITEM_HOVER)s; border-color: %(RULE)s; color: %(TEXT)s; }
+#SearchEngine::drop-down, #WorkspaceCombo::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border: none; background: transparent; }
+#SearchEngine::down-arrow, #WorkspaceCombo::down-arrow { width: 9px; height: 9px; }
+#TabFilter {
+    min-height: 26px;
+    margin: 0 2px 6px 2px;
+    background-color: %(MAIN_BG_ALT)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_XS)s;
+    padding: 5px 9px;
+    font-size: 10px;
+}
+
+/* ---------- lists ---------- */
+#CafeList, #TabList, QListWidget, QTreeWidget {
+    background-color: transparent;
+    border: none;
+    outline: none;
+    padding: 2px;
+}
+QListWidget::item, QTreeWidget::item {
+    color: %(TEXT)s;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: %(RADIUS_XS)s;
+    margin: 1px;
+    padding: 7px 9px;
+}
+#TabList::item {
+    color: %(TEXT_MUTED)s;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: %(RADIUS_XS)s;
+    margin: 0;
+    padding: 0;
+}
+QListWidget::item:hover, QTreeWidget::item:hover, #TabList::item:hover {
+    color: %(TEXT)s;
+    background-color: %(ITEM_HOVER)s;
+    border-color: transparent;
+}
+QListWidget::item:selected, QTreeWidget::item:selected, #TabList::item:selected {
+    color: %(TEXT)s;
+    background-color: %(ACCENT_WASH)s;
+    border: 1px solid transparent;
+    border-left: 2px solid %(ACCENT)s;
+}
+QListView#CafeList, QListView#TabList { background-color: transparent; }
+#CafeList::item:selected, #TabList::item:selected { background-color: %(ACCENT_WASH)s; color: %(TEXT)s; }
+
+/* Inline omnibar feature finder: a card popped under the command bar. */
+#FeaturePopupList {
+    background-color: %(MENU_BG)s;
+    border: 1px solid %(RULE_STRONG)s;
+    border-radius: %(RADIUS)s;
+    padding: 6px;
+    outline: none;
+}
+#FeaturePopupList::item { background-color: transparent; border-radius: 6px; color: %(TEXT)s; padding: 7px 9px; }
+#FeaturePopupList::item:hover { background-color: %(ITEM_HOVER)s; }
+#FeaturePopupList::item:selected { background-color: %(ACCENT_WASH)s; border: 1px solid transparent; border-left: 2px solid %(ACCENT)s; }
+
+/* ---------- tables ---------- */
+QTableView, QTreeView {
+    background-color: %(SURFACE)s;
+    color: %(TEXT)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_XS)s;
+    gridline-color: %(RULE)s;
+    alternate-background-color: %(MAIN_BG_ALT)s;
+}
+QHeaderView::section {
+    background-color: %(MAIN_BG_ALT)s;
+    color: %(TEXT_MUTED)s;
+    border: none;
+    border-bottom: 1px solid %(RULE)s;
+    padding: 6px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+/* ---------- the reading desk: browser chrome ---------- */
+#TopBar {
+    min-height: 42px;
+    margin: 4px 4px 2px 4px;
+    background-color: %(SURFACE)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+    padding: 3px;
+}
+#TopBarCluster, #AddressCluster {
+    background-color: %(MAIN_BG_ALT)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_XS)s;
+}
+#AddressCluster[focused="true"] { background-color: %(INPUT_BG)s; border-color: %(ACCENT)s; }
+#AddressCluster #UrlBar,
+#AddressCluster #UrlBar:hover,
+#AddressCluster #UrlBar:focus { background: transparent; border: none; padding: 6px 8px; font-size: 12px; font-weight: 500; }
+#UrlBar {
+    min-height: 28px;
+    background-color: %(MAIN_BG_ALT)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_SM)s;
+    padding: 6px 10px;
+    font-weight: 500;
+}
+#UrlBar:focus { background-color: %(INPUT_BG)s; border-color: %(ACCENT)s; }
+#TopBar QToolButton {
+    min-width: 26px; min-height: 26px;
+    background-color: transparent; color: %(TEXT_MUTED)s;
+    border: 1px solid transparent; border-radius: %(RADIUS_XS)s;
+    padding: 4px 6px; font-size: 12px; font-weight: 700;
+}
+#TopBar QToolButton:hover { background-color: %(ITEM_HOVER)s; color: %(TEXT)s; border-color: %(RULE)s; }
+#WebContainer { background-color: %(MAIN_BG)s; border: none; border-radius: 0; }
+#NewTabBtn {
+    min-height: 30px;
+    background-color: transparent;
+    color: %(ACCENT_HOVER)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_XS)s;
+    padding: 6px 10px;
+    font-weight: 700;
+}
+#NewTabBtn:hover { background-color: %(ACCENT_WASH)s; border-color: %(ACCENT)s; }
+#SidebarFooter { background-color: transparent; }
+#DormantTabView { background-color: %(SURFACE_SUNK)s; border: 1px dashed %(RULE_STRONG)s; border-radius: %(RADIUS)s; }
+#WebPanelDock { background-color: %(SURFACE)s; border-left: 1px solid %(RULE)s; }
+#SplitDock { background-color: %(SURFACE)s; border-right: 1px solid %(RULE)s; }
+#WebPanelHeader { background-color: %(MAIN_BG_ALT)s; border-bottom: 1px solid %(RULE)s; }
+#WebPanelView { background-color: %(MAIN_BG)s; }
+#SavePasswordBar { background-color: %(ACCENT_WASH)s; border-top: 1px solid %(ACCENT)s; }
+#AISideDock { background-color: %(SURFACE)s; border-left: 1px solid %(RULE)s; }
+#DockRail { background-color: %(NAV_BG)s; border-left: 1px solid %(RULE)s; }
+#LinkPreview {
+    background-color: %(SURFACE)s; color: %(TEXT_MUTED)s;
+    border: 1px solid %(RULE)s; border-radius: 6px;
+    padding: 3px 10px; font-size: 11px;
+}
+#FindBar { background-color: %(SURFACE)s; border: 1px solid %(RULE_STRONG)s; border-radius: %(RADIUS)s; }
+#FindBar QLineEdit { background-color: %(INPUT_BG)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS_XS)s; }
+#FindBar QLineEdit:focus { border-color: %(ACCENT)s; }
+#ToastLabel {
     background-color: %(MENU_BG)s; color: %(TEXT)s;
-    border: 1px solid %(INPUT_BORDER)s; padding: 5px; border-radius: %(RADIUS_SM)s;
+    border: 1px solid %(RULE_STRONG)s; border-radius: %(RADIUS_SM)s;
+    padding: 7px 14px; font-size: 12px; font-weight: 600;
 }
-QMenu::item { padding: 6px 12px; border-radius: 6px; margin: 1px 0; }
-QMenu::item:selected { background-color: %(MENU_ITEM_SEL)s; color: %(TEXT)s; }
-QMenu::item:disabled { color: %(TEXT_DIM)s; }
-QMenu::separator { height: 1px; background: %(BORDER_SOFT)s; margin: 5px 7px; }
+#LoadProgress { background: transparent; border: none; max-height: 2px; margin: 0; }
+#LoadProgress::chunk { background-color: %(ACCENT)s; }
 
-/* ---------- checkboxes / radios ---------- */
-QCheckBox, QRadioButton { color: %(TEXT_MUTED)s; spacing: 8px; }
+/* ---------- the reading nook: AI workspace ---------- */
+#AIThread {
+    background-color: %(EDITOR_BG)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+    font-size: 13px;
+}
+#AIComposer {
+    background-color: %(SURFACE)s;
+    border: 1px solid %(RULE_STRONG)s;
+    border-radius: %(RADIUS)s;
+}
+#AISide { background-color: %(SURFACE)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS)s; }
+#AIContextBar { background-color: transparent; border: none; }
+#AIQuestion { min-height: 36px; font-size: 13px; padding: 8px 12px; }
+
+/* ---------- notes / planner / review ---------- */
+#NoteCanvas {
+    background-color: %(EDITOR_BG)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+    padding: 18px 22px;
+    font-size: 14px;
+}
+#NoteCanvas:focus { border-color: %(ACCENT)s; }
+QPlainTextEdit#NoteEditor, #NoteEditor {
+    background-color: %(EDITOR_BG)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+    padding: 18px 22px;
+    font-size: 14px;
+    selection-background-color: %(ACCENT_WASH)s;
+    selection-color: %(TEXT)s;
+}
+QPlainTextEdit#NoteEditor:focus { border-color: %(ACCENT)s; background-color: %(EDITOR_BG)s; }
+#NoteTitleLabel { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 20px; font-weight: 600; }
+#NoteFindBar { background: transparent; }
+#NoteFind {
+    min-height: 22px;
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid %(RULE)s;
+    border-radius: 0;
+    padding: 4px 2px;
+    font-size: 11px;
+    color: %(TEXT_MUTED)s;
+}
+#NoteFind:focus { border-bottom: 1px solid %(ACCENT)s; color: %(TEXT)s; }
+#FindStep {
+    min-width: 22px;
+    max-width: 24px;
+    min-height: 22px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    color: %(TEXT_MUTED)s;
+    font-size: 12px;
+}
+#FindStep:hover { border-color: %(RULE)s; color: %(TEXT)s; }
+#NoteMeta { color: %(TEXT_MUTED)s; font-size: 10px; }
+#NoteListPane { background-color: transparent; }
+#PlanToolbar {
+    background-color: %(SURFACE)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+    padding: 8px;
+}
+#PlanToolbar QLineEdit { border-color: transparent; background-color: %(MAIN_BG_ALT)s; }
+#PlanToolbar QLineEdit:focus { border-color: %(ACCENT)s; background-color: %(INPUT_BG)s; }
+#PlanColumn { background-color: transparent; border: none; }
+#PlanDayHead { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 14px; font-weight: 600; }
+#PlanWeek { color: %(TEXT_MUTED)s; font-size: 11px; font-weight: 600; }
+#PlanDayDate { color: %(TEXT_MUTED)s; font-size: 10px; }
+#PlanColumnBody {
+    background-color: %(SURFACE_SUNK)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+}
+#ReviewStage {
+    background-color: %(SURFACE)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_LG)s;
+}
+#ReviewFront { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 24px; font-weight: 600; }
+#ReviewMeta { color: %(TEXT_MUTED)s; font-size: 11px; }
+#ReviewActions { background-color: transparent; }
+#CalendarMonth { background-color: %(SURFACE)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS)s; }
+#CalendarSide { background-color: transparent; }
+#BoardToolbar { background-color: %(SURFACE)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS)s; padding: 6px; }
+#SettingsNav { background-color: transparent; }
+#SettingsSection { background-color: transparent; border: none; }
+#LibraryToolbar { background-color: transparent; }
+#HistoryToolbar { background-color: transparent; }
+
+/* ---------- menus, checkboxes, progress ---------- */
+QMenu {
+    background-color: %(MENU_BG)s;
+    color: %(TEXT)s;
+    border: 1px solid %(RULE_STRONG)s;
+    border-radius: %(RADIUS_SM)s;
+    padding: 6px;
+}
+QMenu::item { padding: 7px 24px 7px 12px; border-radius: 6px; margin: 1px 0; }
+QMenu::item:selected { background-color: %(ACCENT_WASH)s; color: %(TEXT)s; }
+QMenu::item:disabled { color: %(TEXT_DIM)s; }
+QMenu::separator { height: 1px; background: %(RULE)s; margin: 5px 8px; }
+
+QCheckBox, QRadioButton { color: %(TEXT)s; spacing: 8px; font-size: 12px; }
 QCheckBox::indicator, QRadioButton::indicator {
-    width: 16px; height: 16px; border-radius: 5px;
-    border: 1px solid %(INPUT_BORDER)s; background: %(INPUT_BG)s;
+    width: 15px; height: 15px; border-radius: 4px;
+    border: 1px solid %(RULE_STRONG)s; background: %(INPUT_BG)s;
 }
 QRadioButton::indicator { border-radius: 8px; }
 QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: %(ACCENT)s; }
@@ -470,843 +877,143 @@ QCheckBox::indicator:checked, QRadioButton::indicator:checked {
     background-color: %(ACCENT)s;
     border-color: %(ACCENT)s;
 }
-QRadioButton::indicator:checked { border: 5px solid %(ACCENT)s; background: %(INPUT_BG)s; }
-/* A visible check mark: solid accent fill alone read as a disabled box. */
+QRadioButton::indicator:checked { border: 4px solid %(ACCENT)s; background: %(INPUT_BG)s; }
 QCheckBox:checked { color: %(TEXT)s; font-weight: 600; }
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled { border-color: %(RULE)s; background: %(MAIN_BG_ALT)s; }
 
-/* ---------- progress / slider ---------- */
 QProgressBar {
-    border: 1px solid %(BORDER_SOFT)s; border-radius: %(RADIUS_SM)s; background: %(MAIN_BG_ALT)s; text-align: center;
-}
-QProgressBar::chunk { background-color: %(ACCENT)s; border-radius: %(RADIUS_SM)s; }
-
-/* ---------- splitter / tooltip ---------- */
-#ShellTopBar QSplitter::handle, QSplitter::handle { background-color: %(BORDER_SOFT)s; }
-QSplitter::handle:horizontal { width: 3px; }
-QSplitter::handle:vertical { height: 3px; }
-QToolTip {
-    background-color: %(MENU_BG)s; color: %(TEXT)s;
-    border: 1px solid %(ACCENT)s; border-radius: %(RADIUS_SM)s; padding: 6px 10px;
-}
-
-/* ---------- header group boxes ---------- */
-QGroupBox {
-    border: 1px solid %(BORDER_SOFT)s; border-radius: %(RADIUS_SM)s; margin-top: 10px; padding-top: 8px;
-    color: %(TEXT)s; font-weight: 600;
-}
-QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 6px; color: %(ACCENT_HOVER)s; }
-
-/* ---------- scrollbars: translucent rounded ---------- */
-QScrollBar:vertical {
-    width: 9px; margin: 2px; background: transparent; border-radius: 4px;
-}
-QScrollBar::handle:vertical {
-    min-height: 26px; background: %(INPUT_BORDER)s; border-radius: 4px; margin: 1px;
-}
-QScrollBar::handle:vertical:hover, QScrollBar::handle:vertical:press { background: %(ACCENT)s; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar:horizontal {
-    height: 9px; margin: 2px; background: transparent; border-radius: 4px;
-}
-QScrollBar::handle:horizontal {
-    min-width: 26px; background: %(INPUT_BORDER)s; border-radius: 4px; margin: 1px;
-}
-QScrollBar::handle:horizontal:hover, QScrollBar::handle:horizontal:press { background: %(ACCENT)s; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
-
-/* ---------- 2026 coffee-house interface refresh ----------
-   The rules below deliberately sit at the end of the sheet: a single visual
-   language reaches the shell, browser chrome, dashboard, workspaces, and
-   standalone windows without making each screen maintain its own palette. */
-QMainWindow, QWidget {
-    font-family: %(FONT_FAMILY)s;
-    background-color: %(MAIN_BG)s;
-    color: %(TEXT)s;
-}
-/* Labels sit directly on their parent surface.  Only named badges/glyphs
-   below intentionally paint a background. */
-QLabel {
-    background-color: transparent;
-    border: none;
-}
-
-#ShellRoot, #MainWidget, #ContentArea, #HomeDashboard, #SettingsContent,
-#AIWorkspace, #PersonalWorkspace, #LibraryWorkspace, #SettingsWorkspace, #HistoryWorkspace {
-    background-color: %(MAIN_BG)s;
-}
-
-#ShellTopBar {
-    min-height: 50px;
-    background-color: %(CARD_BG)s;
-    border: none;
-    border-bottom: 1px solid %(BORDER_SOFT)s;
-    padding: 7px 14px;
-}
-#BrandWrap { background: transparent; }
-#BrandGlyph {
-    color: %(ACCENT_HOVER)s;
-    min-width: 30px;
-    min-height: 30px;
-    qproperty-alignment: AlignCenter;
-    background-color: %(ACCENT_SOFT)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: 15px;
-    font-size: 17px;
-}
-#BrandName {
-    color: %(TEXT)s;
-    font-size: 15px;
-    font-weight: 800;
-    letter-spacing: 0.7px;
-}
-#BrandSub {
-    color: %(TEXT_MUTED)s;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 1.3px;
-    text-transform: uppercase;
-}
-#ShellOmnibar {
-    min-height: 34px;
-    padding: 6px 12px;
-    border-radius: 17px;
-    background-color: %(MAIN_BG_ALT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    font-size: 12px;
-}
-#ShellOmnibar:focus {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(ACCENT)s;
-}
-
-#LeftRail, #Sidebar {
-    background-color: %(SIDEBAR_BG)s;
-    border: none;
-    border-right: 1px solid %(SIDEBAR_BORDER)s;
-}
-#RailSectionLabel {
-    color: %(TEXT_MUTED)s;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 1.1px;
-    padding: 9px 10px 2px 10px;
-}
-/* The rail header line: quiet text, not a boxed chip (the box made the profile
-   name look like a button and pushed the first nav item down a whole row). */
-#RailMeta {
-    background: transparent;
-    border: none;
-    color: %(TEXT_MUTED)s;
-    font-size: 10px;
-    padding: 2px 4px;
-}
-#NavButton {
-    min-height: 34px;
-    text-align: left;
-    color: %(TEXT_MUTED)s;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    padding: 7px 10px;
-    font-size: 12px;
-    font-weight: 650;
-}
-#NavButton:hover {
-    color: %(TEXT)s;
-    background-color: %(ITEM_HOVER)s;
-    border-color: %(BORDER_SOFT)s;
-}
-#NavButton:checked {
-    color: %(ACCENT_HOVER)s;
-    background-color: %(ACCENT_SOFT)s;
-    border-color: %(INPUT_BORDER)s;
-}
-#NavToggle {
-    color: %(TEXT_MUTED)s;
-    background: transparent;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 8px;
-    min-width: 25px;
-    max-width: 26px;
-    min-height: 25px;
-    max-height: 26px;
-    padding: 0;
-    font-size: 11px;
-    font-weight: 700;
-}
-#NavToggle:hover {
-    color: %(TEXT)s;
-    background-color: %(ITEM_HOVER)s;
-    border-color: %(ACCENT)s;
-}
-#ChipButton {
-    color: %(TEXT_MUTED)s;
-    background: transparent;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 999px;
-    padding: 4px 12px;
-    font-size: 11px;
-    font-weight: 700;
-}
-#ChipButton:hover {
-    color: %(TEXT)s;
-    background-color: %(ITEM_HOVER)s;
-    border-color: %(BORDER_SOFT)s;
-}
-#ChipButton:checked {
-    color: %(ACCENT_HOVER)s;
-    background-color: %(ACCENT_SOFT)s;
-    border-color: %(ACCENT)s;
-}
-
-#StatusStrip {
-    min-height: 28px;
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 10px;
-    padding: 3px 8px;
-}
-#StatusPill {
-    background-color: %(ACCENT_SOFT)s;
-    color: %(ACCENT_HOVER)s;
-    border: none;
-    border-radius: 9px;
-    padding: 4px 9px;
-    font-size: 10px;
-    font-weight: 800;
-}
-
-#InsightPanel {
-    margin: 4px 4px 4px 0;
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 16px;
-}
-#InsightPanel #SectionCard {
-    background-color: %(MAIN_BG_ALT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 12px;
-}
-
-#PageHeader { background: transparent; }
-#PageGlyph {
-    min-width: 26px;
-    min-height: 26px;
-    qproperty-alignment: AlignCenter;
-    color: %(ACCENT_HOVER)s;
-    background-color: %(ACCENT_SOFT)s;
-    border-radius: 13px;
-    font-size: 14px;
-}
-#PageTitle {
-    color: %(TEXT)s;
-    font-size: 20px;
-    font-weight: 800;
-    letter-spacing: 0.1px;
-}
-#PageSubtitle, #MutedLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
-#SectionTitle {
-    color: %(TEXT)s;
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.15px;
-    text-transform: none;
-}
-
-#HeroCard {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: 18px;
-}
-#HeroTitle {
-    color: %(TEXT)s;
-    font-family: %(TITLE_FONT)s;
-    font-size: 27px;
-    font-weight: 700;
-}
-#HeroSubtitle { color: %(TEXT_MUTED)s; font-size: 12px; }
-#HeroBadge, #Badge, #BadgeAccent {
-    border-radius: 12px;
-    padding: 4px 9px;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.7px;
-}
-#HeroBadge, #BadgeAccent {
-    background-color: %(ACCENT_SOFT)s;
-    color: %(ACCENT_HOVER)s;
-    border: 1px solid %(INPUT_BORDER)s;
-}
-#Badge {
-    background-color: %(MAIN_BG_ALT)s;
-    color: %(TEXT_MUTED)s;
-    border: 1px solid %(BORDER_SOFT)s;
-}
-
-#SectionCard, #StatCard {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 15px;
-}
-#SectionCard:hover, #StatCard:hover { border-color: %(INPUT_BORDER)s; }
-#StatTile {
-    min-height: 56px;
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 14px;
-}
-#StatTile:hover { border-color: %(ACCENT)s; background-color: %(ITEM_HOVER)s; }
-#StatValue { color: %(ACCENT_HOVER)s; font-size: 19px; font-weight: 800; }
-#StatLabel { color: %(TEXT_MUTED)s; font-size: 9px; }
-
-#ActionTile {
-    min-height: 88px;
-    background-color: %(MAIN_BG_ALT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 14px;
-    padding: 8px;
-}
-#ActionTile:hover {
-    background-color: %(ACCENT_SOFT)s;
-    border-color: %(ACCENT)s;
-}
-#ActionTile:pressed { background-color: %(ITEM_SELECTED)s; }
-#ActionGlyph { color: %(ACCENT_HOVER)s; font-size: 24px; font-weight: 700; }
-#ActionLabel { color: %(TEXT)s; font-size: 12px; font-weight: 800; }
-#ActionHint { color: %(TEXT_MUTED)s; font-size: 9px; }
-
-#Chip {
-    min-height: 22px;
-    background-color: %(MAIN_BG_ALT)s;
-    color: %(TEXT_MUTED)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 11px;
-    padding: 3px 10px;
-    font-size: 10px;
-    font-weight: 700;
-}
-#Chip:hover { color: %(TEXT)s; border-color: %(INPUT_BORDER)s; background-color: %(ITEM_HOVER)s; }
-#Chip:checked { color: %(ACCENT_HOVER)s; background-color: %(ACCENT_SOFT)s; border-color: %(ACCENT)s; }
-
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit {
-    min-height: 24px;
-    background-color: %(INPUT_BG)s;
-    color: %(TEXT)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: 9px;
-    padding: 5px 9px;
-    selection-background-color: %(ACCENT_SOFT)s;
-}
-QTextEdit, QPlainTextEdit { padding: 8px; }
-QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover, QComboBox:hover, QSpinBox:hover, QDateEdit:hover, QTimeEdit:hover, QDateTimeEdit:hover { border-color: %(ACCENT)s; }
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
-    background-color: %(CARD_BG)s;
-    border-color: %(INPUT_FOCUS)s;
-}
-
-QPushButton, #CafeButton, #TopIconButton {
-    min-height: 24px;
-    color: %(BUTTON_TEXT)s;
-    background-color: %(BUTTON_BG)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: 9px;
-    padding: 5px 10px;
-    font-size: 11px;
-    font-weight: 700;
-}
-QPushButton:hover, #CafeButton:hover, #TopIconButton:hover {
-    background-color: %(BUTTON_HOVER)s;
-    border-color: %(ACCENT)s;
-}
-QPushButton#TopAccentButton {
-    min-height: 26px;
-    background-color: %(ACCENT)s;
-    color: %(TEXT_ON_ACCENT)s;
-    border: 1px solid %(ACCENT)s;
-    border-radius: 9px;
-    font-weight: 800;
-}
-QPushButton#TopAccentButton:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
-
-#CafeList, #TabList, QTreeWidget {
-    background-color: transparent;
-    border: none;
-    outline: none;
-    padding: 2px;
-}
-#CafeList::item, QTreeWidget::item {
-    color: %(TEXT_MUTED)s;
-    background-color: transparent;
-    border: 1px solid transparent;
-    border-radius: 9px;
-    margin: 2px;
-    padding: 7px 8px;
-}
-/* TabList rows use custom widgets: keep the ::item padding-free so the
-   title is not sliced in half (see the sidebar tab desk). */
-#TabList::item {
-    color: %(TEXT_MUTED)s;
-    background-color: transparent;
-    border: 1px solid transparent;
-    border-radius: 9px;
-}
-#CafeList::item:hover, #TabList::item:hover, QTreeWidget::item:hover {
-    color: %(TEXT)s;
-    background-color: %(ITEM_HOVER)s;
-    border-color: %(BORDER_SOFT)s;
-}
-#CafeList::item:selected, #TabList::item:selected, QTreeWidget::item:selected {
-    color: %(TEXT)s;
-    background-color: %(ACCENT_SOFT)s;
-    border-color: %(INPUT_BORDER)s;
-}
-
-/* Browser surface: a quiet control deck around the live webpage. */
-#Sidebar { background-color: %(SIDEBAR_BG)s; }
-#SidebarFooter { background-color: transparent; }
-#TabCounter, #ZoomLabel { color: %(TEXT_MUTED)s; font-size: 10px; }
-#WorkspaceCombo, #SearchEngine {
-    min-height: 28px;
-    background-color: %(MAIN_BG_ALT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 9px;
-    padding: 4px 22px 4px 9px;
-    font-size: 10px;
-    font-weight: 700;
-}
-#NewTabBtn {
-    min-height: 30px;
-    background-color: %(ACCENT_SOFT)s;
-    color: %(ACCENT_HOVER)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: 10px;
-    padding: 6px 10px;
-    font-weight: 800;
-}
-#NewTabBtn:hover { background-color: %(ITEM_SELECTED)s; border-color: %(ACCENT)s; }
-#SidebarPanelBtn, #TopBar QToolButton, #TopIconButton {
-    min-width: 28px;
-    min-height: 28px;
-    background-color: transparent;
-    color: %(TEXT_MUTED)s;
-    border: 1px solid transparent;
-    border-radius: 9px;
-    padding: 4px 6px;
-    font-weight: 800;
-}
-#SidebarPanelBtn:hover, #TopBar QToolButton:hover, #TopIconButton:hover {
-    color: %(TEXT)s;
-    background-color: %(ITEM_HOVER)s;
-    border-color: %(BORDER_SOFT)s;
-}
-#SidebarPanelBtn:checked { color: %(ACCENT_HOVER)s; background-color: %(ACCENT_SOFT)s; border-color: %(INPUT_BORDER)s; }
-#SidebarCollapse {
-    min-width: 22px;
-    min-height: 22px;
-    background-color: %(MAIN_BG_ALT)s;
-    color: %(TEXT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 8px;
-    padding: 0 4px;
-    font-size: 13px;
-    font-weight: 700;
-}
-#SidebarCollapse:hover {
-    color: %(ACCENT_HOVER)s;
-    background-color: %(ITEM_HOVER)s;
-    border-color: %(ACCENT)s;
-}
-#TopBar {
-    min-height: 42px;
-    margin: 2px;
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 14px;
-    padding: 3px;
-}
-#UrlBar {
-    min-height: 28px;
-    background-color: %(MAIN_BG_ALT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 11px;
-    padding: 5px 10px;
-    font-weight: 600;
-}
-#UrlBar:focus { background-color: %(INPUT_BG)s; border-color: %(INPUT_FOCUS)s; }
-#WebContainer { background-color: %(MAIN_BG)s; border: none; }
-#TabFilter {
-    min-height: 28px;
-    margin: 0 2px 5px 2px;
-    background-color: %(MAIN_BG_ALT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 10px;
-    padding: 5px 9px;
-    font-size: 10px;
-}
-#DormantTabView {
-    background-color: %(MAIN_BG)s;
-    border: 1px dashed %(BORDER_SOFT)s;
-    border-radius: 14px;
-}
+    border: 1px solid %(RULE)s; border-radius: %(RADIUS_PILL)s;
+    background: %(SURFACE_SUNK)s; text-align: center; max-height: 8px;
+    color: transparent;
+}
+QProgressBar::chunk { background-color: %(ACCENT)s; border-radius: %(RADIUS_PILL)s; }
+QSlider::groove:horizontal { height: 4px; background: %(RULE)s; border-radius: 2px; }
+QSlider::handle:horizontal {
+    width: 14px; margin: -6px 0; border-radius: 7px;
+    background: %(ACCENT)s; border: 1px solid %(ACCENT)s;
+}
+QSlider::sub-page:horizontal { background: %(ACCENT)s; border-radius: 2px; }
 
 QGroupBox {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 12px;
-    margin-top: 12px;
-    padding: 12px 10px 10px 10px;
-    color: %(TEXT)s;
-    font-weight: 700;
-}
-QGroupBox::title { color: %(ACCENT_HOVER)s; padding: 0 6px; }
-QTableView, QTreeView {
-    background-color: %(CARD_BG)s;
-    color: %(TEXT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 10px;
-    gridline-color: %(BORDER_SOFT)s;
-}
-QHeaderView::section {
-    background-color: %(MAIN_BG_ALT)s;
-    color: %(TEXT_MUTED)s;
-    border: none;
-    border-bottom: 1px solid %(BORDER_SOFT)s;
-    padding: 6px;
-    font-size: 10px;
-    font-weight: 800;
-}
-QMenu {
-    background-color: %(MENU_BG)s;
-    color: %(TEXT)s;
-    border: 1px solid %(INPUT_BORDER)s;
+    background-color: transparent;
+    border: 1px solid %(RULE)s;
     border-radius: %(RADIUS)s;
-    padding: 5px;
-}
-QMenu::item { padding: 7px 20px 7px 10px; border-radius: %(RADIUS_XS)s; }
-QMenu::item:selected { background-color: %(ACCENT_SOFT)s; color: %(TEXT)s; }
-
-/* ---------- 5.6 refinement: one geometry scale, gentler focus ----------------
-   Every radius below resolves through core/theme_data.DEFAULTS, so a surface
-   can no longer invent its own corner. */
-QPushButton, #CafeButton, #TopIconButton { border-radius: %(RADIUS_SM)s; }
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit { border-radius: %(RADIUS_SM)s; }
-#HeroCard { border-radius: %(RADIUS_LG)s; }
-#SectionCard, #StatCard, #ActionTile, #StatTile, #InsightPanel { border-radius: %(RADIUS)s; }
-#ShellOmnibar { border-radius: %(RADIUS_LG)s; }
-#UrlBar { border-radius: %(RADIUS_SM)s; }
-/* Anything pill-shaped (connection state, zoom chip, status pill, café chips)
-   uses the pill token instead of spelling out 999px. */
-#SiteStatePill, #ZoomLabel, #StatusPill, #Chip, #Pill {
-    border-radius: %(RADIUS_PILL)s;
-}
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus,
-#UrlBar:focus, #ShellOmnibar:focus {
-    border: 1px solid %(ACCENT)s;
-}
-/* Keyboard users get the same "where am I" signal as a mouse hover has always
-   had: focus is drawn on every interactive control, not only on text fields. */
-QPushButton:focus, QToolButton:focus, #CafeButton:focus, #TopIconButton:focus,
-#SidebarPanelBtn:focus, #SidebarCollapse:focus {
-    border: 1px solid %(ACCENT)s;
-    color: %(ACCENT_HOVER)s;
-}
-
-/* ---------- 5.7 browser control deck: one calm, unified toolbar ---------- */
-#TopIconButton { font-size: 13px; font-weight: 700; }
-#SidebarPanelBtn {
-    min-width: 34px; min-height: 32px;
-    font-size: 15px;
-    border-radius: %(RADIUS_SM)s;
-}
-#SidebarPanelBtn:hover { background-color: %(ITEM_HOVER)s; border-color: %(BORDER_SOFT)s; color: %(TEXT)s; }
-#SidebarPanelBtn:checked {
-    background-color: %(ACCENT_SOFT)s;
-    border-color: %(INPUT_BORDER)s;
-    color: %(ACCENT_HOVER)s;
-}
-#NewTabBtn { min-height: 32px; border-radius: 10px; }
-#OptionsBtn {
-    min-height: 32px;
-    background-color: %(BUTTON_BG)s;
-    color: %(TEXT_MUTED)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: 10px;
-    padding: 5px 12px;
-    font-weight: 700;
-}
-#OptionsBtn:hover { background-color: %(BUTTON_HOVER)s; border-color: %(ACCENT)s; color: %(TEXT)s; }
-#TabList::item:selected { border-left: 3px solid %(ACCENT)s; }
-#TabCounter { color: %(TEXT_MUTED)s; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; }
-
-/* ---------- 6.5 final visual polish ----------
-   Focus rings, hover lifts, dialog buttons and the floating helpers
-   (find bar / toast) follow the theme instead of hard-coded colors. */
-
-/* Primary action pop: accent-filled primary buttons stand out on cards. */
-QPushButton#TopAccentButton { padding: 6px 14px; }
-
-/* Softer, consistent item selection everywhere (lists, trees, combo popups). */
-QListWidget::item:selected, QTreeWidget::item:selected, QComboBox QAbstractItemView::item:selected {
-    background-color: %(ITEM_SELECTED)s;
+    margin-top: 14px;
+    padding: 14px 12px 10px 12px;
     color: %(TEXT)s;
-    border-radius: 8px;
-}
-
-/* Tab rows: clearer active state with the accent bar + filled chip. */
-#TabList::item:selected {
-    background-color: %(ACCENT_SOFT)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-left: 3px solid %(ACCENT)s;
-    color: %(TEXT)s;
-    font-weight: 700;
-}
-
-/* Combo popup rows mirror list rows. */
-QComboBox QAbstractItemView { outline: none; }
-QComboBox QAbstractItemView::item { min-height: 24px; padding: 4px 8px; border-radius: 6px; }
-
-/* Tooltips: slightly larger padding, softer border. */
-QToolTip {
-    border: 1px solid %(INPUT_BORDER)s;
-    background-color: %(MENU_BG)s;
-    color: %(TEXT)s;
-    padding: 6px 10px;
-    border-radius: 8px;
-}
-
-/* Floating helpers styled by the shell, not hard-coded. */
-#FindBar {
-    background-color: %(CARD_BG)s;
-    border: 1px solid %(INPUT_BORDER)s;
-    border-radius: 10px;
-}
-#FindBar QLineEdit {
-    background-color: %(INPUT_BG)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 8px;
-}
-#FindBar QLineEdit:focus { border-color: %(ACCENT)s; }
-#ToastLabel {
-    background-color: %(MENU_BG)s;
-    color: %(TEXT)s;
-    border: 1px solid %(ACCENT)s;
-    border-radius: 12px;
-    padding: 7px 14px;
-    font-size: 12px;
     font-weight: 600;
 }
-/* Chrome-style thin page-load bar under the toolbar. */
-#LoadProgress {
-    background: transparent;
-    border: none;
-    max-height: 3px;
-    margin: 0;
-}
-#LoadProgress::chunk {
-    background-color: %(ACCENT)s;
-    border-radius: 1px;
-}
-/* Opera GX-style web panel dock beside the page. */
-#WebPanelDock {
-    background-color: %(CARD_BG)s;
-    border-left: 1px solid %(BORDER_SOFT)s;
-}
-/* Vivaldi/Arc-style split view dock (left side). */
-#SplitDock {
-    background-color: %(CARD_BG)s;
-    border-right: 1px solid %(BORDER_SOFT)s;
-}
-#WebPanelHeader {
-    background-color: %(MAIN_BG_ALT)s;
-    border-bottom: 1px solid %(BORDER_SOFT)s;
-}
-#WebPanelView {
-    background-color: %(MAIN_BG)s;
-}
-/* Chrome-style save-password prompt bar. */
-#SavePasswordBar {
-    background-color: %(ACCENT_SOFT)s;
-    border-top: 1px solid %(ACCENT)s;
-}
-/* Edge-Copilot-style AI sidebar dock. */
-#AISideDock {
-    background-color: %(CARD_BG)s;
-    border-left: 1px solid %(BORDER_SOFT)s;
-}
-/* Slim right dock rail (panel + AI toggles). */
-#DockRail {
-    background-color: %(SIDEBAR_BG)s;
-    border-left: 1px solid %(BORDER_SOFT)s;
-}
-/* Chrome-style link-hover target strip. */
-#LinkPreview {
-    background-color: %(CARD_BG)s;
-    color: %(TEXT_MUTED)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: 6px;
-    padding: 3px 10px;
-    font-size: 11px;
+QGroupBox::title {
+    subcontrol-origin: margin; subcontrol-position: top left;
+    padding: 0 6px; color: %(CLAY)s; font-size: 10px; font-weight: 700;
 }
 
-/* ---------- 6.6 browser chrome: flat icons, one address field ----------------
-   Two reports from a real session drive this block: the toolbar read as a row of
-   separate boxes, and the caret on the "Control" button was drawn outside its
-   own button.  Both are layout artefacts of styling every control individually. */
-
-/* Icon buttons are flat until touched. The earlier type-level rule
-   (QPushButton, #CafeButton, #TopIconButton) put a border and a filled
-   background on every glyph, which is what made the toolbar read as a form.
-   #TopIconButton is only ever an icon-only control (toolbar glyphs, dock and
-   panel headers), so one flat rule is enough — hover and focus still answer. */
-#TopIconButton {
-    background-color: transparent;
-    border: 1px solid transparent;
-}
-#TopIconButton:hover {
-    background-color: %(ITEM_HOVER)s;
-    border-color: %(BORDER_SOFT)s;
-    color: %(TEXT)s;
-}
-#TopIconButton:focus {
-    background-color: transparent;
-    border-color: %(ACCENT)s;
-    color: %(ACCENT_HOVER)s;
-}
-/* A held/checked glyph (dock toggles) keeps a fill so "on" is still readable. */
-#TopIconButton:checked {
-    background-color: %(ITEM_SELECTED)s;
-    border-color: %(ITEM_SELECTED_BORDER)s;
-    color: %(ACCENT_HOVER)s;
-}
-
-/* Address cluster: the connection pill and the address share one rounded field
-   instead of sitting in two adjacent boxes. */
-#AddressCluster {
-    background-color: %(MAIN_BG_ALT)s;
-    border: 1px solid %(BORDER_SOFT)s;
-    border-radius: %(RADIUS_SM)s;
-}
-/* Focus is painted on the frame (the field itself is borderless inside it). The
-   property is set in SearchWindow._set_address_cluster_focus. */
-#AddressCluster[focused="true"] {
-    background-color: %(INPUT_BG)s;
-    border-color: %(ACCENT)s;
-}
-#AddressCluster #UrlBar,
-#AddressCluster #UrlBar:hover,
-#AddressCluster #UrlBar:focus {
-    background: transparent;
-    border: none;
-}
-
-/* Menu carets: Qt anchors ::menu-indicator to the bottom-right of a styled
-   button, so "⚙ Control" grew an arrow below its own edge. The caret now lives
-   in the button label (window.py) and the subcontrol is switched off. */
-QPushButton::menu-indicator,
-QToolButton::menu-indicator {
-    image: none;
-    width: 0;
-    height: 0;
+QCalendarWidget QWidget#qt_calendar_navigationbar { background-color: %(MAIN_BG_ALT)s; }
+QCalendarWidget QAbstractItemView:enabled {
+    background-color: %(SURFACE)s; color: %(TEXT)s;
+    selection-background-color: %(ACCENT)s; selection-color: %(TEXT_ON_ACCENT)s;
 }
 """ % p + _VERB_QSS % p
 
 
-def dialog_qss(mode: str = "cafe-night", accent: str | None = None):
-    """Stylesheet shared by all modal dialogs — consistent with the modern main shell."""
+def dialog_qss(mode: str = "minimal", accent: str | None = None):
+    """Stylesheet shared by all modal dialogs — the same paper as the shell.
+
+    Dialogs are where a design system usually falls apart: one padding here, a
+    bare button there.  They get the same surfaces, the same two text sizes and
+    the same single filled primary as the workspaces behind them.
+    """
     p = _palette(mode, accent)
     return """
-    QDialog {
-        background-color: %(MAIN_BG)s; color: %(TEXT)s; font-size: 13px;
-    }
-    QLabel { color: %(TEXT)s; font-size: 13px; }
+    QDialog { background-color: %(MAIN_BG)s; color: %(TEXT)s; font-size: 13px; }
+    QDialog QWidget { background-color: transparent; font-family: %(FONT_FAMILY)s; }
+    QLabel { color: %(TEXT)s; font-size: 13px; background: transparent; border: none; }
     QLabel#MutedLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
+    QLabel#DialogTitle {
+        color: %(TEXT)s;
+        font-family: %(FONT_DISPLAY)s;
+        font-size: 20px;
+        font-weight: 600;
+    }
+    QLabel#DialogEyebrow { color: %(CLAY)s; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+    QLabel#DialogBody { color: %(TEXT_MUTED)s; font-size: 12px; }
+    QFrame#DialogHeader { border: none; border-bottom: 1px solid %(RULE)s; }
+    QFrame#DialogFooter { border: none; border-top: 1px solid %(RULE)s; }
     QPushButton {
         background-color: %(BUTTON_BG)s; color: %(BUTTON_TEXT)s;
-        border: 1px solid %(INPUT_BORDER)s; border-radius: %(RADIUS_SM)s;
-        padding: 6px 12px; font-size: 13px; font-weight: 600;
+        border: 1px solid %(RULE)s; border-radius: %(RADIUS_SM)s;
+        padding: 7px 14px; font-size: 12px; font-weight: 600; min-height: 24px;
     }
-    QPushButton:hover { background-color: %(BUTTON_HOVER)s; border-color: %(ACCENT)s; }
+    QPushButton:hover { background-color: %(BUTTON_HOVER)s; border-color: %(RULE_STRONG)s; }
     QPushButton:pressed { background-color: %(ITEM_SELECTED)s; }
-    QPushButton:disabled { color: %(TEXT_DIM)s; background-color: %(MAIN_BG_ALT)s; border-color: %(BORDER_SOFT)s; }
+    QPushButton:disabled { color: %(TEXT_DIM)s; background-color: transparent; border-color: %(RULE)s; }
+    QPushButton:default {
+        background-color: %(ACCENT)s; color: %(TEXT_ON_ACCENT)s;
+        border-color: %(ACCENT)s; font-weight: 700;
+    }
+    QPushButton:default:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit {
         background-color: %(INPUT_BG)s; color: %(TEXT)s;
-        border: 1px solid %(INPUT_BORDER)s; border-radius: %(RADIUS_SM)s;
-        padding: 5px 9px; font-size: 13px; selection-background-color: %(MENU_ITEM_SEL)s;
-        selection-color: %(TEXT)s;
+        border: 1px solid %(RULE)s; border-radius: %(RADIUS_SM)s;
+        padding: 6px 10px; font-size: 13px; min-height: 24px;
+        selection-background-color: %(ACCENT_WASH)s; selection-color: %(TEXT)s;
     }
-    QLineEdit:hover, QTextEdit:hover, QComboBox:hover { border-color: %(ACCENT)s; }
-    QLineEdit:focus, QTextEdit:focus, QComboBox:focus { border-color: %(INPUT_FOCUS)s; }
+    QLineEdit:hover, QTextEdit:hover, QComboBox:hover { border-color: %(RULE_STRONG)s; }
+    QLineEdit:focus, QTextEdit:focus, QComboBox:focus { border-color: %(ACCENT)s; }
     QListWidget, QTreeWidget {
-        background-color: %(CARD_BG)s; color: %(TEXT)s;
-        border: 1px solid %(BORDER_SOFT)s; border-radius: %(RADIUS_SM)s; padding: 4px; font-size: 13px;
+        background-color: %(SURFACE)s; color: %(TEXT)s;
+        border: 1px solid %(RULE)s; border-radius: %(RADIUS)s; padding: 4px; font-size: 13px;
     }
-    QListWidget::item, QTreeWidget::item { padding: 6px 7px; border-radius: 6px; }
-    QListWidget::item:hover, QTreeWidget::item:hover { background-color: %(ITEM_HOVER)s; border-radius: 6px; }
-    QListWidget::item:selected, QTreeWidget::item:selected { background-color: %(MENU_ITEM_SEL)s; color: %(TEXT)s; border-radius: 6px; }
-    QCheckBox, QRadioButton { color: %(TEXT_MUTED)s; spacing: 8px; }
+    QListWidget::item, QTreeWidget::item { padding: 7px 8px; border-radius: 6px; }
+    QListWidget::item:hover, QTreeWidget::item:hover { background-color: %(ITEM_HOVER)s; }
+    QListWidget::item:selected, QTreeWidget::item:selected {
+        background-color: %(ACCENT_WASH)s; color: %(TEXT)s; border-left: 2px solid %(ACCENT)s;
+    }
+    QCheckBox, QRadioButton { color: %(TEXT)s; spacing: 8px; }
     QCheckBox::indicator, QRadioButton::indicator {
-        width: 16px; height: 16px; border-radius: 5px;
-        border: 1px solid %(INPUT_BORDER)s; background: %(INPUT_BG)s;
+        width: 15px; height: 15px; border-radius: 4px;
+        border: 1px solid %(RULE_STRONG)s; background: %(INPUT_BG)s;
     }
     QRadioButton::indicator { border-radius: 8px; }
     QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: %(ACCENT)s; }
     QCheckBox::indicator:checked { background: %(ACCENT)s; border-color: %(ACCENT)s; }
-    QRadioButton::indicator:checked { border: 5px solid %(ACCENT)s; background: %(INPUT_BG)s; }
+    QRadioButton::indicator:checked { border: 4px solid %(ACCENT)s; background: %(INPUT_BG)s; }
     QComboBox QAbstractItemView {
         background-color: %(MENU_BG)s; color: %(TEXT)s;
-        border: 1px solid %(BORDER_SOFT)s; border-radius: %(RADIUS_SM)s;
-        selection-background-color: %(MENU_ITEM_SEL)s; selection-color: %(TEXT)s;
+        border: 1px solid %(RULE_STRONG)s; border-radius: %(RADIUS_XS)s;
+        selection-background-color: %(ACCENT_WASH)s; selection-color: %(TEXT)s;
     }
     QGroupBox {
-        border: 1px solid %(BORDER_SOFT)s; border-radius: %(RADIUS_SM)s; margin-top: 10px; padding-top: 8px;
+        background-color: transparent; border: 1px solid %(RULE)s;
+        border-radius: %(RADIUS)s; margin-top: 12px; padding: 12px 10px 10px 10px;
     }
-    QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 6px; color: %(ACCENT_HOVER)s; }
+    QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 6px; color: %(CLAY)s; }
+    QScrollArea { border: none; background: transparent; }
+    QToolTip {
+        background-color: %(MENU_BG)s; color: %(TEXT)s;
+        border: 1px solid %(RULE_STRONG)s; border-radius: %(RADIUS_XS)s; padding: 6px 10px;
+    }
 
     /* shared components */
     #PageHeader { background: transparent; }
-    #PageGlyph { color: %(ACCENT_HOVER)s; font-size: 20px; }
-    #PageTitle { color: %(TEXT)s; }
-    #PageSubtitle { color: %(TEXT_MUTED)s; font-size: 11px; }
-    #StatTile { background-color: %(CARD_BG)s; border: 1px solid %(BORDER_SOFT)s; border-radius: %(RADIUS_SM)s; }
-    #StatValue { color: %(ACCENT_HOVER)s; }
+    #PageTitle { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 20px; font-weight: 600; }
+    #PageSubtitle, #MutedLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
+    #SectionTitle { color: %(TEXT)s; font-weight: 700; }
+    #StatTile { background-color: %(SURFACE)s; border: 1px solid %(RULE)s; }
+    #StatValue { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; }
     #StatLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
     #SectionHeaderRow { background: transparent; }
-    #EmptyState { background-color: %(CARD_BG)s; border: 1px dashed %(BORDER_SOFT)s; border-radius: %(RADIUS_SM)s; }
-    #EmptyGlyph { color: %(ACCENT_SOFT)s; font-size: 26px; }
-    #ActionTile { background-color: %(CARD_BG)s; border: 1px solid %(BORDER_SOFT)s; border-radius: %(RADIUS)s; padding: 6px; }
+    #EmptyState { background-color: %(SURFACE_SUNK)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS)s; }
+    #EmptyGlyph { color: %(TEXT_DIM)s; font-size: 18px; }
+    #ActionTile { background-color: transparent; border: 1px solid %(RULE)s; border-radius: %(RADIUS)s; padding: 8px; }
     #ActionTile:hover { border-color: %(ACCENT)s; background-color: %(ITEM_HOVER)s; }
-    #ActionGlyph { color: %(ACCENT_HOVER)s; font-size: 22px; }
-    #ActionLabel { color: %(TEXT)s; font-weight: 700; }
-    #Chip { background-color: %(MAIN_BG_ALT)s; color: %(TEXT_MUTED)s; border: 1px solid %(BORDER_SOFT)s; border-radius: 999px; padding: 5px 13px; font-size: 11px; font-weight: 600; }
-    #Chip:hover { border-color: %(ACCENT)s; color: %(TEXT)s; }
-    #Chip:checked { background-color: %(ACCENT_SOFT)s; color: %(ACCENT_HOVER)s; border-color: %(ACCENT)s; }
-    #Badge { background-color: %(MAIN_BG_ALT)s; color: %(TEXT_MUTED)s; border: 1px solid %(BORDER_SOFT)s; border-radius: 999px; padding: 2px 10px; font-size: 10px; font-weight: 700; }
-    #BadgeAccent { background-color: %(ACCENT_SOFT)s; color: %(ACCENT_HOVER)s; border: 1px solid %(INPUT_BORDER)s; border-radius: 999px; padding: 2px 10px; font-size: 10px; font-weight: 800; }
-
-    /* Dialogs use the same paper-card rhythm as the full workspace. */
-    QDialog { background-color: %(MAIN_BG)s; }
-    QDialog QWidget { font-family: %(FONT_FAMILY)s; }
-    QPushButton { min-height: 25px; border-radius: 9px; padding: 5px 11px; }
-    /* The dialog's default action (QMessageBox Yes/OK) pops with the accent. */
-    QPushButton:default {
-        background-color: %(ACCENT)s;
-        color: %(TEXT_ON_ACCENT)s;
-        border-color: %(ACCENT)s;
-        font-weight: 800;
-    }
-    QPushButton:default:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
-    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit { min-height: 24px; border-radius: 9px; }
-    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: %(ACCENT)s; }
-    QListWidget, QTreeWidget { background-color: %(CARD_BG)s; border: 1px solid %(BORDER_SOFT)s; border-radius: 12px; padding: 3px; }
-    QListWidget::item, QTreeWidget::item { border-radius: 8px; padding: 7px; }
-    QListWidget::item:selected, QTreeWidget::item:selected {
-        background-color: %(ITEM_SELECTED)s; color: %(TEXT)s; border-left: 3px solid %(ACCENT)s;
-    }
-    QGroupBox { background-color: %(CARD_BG)s; border-radius: 12px; padding: 11px 9px 9px 9px; }
-    QToolTip {
-        background-color: %(MENU_BG)s; color: %(TEXT)s;
-        border: 1px solid %(INPUT_BORDER)s; border-radius: 8px; padding: 6px 10px;
-    }
+    #ActionGlyph { color: %(ACCENT_HOVER)s; font-size: 20px; }
+    #ActionLabel { color: %(TEXT)s; font-weight: 600; }
+    #Chip { background-color: transparent; color: %(TEXT_MUTED)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS_PILL)s; padding: 5px 13px; font-size: 11px; font-weight: 600; }
+    #Chip:hover { border-color: %(RULE_STRONG)s; color: %(TEXT)s; }
+    #Chip:checked { background-color: %(ACCENT_WASH)s; color: %(ACCENT_HOVER)s; border-color: %(ACCENT)s; }
+    #Badge { background-color: transparent; color: %(TEXT_MUTED)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS_PILL)s; padding: 2px 10px; font-size: 10px; font-weight: 700; }
+    #BadgeAccent { background-color: %(MAIN_BG_ALT)s; color: %(TEXT_MUTED)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS_PILL)s; padding: 2px 10px; font-size: 10px; font-weight: 700; }
     """ % p + _VERB_QSS % p
 
 
@@ -1330,13 +1037,13 @@ def collapse_btn_qss(mode: str = "cafe-night", accent: str | None = None):
         border-radius: 8px; min-width: 32px; min-height: 32px; font-size: 14px;
         font-weight: 700; padding: 0;
     }
-    QToolButton:hover { color: %(ACCENT_HOVER)s; background: %(ITEM_HOVER)s; border-color: %(BORDER_SOFT)s; }
+    QToolButton:hover { color: %(TEXT)s; background: %(ITEM_HOVER)s; border-color: %(RULE)s; }
     QToolButton[collapsed="true"] {
-        background: %(ACCENT_SOFT)s; color: %(ACCENT_HOVER)s;
-        border: 2px solid %(ACCENT)s; border-radius: 10px;
+        background: %(ACCENT_WASH)s; color: %(ACCENT_HOVER)s;
+        border: 1px solid %(ACCENT)s; border-radius: 8px;
     }
     QToolButton[collapsed="true"]:hover {
-        background: %(ITEM_SELECTED)s; color: %(ACCENT_HOVER)s; border-color: %(ACCENT_HOVER)s;
+        background: %(ACCENT_WASH)s; color: %(ACCENT_HOVER)s; border-color: %(ACCENT)s;
     }
     """ % p
 
@@ -1351,6 +1058,3 @@ def animate_entrance(widget, duration: int = 160) -> None:
     """
     if widget is not None:
         widget.update()
-
-
-

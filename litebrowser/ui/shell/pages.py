@@ -313,6 +313,53 @@ class _WeekActivityChart(QWidget):
         painter.end()
 
 
+class _EditorialSplit(QWidget):
+    """Two columns of unequal weight that fold into one at narrow widths.
+
+    A dashboard's job is not to prove it can make four equal rectangles.  The
+    page sets a wide working column and a narrower margin column; when the desk
+    gets small the margin column simply drops beneath the working one, in order,
+    with nothing clipped and no horizontal scroll.
+    """
+
+    def __init__(self, primary: QWidget, secondary: QWidget, breakpoint: int = 980, parent=None):
+        super().__init__(parent)
+        self._primary = primary
+        self._secondary = secondary
+        self._breakpoint = breakpoint
+        self._stacked = None
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(26)
+        self._grid.setVerticalSpacing(22)
+        self._reflow()
+
+    def _reflow(self):
+        stacked = self.width() < self._breakpoint
+        if stacked == self._stacked:
+            return
+        while self._grid.count():
+            self._grid.takeAt(0)
+        for column in range(2):
+            self._grid.setColumnStretch(column, 0)
+        self._grid.addWidget(self._primary, 0, 0)
+        if stacked:
+            self._grid.setColumnStretch(0, 1)
+            self._grid.addWidget(self._secondary, 1, 0)
+        else:
+            # 7:5 rather than 1:1 — the working column is where the eye lands.
+            self._grid.setColumnStretch(0, 7)
+            self._grid.setColumnStretch(1, 5)
+            self._grid.addWidget(self._secondary, 0, 1)
+        self._stacked = stacked
+        self.updateGeometry()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reflow()
+
+
 class HomeDashboardPage(QWidget):
     def __init__(self, shell):
         super().__init__()
@@ -340,121 +387,59 @@ class HomeDashboardPage(QWidget):
         layout.addWidget(self.home_scroll)
         layout = content_layout
 
-        hero = QFrame()
-        hero.setObjectName("HeroCard")
-        hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(20, 18, 20, 18)
-        hero_layout.setSpacing(12)
-
-        brand_row = QHBoxLayout()
-        # Time-of-day greeting: the home hero greets like the new-tab page
-        # does (v6.4 used a static tagline on Home only).
-        try:
-            from litebrowser.core.greetings import cafe_greeting
-
-            _eyebrow, headline = cafe_greeting()
-        except Exception:
-            headline = "Your quiet corner of the web"
-        brand = QLabel(headline)
-        brand.setObjectName("HeroTitle")
-        brand.setFont(components._font(26, components.WEIGHT_BOLD))
-        # Wrap instead of forcing a ~1000px minimum width: the long greeting
-        # used to make the whole dashboard min-width wider than most shell
-        # viewports, so narrow windows clipped the right edge.
-        brand.setWordWrap(True)
-        brand_row.addWidget(brand, 1)
-        self.lbl_today = QLabel(time.strftime("%A, %d %B · %H:%M"))
-        self.lbl_today.setObjectName("HeroBadge")
-        brand_row.addWidget(self.lbl_today, 0, Qt.AlignVCenter)
+        # ---- masthead: the page speaks first, like the top of a morning brief
+        hour = time.localtime().tm_hour
+        greeting = (
+            "Good morning." if 5 <= hour < 12
+            else "Good afternoon." if hour < 18
+            else "Good evening."
+        )
+        trailing = QWidget()
+        trailing_layout = QVBoxLayout(trailing)
+        trailing_layout.setContentsMargins(0, 0, 0, 0)
+        trailing_layout.setSpacing(2)
+        trailing_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        self.lbl_today = QLabel(time.strftime("%A %d %B · %H:%M"))
+        self.lbl_today.setObjectName("MastheadDate")
+        self.lbl_today.setAlignment(Qt.AlignRight)
+        trailing_layout.addWidget(self.lbl_today)
+        self.lbl_home_version = QLabel(f"v{app_version.APP_VERSION}")
+        self.lbl_home_version.setObjectName("MutedLabel")
+        self.lbl_home_version.setAlignment(Qt.AlignRight)
+        trailing_layout.addWidget(self.lbl_home_version)
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self._tick_clock)
         self._clock_timer.start(60000)
-        self.lbl_home_version = QLabel(f"v{app_version.APP_VERSION}")
-        self.lbl_home_version.setObjectName("HeroBadge")
-        brand_row.addWidget(self.lbl_home_version, 0, Qt.AlignVCenter)
-        hero_layout.addLayout(brand_row)
-
-        subtitle = QLabel(
-            "A small local-first workspace for browsing, thinking, and keeping the things worth returning to."
+        masthead = components.masthead(
+            time.strftime("%A · %d %B"),
+            greeting,
+            "A quiet table for reading, thinking, and keeping what matters. Everything here stays on this device.",
+            trailing,
         )
-        subtitle.setWordWrap(True)
-        subtitle.setObjectName("HeroSubtitle")
-        hero_layout.addWidget(subtitle)
+        layout.addWidget(masthead)
 
+        # ---- one command line, the full width of the table
+        start_lbl = components.eyebrow("Start here")
+        layout.addWidget(start_lbl)
         command_row = QHBoxLayout()
-        command_row.setSpacing(8)
+        command_row.setSpacing(10)
         self.ed_home_command = QLineEdit()
         self.ed_home_command.setObjectName("HomeCommand")
-        self.ed_home_command.setPlaceholderText("Find something, open a link, or /note your next idea")
+        self.ed_home_command.setPlaceholderText("Search the web, open a link, or type /note, /task, /capture…")
         self.ed_home_command.setAccessibleName("Search or command")
         self.ed_home_command.setMinimumWidth(0)
-        self.ed_home_command.setMinimumHeight(36)
+        self.ed_home_command.setMinimumHeight(40)
         command_row.addWidget(self.ed_home_command, 1)
         self.btn_home_command = QPushButton("Go")
-        self.btn_home_command.setObjectName("TopAccentButton")
+        self.btn_home_command.setObjectName("GhostButton")
+        self.btn_home_command.setAccessibleName("Run the Home command")
+        self.btn_home_command.setMinimumHeight(40)
         command_row.addWidget(self.btn_home_command)
-        hero_layout.addLayout(command_row)
+        layout.addLayout(command_row)
         self.btn_home_command.clicked.connect(self._run_home_command)
         self.ed_home_command.returnPressed.connect(self._run_home_command)
 
-        launcher = QWidget()
-        launcher.setObjectName("HomeLaunchGrid")
-        self._launcher = launcher
-        launcher_grid = QGridLayout(launcher)
-        launcher_grid.setContentsMargins(0, 2, 0, 0)
-        launcher_grid.setHorizontalSpacing(9)
-        launcher_grid.setVerticalSpacing(9)
-        launch_specs = (
-            ("↗", "Browser", "Tabs & web", "browser"),
-            ("✦", "Ask AI", "RAG assistant", "ai"),
-            ("◌", "Personal", "Life hub", "personal"),
-            ("✓", "Quick Task", "Add a task", "task"),
-            ("☕", "Café Focus", "25-min pour", "focus"),
-            ("▦", "Library", "Everything", "library"),
-            ("◷", "History", "All activity", "history"),
-            ("⚙", "Settings", "Tune it all", "settings"),
-            ("?", "Help", "Guide & tools", "guide"),
-        )
-        self._launch_tiles = []
-        for index, (glyph, label, hint, _key) in enumerate(launch_specs):
-            tile = components.action_tile(glyph, label, hint)
-            self._launch_tiles.append(tile)
-            row, column = divmod(index, 3)
-            launcher_grid.addWidget(tile, row, column)
-            launcher_grid.setColumnStretch(column, 1)
-        # The launcher grid and the quick-command chips used to *be* the home
-        # page: nine tiles as the first thing you see, which is a menu. The desk
-        # answers "what do I do now" instead, so both moved into this panel —
-        # still one click away, no longer the default view.
-        self._more_panel = QWidget()
-        more_layout = QVBoxLayout(self._more_panel)
-        more_layout.setContentsMargins(0, 6, 0, 0)
-        more_layout.setSpacing(10)
-        more_layout.addWidget(launcher)
-
-        cmd_row = QHBoxLayout()
-        cmd_row.setSpacing(6)
-        self.lbl_quick_commands = QLabel("Quick commands")
-        self.lbl_quick_commands.setObjectName("MutedLabel")
-        cmd_row.addWidget(self.lbl_quick_commands)
-        for cmd, tip in (("/task ", "Create task"), ("/note ", "Create note"), ("/board ", "New board"), ("/focus 25", "Start pour"), ("/hub", "Project Hub"), ("/cql", "Management Hub")):
-            chip = components.chip(cmd, checkable=False)
-            chip.setToolTip(tip)
-            chip.clicked.connect(lambda checked=False, c=cmd, s=shell: self._send_quick_command(c, s))
-            cmd_row.addWidget(chip)
-        cmd_row.addStretch(1)
-        more_layout.addLayout(cmd_row)
-        self._more_panel.setVisible(False)
-        hero_layout.addWidget(self._more_panel)
-
-        self.btn_all_features = components.chip("☰ All features", checkable=True, checked=False)
-        self.btn_all_features.setToolTip("Show the launcher grid and the quick-command chips")
-        self.btn_all_features.toggled.connect(self._toggle_all_features)
-        hero_layout.addWidget(self.btn_all_features, 0, Qt.AlignLeft)
-        layout.addWidget(hero)
-
-        layout.addWidget(self._desk_section(), 0)
-        layout.addWidget(self._research_workspace_card(), 0)
+        layout.addWidget(self._build_table())
         home_actions = QHBoxLayout()
         home_actions.setSpacing(8)
         self.btn_customize_home = components.chip("⚙ Customize Home", checkable=False)
@@ -478,22 +463,6 @@ class HomeDashboardPage(QWidget):
         # Secondary reporting remains available, but no longer competes with
         # the one next step when you sit down to study.
         layout = details_layout
-        stats_row = QHBoxLayout()
-        stat_specs = [
-            (self, "task", "pending tasks"),
-            (self, "events", "upcoming events"),
-            (self, "pages", "saved pages"),
-            (self, "boards", "boards"),
-            (self, "focus", "min focused today"),
-        ]
-        self._stat_labels = {}
-        tiles = []
-        for _owner, key, label in stat_specs:
-            tile = components.stat_tile("0", label)
-            tiles.append(tile)
-            self._stat_labels[key] = tile._value
-        stats_row.addWidget(components.stat_row(tiles), 1)
-        layout.addLayout(stats_row)
 
         # Dashboard 2.0: 7-day browsing activity mini bar chart (pure paint,
         # no chart lib) driven straight from history timestamps.
@@ -509,7 +478,7 @@ class HomeDashboardPage(QWidget):
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(14, 12, 14, 12)
             card_layout.setSpacing(6)
-            card_layout.addWidget(components.section_header(title_text, subtitle))
+            card_layout.addWidget(components.section_header(title_text, subtitle, kicker="Activity"))
             card_layout.addWidget(chart, 1)
             chart_cards.append(card)
         layout.addWidget(components.ResponsiveGrid(chart_cards, minimum_width=310, maximum_columns=2))
@@ -522,7 +491,7 @@ class HomeDashboardPage(QWidget):
         brief_layout.setContentsMargins(14, 12, 14, 12)
         brief_layout.setSpacing(8)
         brief_layout.addWidget(
-            components.section_header("Morning Brief", "A local digest of your day", self.btn_brief_refresh)
+            components.section_header("Morning brief", "A local digest of your day", self.btn_brief_refresh, kicker="Reading")
         )
         self.lbl_brief = QLabel("Pouring your brief...")
         self.lbl_brief.setObjectName("HeroSubtitle")
@@ -536,15 +505,11 @@ class HomeDashboardPage(QWidget):
 
         self.recent_notes = QListWidget()
         self.recent_notes.setObjectName("CafeList")
-        self.recent_tasks = QListWidget()
-        self.recent_tasks.setObjectName("CafeList")
         self.recent_closed = QListWidget()
         self.recent_closed.setObjectName("CafeList")
-        notes_card = self._card_with_list("Recent Notes", "From SafeVault", self.recent_notes)
-        tasks_card = self._today_card()
-        closed_card = self._card_with_list("Recently Closed", "Tabs you closed", self.recent_closed)
-        layout.addWidget(components.ResponsiveGrid([notes_card, tasks_card, closed_card], minimum_width=280, maximum_columns=3))
-        layout.addWidget(self._reflect_card())
+        notes_card = self._card_with_list("Recent notes", "From SafeVault", self.recent_notes)
+        closed_card = self._card_with_list("Recently closed", "Tabs you set down", self.recent_closed)
+        layout.addWidget(components.ResponsiveGrid([notes_card, closed_card], minimum_width=280, maximum_columns=2))
 
         self.btn_browser, self.btn_ai, self.btn_personal, self.btn_task, self.btn_focus, self.btn_library, self.btn_history, self.btn_settings, self.btn_guide = self._launch_tiles
 
@@ -592,13 +557,33 @@ class HomeDashboardPage(QWidget):
         for key, widgets in self._desk_cards.items():
             widgets["card"].setVisible(key in config["visible"])
             listing = widgets["list"]
-            minimum, maximum = {
-                "compact": (76, 108),
-                "comfortable": (118, 168),
-                "spacious": (176, 248),
-            }[config["size"]]
-            listing.setMinimumHeight(minimum)
-            listing.setMaximumHeight(maximum)
+            listing.setMinimumHeight(self._desk_list_bounds()[0])
+            listing.setMaximumHeight(self._desk_list_bounds()[1])
+            self._fit_desk_list(key)
+
+    def _desk_list_bounds(self):
+        """Reading height for a desk list: a floor plus a size-dependent cap.
+
+        The floor used to be 118px at the default size, which left a mostly
+        empty box under a single next-step row. Lists now grow with their rows
+        up to the chosen cap, so a quiet desk stays compact and a busy one still
+        scrolls within the same calm frame.
+        """
+        return {
+            "compact": (76, 108),
+            "comfortable": (76, 168),
+            "spacious": (76, 248),
+        }[self._home_preference()["size"]]
+
+    def _fit_desk_list(self, key: str):
+        widgets = getattr(self, "_desk_cards", {}).get(key)
+        if not widgets:
+            return
+        listing = widgets["list"]
+        minimum, maximum = self._desk_list_bounds()
+        rows = listing.count()
+        row_height = listing.sizeHintForRow(0) if rows else 26
+        listing.setFixedHeight(max(minimum, min(maximum, row_height * max(1, rows) + 8)))
 
     def _customize_home(self):
         config = self._home_preference()
@@ -676,19 +661,119 @@ class HomeDashboardPage(QWidget):
         """Show/hide the launcher grid + quick commands (collapsed by default)."""
         self._more_panel.setVisible(bool(shown))
 
-    def _desk_section(self):
-        """The desk: four blocks that answer "what do I do now".
+    def _build_table(self) -> QWidget:
+        """Compose the table: a working column and a margin column.
 
-        Home is the first thing a person sees and it used to be a menu — tiles,
-        stats, charts. The desk replaces that default view with the four things
-        a working session actually needs: today's plate, what is due, what was
-        left half-finished, and the loop's one next step.
+        Left is the desk (the loop's next step, the day's plate, waiting and
+        unfinished work) plus the quiet numbers. Right is the margin: today's
+        agenda, where you were reading, and the week's evidence. The two
+        columns fold into one on a narrow window instead of squeezing cards.
+        """
+        self._build_more_panel()
+
+        primary = QWidget()
+        primary.setObjectName("HomeDeskColumn")
+        primary_layout = QVBoxLayout(primary)
+        primary_layout.setContentsMargins(0, 0, 0, 0)
+        primary_layout.setSpacing(18)
+        primary_layout.addWidget(self._desk_section())
+
+        feature_row = QHBoxLayout()
+        feature_row.setSpacing(8)
+        feature_row.addWidget(self.btn_all_features)
+        feature_row.addStretch(1)
+        primary_layout.addLayout(feature_row)
+        primary_layout.addWidget(self._more_panel)
+        primary_layout.addWidget(self._metrics_section())
+        primary_layout.addStretch(1)
+
+        secondary = QWidget()
+        secondary.setObjectName("HomeMarginColumn")
+        secondary_layout = QVBoxLayout(secondary)
+        secondary_layout.setContentsMargins(0, 0, 0, 0)
+        secondary_layout.setSpacing(18)
+        secondary_layout.addWidget(self._today_card())
+        secondary_layout.addWidget(self._research_workspace_card())
+        secondary_layout.addWidget(self._reflect_card())
+        secondary_layout.addStretch(1)
+
+        return _EditorialSplit(primary, secondary)
+
+    def _build_more_panel(self):
+        """The launcher: still one click away, never the default view.
+
+        Nine equally sized tiles used to open the page, which made Home read as
+        a menu. They live behind "All features" now, still built from the same
+        real actions.
+        """
+        launcher = QWidget()
+        launcher.setObjectName("HomeLaunchGrid")
+        self._launcher = launcher
+        launcher_grid = QGridLayout(launcher)
+        launcher_grid.setContentsMargins(0, 2, 0, 0)
+        launcher_grid.setHorizontalSpacing(9)
+        launcher_grid.setVerticalSpacing(9)
+        launch_specs = (
+            ("↗", "Browser", "Tabs & web", "browser"),
+            ("✦", "Ask AI", "RAG assistant", "ai"),
+            ("◌", "Personal", "Life hub", "personal"),
+            ("✓", "Quick Task", "Add a task", "task"),
+            ("☕", "Café Focus", "25-min pour", "focus"),
+            ("▦", "Library", "Everything", "library"),
+            ("◷", "History", "All activity", "history"),
+            ("⚙", "Settings", "Tune it all", "settings"),
+            ("?", "Help", "Guide & tools", "guide"),
+        )
+        self._launch_tiles = []
+        for index, (glyph, label, hint, _key) in enumerate(launch_specs):
+            tile = components.action_tile(glyph, label, hint)
+            self._launch_tiles.append(tile)
+            row, column = divmod(index, 3)
+            launcher_grid.addWidget(tile, row, column)
+            launcher_grid.setColumnStretch(column, 1)
+
+        self._more_panel = QWidget()
+        more_layout = QVBoxLayout(self._more_panel)
+        more_layout.setContentsMargins(0, 6, 0, 0)
+        more_layout.setSpacing(10)
+        more_layout.addWidget(launcher)
+        cmd_row = QHBoxLayout()
+        cmd_row.setSpacing(6)
+        self.lbl_quick_commands = QLabel("Quick commands")
+        self.lbl_quick_commands.setObjectName("MutedLabel")
+        cmd_row.addWidget(self.lbl_quick_commands)
+        for cmd, tip in (("/task ", "Create task"), ("/note ", "Create note"), ("/board ", "New board"), ("/focus 25", "Start pour"), ("/hub", "Project Hub"), ("/cql", "Management Hub")):
+            chip = components.chip(cmd, checkable=False)
+            chip.setToolTip(tip)
+            chip.clicked.connect(lambda checked=False, c=cmd, s=self.shell: self._send_quick_command(c, s))
+            cmd_row.addWidget(chip)
+        cmd_row.addStretch(1)
+        more_layout.addLayout(cmd_row)
+        self._more_panel.setVisible(False)
+
+        self.btn_all_features = components.chip("☰ All features", checkable=True, checked=False)
+        self.btn_all_features.setToolTip("Show the launcher grid and the quick-command chips")
+        self.btn_all_features.toggled.connect(self._toggle_all_features)
+
+    def _desk_section(self):
+        """The desk: what the working session actually needs.
+
+        Four blocks, but not four identical cards: the next step carries the
+        accent spine, the day's plate is a normal paper card, and the two
+        waiting lists are open columns under a shared heading.
         """
         section = QWidget()
         section.setObjectName("HomeDesk")
         layout = QVBoxLayout(section)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
+        layout.addWidget(
+            components.section_header(
+                "The desk",
+                "Where you were, what is due, and the one thing to do next",
+                kicker="Working session",
+            )
+        )
         self.lbl_desk = QLabel("Setting the desk...")
         self.lbl_desk.setObjectName("MutedLabel")
         self.lbl_desk.setWordWrap(True)
@@ -698,19 +783,52 @@ class HomeDashboardPage(QWidget):
             self._desk_card(key)
         self._desk_grid = components.ResponsiveGrid(
             [self._desk_cards[key]["card"] for key in ("next", *[value for value in desk_service.DESK_BLOCKS if value != "next"])],
-            minimum_width=260, maximum_columns=4,
+            minimum_width=272, maximum_columns=2,
         )
         self._desk_grid.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         layout.addWidget(self._desk_grid)
+        return section
+
+    def _metrics_section(self):
+        """Numbers as a footnote to the desk, not five dashboard tiles."""
+        section = QWidget()
+        section.setObjectName("HomeMetrics")
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(components.section_header("At a glance", "Still open across the table", kicker="Numbers"))
+        stat_specs = [
+            ("task", "pending tasks"),
+            ("events", "upcoming events"),
+            ("pages", "saved pages"),
+            ("boards", "boards"),
+            ("focus", "min focused today"),
+        ]
+        self._stat_labels = {}
+        tiles = []
+        for key, label in stat_specs:
+            tile = components.stat_tile("0", label)
+            tiles.append(tile)
+            self._stat_labels[key] = tile._value
+        layout.addWidget(components.stat_row(tiles))
         return section
 
     def _research_workspace_card(self):
         card = QFrame()
         card.setObjectName("SectionCard")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(7)
-        layout.addWidget(components.section_header("Research desk", "Continue a saved line of work across browser, notes, and tasks"))
+        layout.setContentsMargins(16, 16, 18, 16)
+        layout.setSpacing(6)
+        self.btn_research_manage = quiet_button("Manage", "Manage saved research workspaces")
+        self.btn_research_manage.clicked.connect(self._manage_research_workspaces)
+        layout.addWidget(
+            components.section_header(
+                "Where you were",
+                "A saved line of work across browser, notes and tasks",
+                self.btn_research_manage,
+                kicker="Research desk",
+            )
+        )
         self.lbl_research_workspace = QLabel("No active research workspace")
         self.lbl_research_workspace.setObjectName("HeroSubtitle")
         self.lbl_research_workspace.setWordWrap(True)
@@ -725,19 +843,23 @@ class HomeDashboardPage(QWidget):
         self.research_items.setToolTip("Double-click a linked item to open it where it lives")
         self.research_items.itemDoubleClicked.connect(self._open_research_item)
         layout.addWidget(self.research_items)
-        actions = QHBoxLayout()
-        actions.setSpacing(6)
+        # Two rows of two: a margin column is ~500px, and four buttons in one
+        # line was what forced Home to scroll sideways at 1440.
+        actions = QGridLayout()
+        actions.setContentsMargins(0, 4, 0, 0)
+        actions.setHorizontalSpacing(6)
+        actions.setVerticalSpacing(6)
         self.btn_research_resume = QPushButton("Resume tabs")
         self.btn_research_ai = QPushButton("Ask AI with context")
         self.btn_research_capture = QPushButton("Capture to desk")
-        self.btn_research_manage = quiet_button("Manage")
         self.btn_research_resume.clicked.connect(self._resume_research_workspace)
         self.btn_research_ai.clicked.connect(self._ask_research_workspace)
         self.btn_research_capture.clicked.connect(self.shell.open_quick_capture)
-        self.btn_research_manage.clicked.connect(self._manage_research_workspaces)
-        for button in (self.btn_research_resume, self.btn_research_ai, self.btn_research_capture, self.btn_research_manage):
-            actions.addWidget(button)
-        actions.addStretch(1)
+        actions.addWidget(self.btn_research_resume, 0, 0, 1, 2)
+        actions.addWidget(self.btn_research_ai, 1, 0)
+        actions.addWidget(self.btn_research_capture, 1, 1)
+        actions.setColumnStretch(0, 1)
+        actions.setColumnStretch(1, 1)
         layout.addLayout(actions)
         return card
 
@@ -804,25 +926,37 @@ class HomeDashboardPage(QWidget):
             dialogs.show_tab_sets_dialog(self.shell.browser_page)
 
     def _desk_card(self, key: str):
+        """One desk block.  The four blocks share data, not silhouettes."""
+        emphasis = {"next": "primary", "today": "quiet"}.get(key, "open")
         card = QFrame()
-        card.setObjectName("SectionCard")
+        card.setObjectName("DeskPanel")
+        card.setProperty("emphasis", emphasis)
         card.setProperty("deskBlock", key)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(6)
+        if emphasis == "open":
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(4)
+        else:
+            layout.setContentsMargins(18 if emphasis == "primary" else 16, 16, 18, 16)
+            layout.setSpacing(6)
         header_row = QHBoxLayout()
         header_row.setSpacing(6)
+        kicker = {"next": "The one thing", "today": "On the plate", "due": "Waiting", "in_progress": "Half-finished"}.get(key, "")
         header_row.addWidget(
-            components.section_header(desk_service.BLOCK_TITLES[key], desk_service.BLOCK_SUBTITLES[key]),
+            components.section_header(
+                desk_service.BLOCK_TITLES[key],
+                "" if emphasis == "open" else desk_service.BLOCK_SUBTITLES[key],
+                kicker=kicker,
+            ),
             1,
         )
         badge = components.badge("0", "accent")
         header_row.addWidget(badge, 0, Qt.AlignTop)
         layout.addLayout(header_row)
+        if emphasis == "open":
+            layout.addWidget(components.rule())
         listing = QListWidget()
         listing.setObjectName("CafeList")
-        listing.setMinimumHeight(118)
-        listing.setMaximumHeight(168)
         listing.setToolTip("Double-click a row to open where it lives")
         listing.itemDoubleClicked.connect(self._open_desk_row)
         layout.addWidget(listing, 1)
@@ -840,7 +974,8 @@ class HomeDashboardPage(QWidget):
             self.btn_desk_ritual.clicked.connect(self._start_ritual)
             buttons.addWidget(self.btn_desk_ritual)
         buttons.addStretch(1)
-        layout.addLayout(buttons)
+        if key == "next":
+            layout.addLayout(buttons)
         self._desk_cards[key] = {"card": card, "list": listing, "badge": badge}
         return card
 
@@ -864,6 +999,7 @@ class HomeDashboardPage(QWidget):
                 listing.addItem(item)
             if not rows:
                 listing.addItem(components.hint_list_item(block.get("empty") or "Nothing here", "○"))
+            self._fit_desk_list(key)
             if key == "next":
                 action = block.get("flow") or {}
                 label = action.get("label") or "▶ Continue"
@@ -932,13 +1068,19 @@ class HomeDashboardPage(QWidget):
         "what is next" by reading every store (planner, cards, captures, links) —
         so Home is a doorway into the process, not a report about it.
         """
+        if not hasattr(self, "recent_tasks"):
+            self.recent_tasks = QListWidget()
+            self.recent_tasks.setObjectName("CafeList")
         card = QFrame()
-        card.setObjectName("SectionCard")
+        card.setObjectName("DeskPanel")
+        card.setProperty("emphasis", "open")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(6)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
         layout.addWidget(
-            components.section_header("Today", "Planner deadlines · quick tasks · the study loop")
+            components.section_header(
+                "Today", "Planner deadlines, quick tasks, and the study loop", kicker="The day"
+            )
         )
         self.lbl_flow = QLabel("")
         self.lbl_flow.setObjectName("MutedLabel")
@@ -960,8 +1102,7 @@ class HomeDashboardPage(QWidget):
         layout.addLayout(flow_row)
         # A slightly lower floor than the other cards leaves room for the strip
         # without pushing the dashboard past the viewport.
-        self.recent_tasks.setMinimumHeight(180)
-        layout.addWidget(self.recent_tasks, 1)
+        layout.addWidget(self.recent_tasks)
         return card
 
     def _reflect_card(self):
@@ -973,17 +1114,18 @@ class HomeDashboardPage(QWidget):
         has been waiting the longest.
         """
         card = QFrame()
-        card.setObjectName("SectionCard")
-        card.setMaximumHeight(230)
+        card.setObjectName("DeskPanel")
+        card.setProperty("emphasis", "open")
+        card.setMaximumHeight(250)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
         self.btn_reflect_study = QPushButton("▶ Study the oldest one")
         self.btn_reflect_study.setToolTip("Pour a focus session for the item that has waited longest")
         self.btn_reflect_study.clicked.connect(self._study_neglected)
         layout.addWidget(
             components.section_header(
-                "This Week", "Reflect — poured minutes, streaks, and what got skipped", self.btn_reflect_study
+                "This week", "Poured minutes, streaks, and what got skipped", self.btn_reflect_study, kicker="Reflection"
             )
         )
         self.lbl_reflect = QLabel("")
@@ -1171,6 +1313,11 @@ class HomeDashboardPage(QWidget):
             self.recent_tasks.addItem(row)
         if self.recent_tasks.count() == 0:
             self.recent_tasks.addItem(components.hint_list_item("Nothing scheduled today", "○"))
+        # Agenda rows decide the height too: an empty day is one quiet line,
+        # not a 150px hole that pushes the research desk down the page.
+        rows = self.recent_tasks.count()
+        row_height = self.recent_tasks.sizeHintForRow(0) if rows else 26
+        self.recent_tasks.setFixedHeight(max(34, min(230, row_height * max(1, rows) + 8)))
 
         self.recent_closed.clear()
         state = prefs.session_state_load(self.shell.profile_dir)
@@ -2032,13 +2179,30 @@ class SettingsPage(QWidget):
         assigned = {card for cards in groups.values() for card in cards}
         groups["Tools & maintenance"] = tuple(content_layout.itemAt(i).widget() for i in range(content_layout.count()) if content_layout.itemAt(i).widget() and content_layout.itemAt(i).widget() not in assigned)
         self._settings_groups = groups
-        self.cmb_settings_section = QComboBox()
-        self.cmb_settings_section.addItems(groups.keys())
-        self.cmb_settings_section.setAccessibleName("Settings category")
-        layout.insertWidget(1, self.cmb_settings_section)
-        self.cmb_settings_section.currentTextChanged.connect(self._show_settings_section)
-        self._show_settings_section(self.cmb_settings_section.currentText())
+        # Categories are a short shelf of tabs, not a full-width dropdown:
+        # a combo box spanning the page read as an empty text field.
+        section_row = QWidget()
+        section_row.setObjectName("SettingsTabs")
+        section_layout = QHBoxLayout(section_row)
+        section_layout.setContentsMargins(0, 0, 0, 0)
+        section_layout.setSpacing(6)
+        self.settings_section_buttons = {}
+        for name in groups:
+            tab = components.chip(name, checkable=True)
+            tab.setObjectName("SettingsTab")
+            tab.setAccessibleName(f"Settings: {name}")
+            tab.clicked.connect(lambda checked=False, section=name: self._select_settings_section(section))
+            section_layout.addWidget(tab)
+            self.settings_section_buttons[name] = tab
+        section_layout.addStretch(1)
+        layout.insertWidget(1, section_row)
+        self._select_settings_section("Appearance")
         self._form_baseline = {}
+
+    def _select_settings_section(self, section):
+        for name, tab in getattr(self, "settings_section_buttons", {}).items():
+            tab.setChecked(name == section)
+        self._show_settings_section(section)
 
     def _show_settings_section(self, section):
         for name, cards in self._settings_groups.items():
@@ -2062,8 +2226,6 @@ class SettingsPage(QWidget):
     def _form_values(self):
         result = {}
         for widget in self.findChildren((QLineEdit, QComboBox, QCheckBox, QSpinBox)):
-            if widget is getattr(self, "cmb_settings_section", None):
-                continue
             if isinstance(widget, QLineEdit):
                 result[widget] = widget.text()
             elif isinstance(widget, QComboBox):

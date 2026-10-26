@@ -82,265 +82,209 @@ body {
   min-height: 100vh;
   font-family: "Segoe UI", "Segoe UI Symbol", sans-serif;
   color: @TEXT@;
-  background:
-    radial-gradient(circle at 6% 0%, @GLOW2@, transparent 26%),
-    radial-gradient(circle at 96% 10%, @GLOW1@, transparent 30%),
-    radial-gradient(circle at 50% 122%, @GLOW2@, transparent 42%),
-    linear-gradient(160deg, @MAIN_BG_ALT@ 0%, @MAIN_BG@ 55%, @MAIN_BG_ALT@ 100%);
-  background-attachment: fixed;
+  background: @MAIN_BG@;
 }
 
-/* Shop awning */
+/* The house line: a paper header rule, not a shop awning. */
 .awning {
   position: sticky;
   top: 0;
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 13px 26px;
-  color: @TEXT@;
-  background: linear-gradient(90deg, @CARD_BG@, @MAIN_BG_ALT@, @CARD_BG@);
-  border-bottom: 1px solid @BORDER_SOFT@;
-  letter-spacing: .16em;
-  font-weight: 700;
-  font-size: 11px;
-  text-transform: uppercase;
-}
-.awning .cup-logo { font-size: 17px; color: @ACCENT_HOVER@; }
-
-.shell {
-  max-width: 1020px;
-  margin: 0 auto;
-  padding: 44px 26px 40px;
-}
-
-/* Daily-special board */
-.hero {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 30px;
-  overflow: hidden;
-  border: 1px solid @BORDER_SOFT@;
-  border-radius: 30px;
-  padding: 40px 38px;
-  background:
-    radial-gradient(circle at 78% 12%, @GLOW1@, transparent 36%),
-    linear-gradient(135deg, @CARD_BG@ 0%, @MAIN_BG_ALT@ 100%);
-}
-.hero-copy { flex: 1; min-width: 0; }
-.eyebrow {
-  color: @ACCENT_HOVER@;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .2em;
-  text-transform: uppercase;
-}
-h1 {
-  margin: 12px 0 10px;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 46px;
-  font-weight: 700;
-  letter-spacing: -.03em;
-  line-height: 1.08;
-  color: @TEXT@;
-}
-.hero p {
-  max-width: 620px;
-  margin: 0 0 20px;
+  gap: 9px;
+  padding: 14px 30px;
   color: @TEXT_MUTED@;
-  font-size: 15px;
-  line-height: 1.65;
+  background: @CARD_BG@;
+  border-bottom: 1px solid @BORDER_SOFT@;
+  letter-spacing: .14em;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
 }
-.search-bar { max-width: 720px; }
-form { margin: 0; }
-input[type="search"] {
-  width: 100%;
-  padding: 17px 20px;
-  border-radius: 16px;
-  border: 1px solid @INPUT_BORDER@;
-  background: @INPUT_BG@;
-  color: @TEXT@;
-  font-size: 15px;
-  outline: none;
-  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
-}
-input[type="search"]::placeholder { color: @TEXT_MUTED@; }
-input[type="search"]:focus {
-  border-color: @ACCENT_HOVER@;
-  box-shadow: 0 0 0 4px @GLOW1@;
-  transform: translateY(-1px);
-}
-
-/* Cup + rising steam — drawn in pure CSS so it stays crisp and centered
-   (no emoji glyph to clip or offset) */
-.cup {
-  position: relative;
-  flex: 0 0 auto;
-  display: flex;
+.awning .cup-logo {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 170px;
-  height: 170px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 34%, @ACCENT_SOFT@, transparent 74%);
+  width: 22px;
+  height: 22px;
   border: 1px solid @INPUT_BORDER@;
+  border-radius: 4px;
+  color: @TEXT@;
+  font-family: Georgia, serif;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
 }
-.cup-art {
-  position: relative;
+
+.shell {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 46px 30px 44px;
+}
+
+/* A single quiet wisp beside the masthead — the only literal nod to warmth,
+   and the thing the new-tab steam preference still controls. */
+.hero {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
+  gap: 26px;
+  border: none;
+  border-bottom: 1px solid @BORDER_SOFT@;
+  border-radius: 0;
+  padding: 0 0 34px;
+  background: transparent;
+}
+.hero-copy { flex: 1; min-width: 0; }
+.hero-mark {
+  flex: 0 0 auto;
+  padding-top: 6px;
+  opacity: .55;
 }
 .steam {
   position: relative;
-  width: 46px;
-  height: 58px;
-  margin-bottom: -4px;
+  display: block;
+  width: 18px;
+  height: 26px;
   pointer-events: none;
 }
 .steam i {
   position: absolute;
   bottom: 0;
-  width: 7px;
-  height: 7px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: @ACCENT_HOVER@;
+  background: @ACCENT@;
   opacity: 0;
   animation: steam-rise 3.2s ease-out infinite;
 }
-.steam i:nth-child(1) { left: 5px;  animation-delay: 0s; }
-.steam i:nth-child(2) { left: 19px; animation-delay: 1.05s; }
-.steam i:nth-child(3) { left: 33px; animation-delay: 2.1s; }
+.steam i:nth-child(1) { left: 0;   animation-delay: 0s; }
+.steam i:nth-child(2) { left: 6px; animation-delay: 1.05s; }
+.steam i:nth-child(3) { left: 12px; animation-delay: 2.1s; }
 @keyframes steam-rise {
-  0%   { transform: translateY(8px) scale(.5); opacity: 0; }
-  25%  { opacity: .6; }
-  100% { transform: translateY(-50px) scale(1.7); opacity: 0; }
+  0%   { transform: translateY(6px) scale(.6); opacity: 0; }
+  25%  { opacity: .8; }
+  100% { transform: translateY(-20px) scale(1.1); opacity: 0; }
 }
-.cup-mug {
-  position: relative;
-  width: 62px;
-  height: 46px;
-  background: linear-gradient(180deg, @ACCENT_HOVER@, @ACCENT@);
-  border-radius: 5px 5px 18px 18px;
-  box-shadow: inset 0 -7px 0 rgba(0,0,0,.08);
+.eyebrow {
+  color: @ACCENT_HOVER@;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
 }
-.cup-mug::before {
-  content: "";
-  position: absolute;
-  right: -21px;
-  top: 6px;
-  width: 20px;
-  height: 27px;
-  border: 7px solid @ACCENT@;
-  border-left: none;
-  border-radius: 0 16px 16px 0;
+h1 {
+  margin: 13px 0 10px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 44px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.06;
+  color: @TEXT@;
 }
-.cup-saucer {
-  width: 90px;
-  height: 10px;
-  margin-top: -1px;
-  background: linear-gradient(180deg, @ACCENT_HOVER@, @ACCENT@);
-  border-radius: 50%;
-  opacity: .92;
+.hero p {
+  max-width: 580px;
+  margin: 0 0 22px;
+  color: @TEXT_MUTED@;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.search-bar { max-width: 680px; }
+form { margin: 0; }
+input[type="search"] {
+  width: 100%;
+  padding: 15px 17px;
+  border-radius: 10px;
+  border: 1px solid @INPUT_BORDER@;
+  background: @INPUT_BG@;
+  color: @TEXT@;
+  font-size: 14px;
+  outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+input[type="search"]::placeholder { color: @TEXT_MUTED@; }
+input[type="search"]:focus {
+  border-color: @ACCENT@;
+  box-shadow: 0 0 0 3px @GLOW1@;
 }
 
-/* Menu cards */
+/* Sections are open headings on the paper, divided by hairlines. */
 .section {
-  margin-top: 24px;
-  border: 1px solid @BORDER_SOFT@;
-  border-radius: 22px;
-  padding: 22px;
-  background: linear-gradient(180deg, @CARD_BG@, transparent);
+  margin-top: 30px;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
 }
 .section h2 {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 16px;
-  color: @TEXT@;
-  font-size: 13px;
+  gap: 12px;
+  margin: 0 0 14px;
+  color: @TEXT_MUTED@;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: .04em;
+  letter-spacing: .16em;
+  text-transform: uppercase;
 }
 .section h2 .rule { flex: 1; height: 1px; background: @BORDER_SOFT@; }
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
 }
 .tile {
   position: relative;
-  /* Column + centred: a grid row is as tall as its tallest tile, and the short
-     labels used to sit at the top of that box with dead space underneath. */
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 11px;
   text-decoration: none;
   background: @CARD_BG@;
   border: 1px solid @BORDER_SOFT@;
-  border-radius: 16px;
-  min-height: 92px;
-  padding: 14px 10px;
-  text-align: center;
+  border-radius: 10px;
+  min-height: 68px;
+  padding: 12px 13px;
+  text-align: left;
   overflow: hidden;
-  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
-}
-.tile::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 0%, @GLOW1@, transparent 70%);
-  opacity: 0;
-  transition: opacity .15s ease;
+  transition: border-color .15s ease, background .15s ease;
 }
 .tile:hover,
 .tile:focus-visible {
-  transform: translateY(-4px);
-  border-color: @ACCENT_HOVER@;
-  box-shadow: 0 10px 24px @WATERMARK@;
+  border-color: @ACCENT@;
+  background: @ACCENT_SOFT@;
   outline: none;
 }
-.tile:hover::before, .tile:focus-visible::before { opacity: 1; }
-.tile:focus-visible { box-shadow: 0 0 0 3px @GLOW2@, 0 10px 24px @WATERMARK@; }
+.tile:focus-visible { box-shadow: 0 0 0 2px @ACCENT@; }
 .tile-mark {
   position: relative;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin: 0 auto 8px;
-  border-radius: 50%;
-  font-size: 20px;
-  color: @ACCENT_HOVER@;
-  background: radial-gradient(circle at 50% 32%, @ACCENT_SOFT@, transparent 78%);
-  border: 1px solid @INPUT_BORDER@;
-  transition: transform .15s ease, border-color .15s ease;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  font-size: 15px;
+  color: @TEXT@;
+  background: @MAIN_BG_ALT@;
+  border: 1px solid @BORDER_SOFT@;
 }
 .tile-mark-letter {
-  font-size: 19px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 700;
   font-family: Georgia, serif;
-  background: @ACCENT_SOFT@;
 }
-.tile:hover .tile-mark { transform: scale(1.08); border-color: @ACCENT@; }
+.tile:hover .tile-mark { border-color: @ACCENT@; }
 .tile-label {
   position: relative;
-  /* Two lines maximum, balanced across them: "MAS — Mahoraga Adapt System" and
-     "MAS — Mahoraga Adapt System" otherwise stretched their whole grid row. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  text-wrap: balance;
   color: @TEXT@;
   font-size: 12px;
   font-weight: 600;
-  line-height: 1.4;
-  min-height: 2.8em;
+  line-height: 1.35;
 }
 /* Recent pour list */
 .recent-row {
@@ -412,22 +356,16 @@ a:focus-visible {
   font-size: 12px;
 }
 .footer-note {
-  margin-top: 30px;
-  text-align: center;
+  margin-top: 34px;
+  text-align: left;
   color: @TEXT_MUTED@;
   font-size: 11px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
 }
 
 @media (max-width: 680px) {
-  .hero { flex-direction: column; text-align: center; padding: 30px 22px; }
-  .cup { width: 122px; height: 122px; }
-  .cup-mug { width: 50px; height: 38px; }
-  .cup-saucer { width: 74px; height: 8px; }
-  .steam { width: 40px; height: 50px; }
-  h1 { font-size: 34px; }
-  .shell { padding: 28px 14px 32px; }
+  h1 { font-size: 33px; }
+  .shell { padding: 30px 16px 32px; }
+  .awning { padding: 12px 16px; }
 }
 """
 
@@ -535,7 +473,7 @@ def build_new_tab_html(base_dir, app_dir=None, search_engine="Google", mode=None
         eyebrow, headline = "Mei", "Your calm starting point."
     reduce_motion = prefs.reduced_motion_enabled(base_dir)
     steam_html = (
-        '<span class="steam"><i></i><i></i><i></i></span>'
+        '<div class="hero-mark"><span class="steam"><i></i><i></i><i></i></span></div>'
         if prefs.get_new_tab_steam(base_dir) and not reduce_motion
         else ''
     )
@@ -554,52 +492,46 @@ def build_new_tab_html(base_dir, app_dir=None, search_engine="Google", mode=None
 <style>%s</style>
 </head>
 <body>
-  <div class="awning"><span class="cup-logo">🍵</span> @BRAND@ · Tea Room Edition</div>
+  <div class="awning"><span class="cup-logo">M</span> @BRAND@ · The Quiet Table</div>
   <div class="shell">
     <div class="hero">
-      <div class="cup">
-        <div class="cup-art">
-          %s
-          <div class="cup-mug"></div>
-          <div class="cup-saucer"></div>
-        </div>
-      </div>
       <div class="hero-copy">
         <div class="eyebrow">%s</div>
         <h1>%s</h1>
-        <p>Search the web, reopen your work, or jump back into your saved reading from one calm starting point.</p>
+        <p>Search the web, reopen your work, or return to what you were reading. Everything stays on this device.</p>
         <form action="%s" method="get" class="search-bar">
           <input type="search" name="%s" placeholder="Search %s or type a URL..." autofocus />
         </form>
       </div>
+      %s
     </div>
     %s
     <div class="section">
-      <h2>Quick Shelf <span class="rule"></span></h2>
+      <h2>Saved shelf <span class="rule"></span></h2>
       <div class="tiles">%s</div>
     </div>
     <div class="section">
-      <h2>Recent Pour <span class="rule"></span></h2>
+      <h2>Recently opened <span class="rule"></span></h2>
       <div>%s</div>
     </div>
     <div class="hint-row">
       <span class="hint">? Help · F1</span>
-      <span class="hint">⌨ Ctrl+T new tab</span>
+      <span class="hint">Ctrl+T new tab</span>
       <span class="hint">Ctrl+K command</span>
       <span class="hint">/agent · /brief · /group-tabs</span>
     </div>
-    <div class="footer-note">✦ @BRAND@ — privacy-first, local-first ✦</div>
+    <div class="footer-note">Local-first. No account required.</div>
   </div>
 </body>
 </html>""" % (
         escape_html(_CSP),
         css,
-        steam_html,
         escape_html(eyebrow),
         escape_html(headline),
         escape_html(form_action),
         escape_html(form_param),
         escape_html(engine_label),
+        steam_html,
         support_section,
         tiles_html,
         recent_rows,

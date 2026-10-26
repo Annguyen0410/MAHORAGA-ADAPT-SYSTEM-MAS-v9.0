@@ -113,15 +113,17 @@ class AppShell(QMainWindow):
         top_bar = QWidget()
         top_bar.setObjectName("ShellTopBar")
         top_layout = QHBoxLayout(top_bar)
-        top_layout.setContentsMargins(12, 8, 12, 8)
-        top_layout.setSpacing(8)
+        top_layout.setContentsMargins(18, 8, 18, 8)
+        top_layout.setSpacing(14)
 
+        # Identity, not a logo lockup: a serif monogram, the name, and the house
+        # line in clay.  It sits once, in the top-left corner of the desk.
         brand_wrap = QWidget()
         brand_wrap.setObjectName("BrandWrap")
         brand_layout = QHBoxLayout(brand_wrap)
         brand_layout.setContentsMargins(0, 0, 0, 0)
-        brand_layout.setSpacing(8)
-        brand_glyph = QLabel("🍵")
+        brand_layout.setSpacing(9)
+        brand_glyph = QLabel("M")
         brand_glyph.setObjectName("BrandGlyph")
         brand_layout.addWidget(brand_glyph)
         brand_text = QVBoxLayout()
@@ -130,7 +132,7 @@ class AppShell(QMainWindow):
         brand_name = QLabel("Mei")
         brand_name.setObjectName("BrandName")
         brand_text.addWidget(brand_name)
-        brand_sub = QLabel("YOUR DIGITAL TEA ROOM")
+        brand_sub = QLabel("The Quiet Table")
         brand_sub.setObjectName("BrandSub")
         brand_text.addWidget(brand_sub)
         brand_layout.addLayout(brand_text)
@@ -138,7 +140,7 @@ class AppShell(QMainWindow):
 
         self.omnibar = QLineEdit()
         self.omnibar.setObjectName("ShellOmnibar")
-        self.omnibar.setPlaceholderText("Search the web or run a command  ·  /capture  /task  /note")
+        self.omnibar.setPlaceholderText("Search, jump, or run a command   ·   /capture   /note   /task")
         # Generated from core.commands: the autocomplete used to be a hand-written
         # list that had drifted six commands behind the registry (/accent,
         # /export, /review, /routines, /template, /theme) with no test able to
@@ -188,11 +190,16 @@ class AppShell(QMainWindow):
             _shortcut = QShortcut(QKeySequence("Ctrl+%d" % _index), self)
             _shortcut.activated.connect(lambda _n=_name: self.switch_workspace(_n))
 
+        # Quiet verbs: the two global actions read as ink on paper, not as
+        # filled dashboard buttons competing with the workspace.
         self.btn_sync = QPushButton("↻  Snapshot")
-        self.btn_sync.setObjectName("CafeButton")
+        self.btn_sync.setObjectName("QuietButton")
+        self.btn_sync.setAccessibleName("Save a local snapshot")
         self.btn_sync.setToolTip("Save a local snapshot of your profile state (tasks/notes/boards) to disk.")
         self.btn_insights = QPushButton("✦  Insights")
-        self.btn_insights.setObjectName("CafeButton")
+        self.btn_insights.setObjectName("QuietButton")
+        self.btn_insights.setAccessibleName("Toggle the insights companion")
+        self.btn_insights.setToolTip("Show or hide the contextual companion rail")
         top_layout.addWidget(self.btn_sync)
         top_layout.addWidget(self.btn_insights)
         self.btn_toggle_topbar = QPushButton("▾")
@@ -227,16 +234,19 @@ class AppShell(QMainWindow):
         rail_header = QHBoxLayout()
         rail_header.setSpacing(6)
         profile_name = os.path.basename(self.profile_dir)
-        self.rail_meta = QLabel(f"Profile: {profile_name}")
-        self.rail_meta.setObjectName("RailMeta")
-        self.rail_meta.setToolTip(f"Active profile: {profile_name}")
-        rail_header.addWidget(self.rail_meta)
+        rail_title = QLabel("Mei")
+        rail_title.setObjectName("RailBrand")
+        rail_header.addWidget(rail_title)
         rail_header.addStretch(1)
         self.btn_rail_toggle = QPushButton("«")
         self.btn_rail_toggle.setObjectName("NavToggle")
         self.btn_rail_toggle.setToolTip("Collapse / expand the navigation rail")
         rail_header.addWidget(self.btn_rail_toggle)
         rail_layout.addLayout(rail_header)
+        self.rail_meta = QLabel(f"Profile: {profile_name}")
+        self.rail_meta.setObjectName("RailProfile")
+        self.rail_meta.setToolTip(f"Active profile: {profile_name}")
+        rail_layout.addWidget(self.rail_meta)
         self.nav_buttons = {}
         self.rail_section_labels = []
         nav_sections = (
@@ -274,6 +284,7 @@ class AppShell(QMainWindow):
         rail_layout.addStretch(1)
         self._rail = rail
         self.split.addWidget(rail)
+        self.split.setHandleWidth(1)
 
         center_wrap = QWidget()
         center_layout = QVBoxLayout(center_wrap)
@@ -311,8 +322,11 @@ class AppShell(QMainWindow):
         insights_layout = QVBoxLayout(self.insights)
         insights_layout.setContentsMargins(8, 8, 8, 8)
         insights_layout.setSpacing(6)
-        insights_title = QLabel("Ambient Insights")
-        insights_title.setObjectName("SectionTitle")
+        # The companion rail opens like a page margin: a mark, a serif title and
+        # the day's quiet facts — not a second dashboard of cards.
+        insights_layout.addWidget(components.eyebrow("Companion"))
+        insights_title = QLabel("At the table")
+        insights_title.setObjectName("DeskTitle")
         insights_layout.addWidget(insights_title)
         self.insight_list = QListWidget()
         self.insight_list.setObjectName("CafeList")
@@ -320,11 +334,9 @@ class AppShell(QMainWindow):
         sleeping_card = QFrame()
         sleeping_card.setObjectName("SectionCard")
         sleeping_layout = QVBoxLayout(sleeping_card)
-        sleeping_layout.setContentsMargins(8, 8, 8, 8)
+        sleeping_layout.setContentsMargins(10, 10, 10, 10)
         sleeping_layout.setSpacing(4)
-        sleeping_title = QLabel("Sleeping Tabs")
-        sleeping_title.setObjectName("SectionTitle")
-        sleeping_layout.addWidget(sleeping_title)
+        sleeping_layout.addWidget(components.section_header("Sleeping tabs", "Set aside to rest"))
         self.sleeping_tabs_list = QListWidget()
         self.sleeping_tabs_list.setObjectName("CafeList")
         sleeping_layout.addWidget(self.sleeping_tabs_list)
@@ -332,9 +344,9 @@ class AppShell(QMainWindow):
         assistant_card = QFrame()
         assistant_card.setObjectName("SectionCard")
         assistant_layout = QVBoxLayout(assistant_card)
-        assistant_layout.setContentsMargins(8, 8, 8, 8)
+        assistant_layout.setContentsMargins(10, 10, 10, 10)
         assistant_layout.setSpacing(5)
-        assistant_layout.addWidget(QLabel("Assistant"))
+        assistant_layout.addWidget(components.section_header("Reading nook", "Ask with context"))
         self.lbl_assistant_scope = QLabel("Context: current workspace")
         self.lbl_assistant_scope.setObjectName("MutedLabel")
         assistant_layout.addWidget(self.lbl_assistant_scope)
@@ -1248,7 +1260,7 @@ class AppShell(QMainWindow):
         xtiny = width < 680
         rail_collapsed = getattr(self, "_rail_collapsed", False)
 
-        rail_width = 46 if rail_collapsed else (64 if xtiny else 96 if tiny else 112 if narrow else 126 if compact else 150)
+        rail_width = 46 if rail_collapsed else (62 if xtiny else 92 if tiny else 108 if narrow else 124 if compact else 146)
         # A visible Insights panel keeps its width even in the Browser workspace
         # once the user toggled it on, so "enable AI insights" works while browsing.
         insight_visible = self.insights.isVisible()
@@ -1287,7 +1299,7 @@ class AppShell(QMainWindow):
         self.lbl_sync_pill.setVisible(not narrow)
         self.lbl_status.setVisible(not xtiny)
         self.omnibar.setPlaceholderText("Search / command..." if not tiny else "Go...")
-        self.rail_meta.setVisible(not rail_collapsed)
+        self.rail_meta.setVisible(not rail_collapsed and not xtiny)
         for section_label in self.rail_section_labels:
             section_label.setVisible(not tiny and not rail_collapsed)
 
@@ -1296,14 +1308,24 @@ class AppShell(QMainWindow):
             name, glyph = labels.get(key, (key, "◆"))
             button.setVisible(True)
             button.setAccessibleName(name)
-            if rail_collapsed or xtiny:
-                button.setText(glyph)
-            elif tiny:
+            button.setToolTip(name)
+            icon_only = rail_collapsed or xtiny or tiny
+            if icon_only:
                 button.setText(glyph)
             else:
-                button.setText(glyph + "  " + name)
-            button.setMinimumHeight(34)
-            button.setMaximumHeight(40)
+                # Three spaces reserve one glyph column so every label starts on
+                # the same vertical line — the rail reads as a spine, not a list.
+                button.setText(glyph + "   " + name)
+            # A glyph-only rail needs a larger mark and true centring; at 12px
+            # left aligned the spine read as a column of dust at small widths.
+            if bool(button.property("iconOnly")) != icon_only:
+                button.setProperty("iconOnly", icon_only)
+                style = button.style()
+                if style is not None:
+                    style.unpolish(button)
+                    style.polish(button)
+            button.setMinimumHeight(32)
+            button.setMaximumHeight(38)
 
         self.btn_ai_global.setVisible(not tiny)
         self.ai_preview.setVisible(not narrow)

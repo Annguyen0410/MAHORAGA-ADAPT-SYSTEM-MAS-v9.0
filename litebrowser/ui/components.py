@@ -1,9 +1,17 @@
-"""Reusable modern UI building blocks shared by every Mei window.
+"""Reusable UI building blocks shared by every Mei window.
 
-These small helpers give all surfaces (shell, browser, AI, Personal, dialogs)
-a coherent design language: a page header strip, an icon-led page title,
-stat tiles, section cards with headers, and empty-state hints. They only
-compose plain Qt widgets + object names, so styling stays in ``theme.py``.
+The design language is "the quiet table": warm paper, espresso ink, hairline
+rules, one serif voice for display type and a plain humanist sans for the
+working interface.  These helpers compose plain Qt widgets + object names, so
+all painting stays in ``theme.py`` and a page cannot invent a second design.
+
+Two generations of helpers live here on purpose:
+
+* ``masthead`` / ``eyebrow`` / ``rule`` / ``desk_panel`` — the editorial
+  primitives used by the redesigned shell, Home, Personal Hub and AI workspace.
+* ``page_header`` / ``section_header`` / ``stat_tile`` / ``empty_state`` — the
+  older helpers, re-skinned in place because dozens of pages and tests call
+  them with these exact signatures.
 """
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QColor, QFont
@@ -20,10 +28,22 @@ from PyQt5.QtWidgets import (
 )
 
 
-def _font(size: int, weight: int) -> QFont:
+def _font(size: int, weight: int, family: str | None = None, tracking: float | None = None) -> QFont:
     font = QFont()
     font.setPixelSize(size)
     font.setWeight(min(max(int(weight), 0), 99))
+    if family:
+        font.setFamily(family)
+    if tracking is not None:
+        # QSS has no letter-spacing, so display type carries its tracking on the
+        # font itself.  Guarded: very old Qt builds lack the scoped enum.
+        try:
+            font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, tracking)
+        except (AttributeError, TypeError):
+            try:
+                font.setLetterSpacing(QFont.AbsoluteSpacing, tracking)
+            except (AttributeError, TypeError):
+                pass
     return font
 
 
@@ -32,6 +52,11 @@ def _font(size: int, weight: int) -> QFont:
 WEIGHT_NORMAL = 50
 WEIGHT_DEMI = 63
 WEIGHT_BOLD = 75
+
+# Locally installed families only.  Kept next to the helpers that use them so a
+# display label does not have to reach into theme.DEFAULTS at call sites.
+DISPLAY_FAMILY = "Georgia"
+UI_FAMILY = "Segoe UI"
 
 
 class ResponsiveGrid(QWidget):
@@ -74,26 +99,105 @@ class ResponsiveGrid(QWidget):
         self._reflow()
 
 
-def page_header(title: str = "", subtitle: str = "") -> QWidget:
-    """A calm, icon-led page header shared by full workspace pages."""
+def rule(strong: bool = False) -> QFrame:
+    """A hairline separator. Rules — not boxes — divide this interface."""
+    line = QFrame()
+    line.setObjectName("MastheadRule" if strong else "QuietRule")
+    line.setFixedHeight(1)
+    line.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    return line
+
+
+def eyebrow(text: str) -> QLabel:
+    """The small clay mark above a title (a section, a date, a category)."""
+    label = QLabel(str(text).upper())
+    label.setObjectName("Eyebrow")
+    label.setFont(_font(9, WEIGHT_BOLD, UI_FAMILY, 1.1))
+    label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+    return label
+
+
+def display_title(text: str, size: int = 31) -> QLabel:
+    """The page's serif voice. Used once per surface, not on every heading."""
+    label = QLabel(text)
+    label.setObjectName("DisplayTitle")
+    label.setWordWrap(True)
+    label.setFont(_font(size, WEIGHT_DEMI, DISPLAY_FAMILY))
+    return label
+
+
+def masthead(kicker: str, title: str, deck: str = "", trailing: QWidget | None = None) -> QWidget:
+    """The editorial opening of a page: mark, serif title, deck, hairline rule.
+
+    Deliberately asymmetric and unboxed — it is the page speaking, not a card
+    pretending to be a title bar.
+    """
+    head = QWidget()
+    head.setObjectName("Masthead")
+    head.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+    outer = QVBoxLayout(head)
+    outer.setContentsMargins(2, 2, 2, 0)
+    outer.setSpacing(8)
+
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(16)
+    text_col = QVBoxLayout()
+    text_col.setContentsMargins(0, 0, 0, 0)
+    text_col.setSpacing(5)
+    if kicker:
+        mark = eyebrow(kicker)
+        text_col.addWidget(mark)
+    title_lbl = display_title(title)
+    text_col.addWidget(title_lbl)
+    if deck:
+        deck_lbl = QLabel(deck)
+        deck_lbl.setObjectName("DisplayDeck")
+        deck_lbl.setWordWrap(True)
+        deck_lbl.setFont(_font(12, WEIGHT_NORMAL))
+        text_col.addWidget(deck_lbl)
+    row.addLayout(text_col, 1)
+    if trailing is not None:
+        row.addWidget(trailing, 0, Qt.AlignTop)
+    outer.addLayout(row)
+
+    divider = QFrame()
+    divider.setObjectName("MastheadRule")
+    divider.setFixedHeight(1)
+    outer.addWidget(divider)
+    head._masthead_title = title_lbl
+    head._masthead_rule = divider
+    return head
+
+
+def page_header(title: str = "", subtitle: str = "", kicker: str = "") -> QWidget:
+    """A calm page header for full workspace pages.
+
+    The title is set in the editorial serif; the glyph is a small clay mark, not
+    a coloured bubble, so the header reads as a page opening rather than a
+    dashboard widget.
+    """
     header = QWidget()
     header.setObjectName("PageHeader")
     header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout = QHBoxLayout(header)
-    layout.setContentsMargins(4, 4, 4, 6)
-    layout.setSpacing(10)
+    layout.setContentsMargins(2, 2, 2, 4)
+    layout.setSpacing(12)
 
     glyph = QLabel("◈")
     glyph.setObjectName("PageGlyph")
-    layout.addWidget(glyph, 0, Qt.AlignVCenter)
+    glyph.setFont(_font(12, WEIGHT_BOLD))
+    layout.addWidget(glyph, 0, Qt.AlignTop)
 
     text_col = QVBoxLayout()
     text_col.setContentsMargins(0, 0, 0, 0)
-    text_col.setSpacing(1)
+    text_col.setSpacing(2)
+    if kicker:
+        text_col.addWidget(eyebrow(kicker))
     lbl_title = QLabel(title)
     lbl_title.setObjectName("PageTitle")
     lbl_title.setWordWrap(True)
-    lbl_title.setFont(_font(18, WEIGHT_DEMI))
+    lbl_title.setFont(_font(23, WEIGHT_DEMI, DISPLAY_FAMILY))
     text_col.addWidget(lbl_title)
     if subtitle:
         lbl_sub = QLabel(subtitle)
@@ -108,24 +212,25 @@ def page_header(title: str = "", subtitle: str = "") -> QWidget:
 
 
 def stat_tile(value: str = "0", label: str = "") -> QFrame:
-    """An evenly weighted stat tile: big value on top, small muted label below."""
+    """A quietly weighted stat: serif numeral over a small muted caption."""
     card = QFrame()
     card.setObjectName("StatTile")
-    card.setMinimumWidth(96)
+    card.setMinimumWidth(84)
     layout = QVBoxLayout(card)
-    layout.setContentsMargins(10, 8, 10, 8)
-    layout.setSpacing(2)
+    layout.setContentsMargins(8, 6, 8, 6)
+    layout.setSpacing(1)
+    layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
     value_lbl = QLabel(value)
     value_lbl.setObjectName("StatValue")
-    value_lbl.setFont(_font(20, WEIGHT_BOLD))
-    value_lbl.setAlignment(Qt.AlignCenter)
+    value_lbl.setFont(_font(22, WEIGHT_DEMI, DISPLAY_FAMILY))
+    value_lbl.setAlignment(Qt.AlignLeft)
     layout.addWidget(value_lbl)
 
     label_lbl = QLabel(label)
     label_lbl.setObjectName("StatLabel")
-    label_lbl.setFont(_font(11, WEIGHT_NORMAL))
-    label_lbl.setAlignment(Qt.AlignCenter)
+    label_lbl.setFont(_font(10, WEIGHT_NORMAL))
+    label_lbl.setAlignment(Qt.AlignLeft)
     label_lbl.setWordWrap(True)
     layout.addWidget(label_lbl)
 
@@ -145,7 +250,7 @@ def stat_row(tiles) -> QWidget:
     wrap.setObjectName("StatRow")
     grid = QGridLayout(wrap)
     grid.setContentsMargins(0, 0, 0, 0)
-    grid.setSpacing(8)
+    grid.setSpacing(6)
     per_row = max(1, len(tiles)) if 0 < len(tiles) <= 5 else 5
     for idx, tile in enumerate(tiles):
         row, col = divmod(idx, per_row)
@@ -157,22 +262,28 @@ def stat_row(tiles) -> QWidget:
     return wrap
 
 
-def section_header(title: str, subtitle: str = "", action: QPushButton | None = None) -> QWidget:
-    """A section title row with an optional trailing action button."""
+def section_header(title: str, subtitle: str = "", action: QPushButton | None = None, kicker: str = "") -> QWidget:
+    """A section title row with an optional trailing action.
+
+    A section is a heading on the paper, not a mini card header: no background,
+    no outline, one tight baseline.
+    """
     row = QWidget()
     row.setObjectName("SectionHeaderRow")
     row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout = QHBoxLayout(row)
-    layout.setContentsMargins(2, 6, 2, 2)
+    layout.setContentsMargins(2, 4, 2, 2)
     layout.setSpacing(8)
 
     text_col = QVBoxLayout()
     text_col.setContentsMargins(0, 0, 0, 0)
     text_col.setSpacing(1)
+    if kicker:
+        text_col.addWidget(eyebrow(kicker))
     lbl = QLabel(title)
     lbl.setObjectName("SectionTitle")
     lbl.setWordWrap(True)
-    lbl.setFont(_font(12, WEIGHT_BOLD))
+    lbl.setFont(_font(12, WEIGHT_DEMI))
     text_col.addWidget(lbl)
     if subtitle:
         sub = QLabel(subtitle)
@@ -240,27 +351,32 @@ def hint_list_item(text: str, glyph: str = "✦") -> object:
 
 
 def nav_button(label: str, glyph: str = "◆", tooltip: str = "") -> QPushButton:
-    """A rail navigation button with a leading glyph and muted label styling."""
-    button = QPushButton(f"{glyph}  {label}")
+    """A wayfinding button for the navigation spine.
+
+    The glyph sits in a fixed column so every label starts on one vertical line
+    — the difference between a bookshelf and a pile of buttons.
+    """
+    button = QPushButton(f"{glyph}   {label}")
     button.setObjectName("NavButton")
     button.setCheckable(True)
     button.setToolTip(tooltip or label)
     button.setAccessibleName(label)
     button.setProperty("navGlyph", glyph)
     button.setProperty("navLabel", label)
+    button.setCursor(Qt.PointingHandCursor)
     return button
 
 
 def action_tile(glyph: str, label: str, hint: str = "") -> QPushButton:
-    """A large launcher tile (glyph on top, label below) for dashboard quick actions."""
+    """A launcher tile (glyph above label) for quick actions."""
     button = QPushButton()
     button.setObjectName("ActionTile")
     button.setAccessibleName(label)
     button.setAccessibleDescription(hint)
     button.setToolTip(hint or label)
     layout = QVBoxLayout(button)
-    layout.setContentsMargins(8, 12, 8, 10)
-    layout.setSpacing(4)
+    layout.setContentsMargins(8, 10, 8, 9)
+    layout.setSpacing(3)
     layout.setAlignment(Qt.AlignCenter)
     g = QLabel(glyph)
     g.setObjectName("ActionGlyph")

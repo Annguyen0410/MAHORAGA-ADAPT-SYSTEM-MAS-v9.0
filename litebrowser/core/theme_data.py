@@ -10,32 +10,33 @@ below; new code should import from here when it needs no widgets.
 PALETTES = {
     # ============================ LIGHT — day café ============================
     "minimal": {
-        # Latte Cream (default): warm paper white, espresso ink, rich caramel.
-        # The calm all-day café — bright but never clinical.
-        "MAIN_BG": "#FAF6EF",
-        "MAIN_BG_ALT": "#F2EBDD",
-        "SIDEBAR_BG": "#F4EEE2",
-        "SIDEBAR_BORDER": "#E3D8C4",
-        "CARD_BG": "#FFFDF8",
-        "INPUT_BG": "#FFFFFF",
-        "INPUT_BORDER": "#D9CBB2",
-        "INPUT_FOCUS": "#B0793F",
-        "TEXT": "#292016",
-        "TEXT_MUTED": "#7A6952",
-        "ACCENT": "#A66A2E",
-        "ACCENT_HOVER": "#C07E3C",
-        "ACCENT_SOFT": "#F5E5CE",
-        "ITEM_HOVER": "#F4EBDB",
-        "ITEM_SELECTED": "#EEDFC3",
-        "ITEM_SELECTED_BORDER": "#A66A2E",
-        "BUTTON_BG": "#F3EADC",
-        "BUTTON_HOVER": "#EADCC6",
-        "BUTTON_TEXT": "#292016",
-        "MENU_BG": "#FFFDF8",
-        "MENU_ITEM_SEL": "#F0E1C6",
-        "BORDER_SOFT": "#EAE0CC",
-        "DANGER": "#C04A36",
-        "SUCCESS": "#57803E",
+        # Quiet Table (default): warm paper, espresso ink, muted sage, a line of
+        # clay.  Deliberately low-chroma: the page should read as paper on a
+        # table in daylight, not as a tinted dashboard.
+        "MAIN_BG": "#F7F3EA",
+        "MAIN_BG_ALT": "#EFE8DB",
+        "SIDEBAR_BG": "#F2ECDF",
+        "SIDEBAR_BORDER": "#DED3C0",
+        "CARD_BG": "#FCF9F2",
+        "INPUT_BG": "#FFFDF8",
+        "INPUT_BORDER": "#D9CEBC",
+        "INPUT_FOCUS": "#5F6E55",
+        "TEXT": "#302D27",
+        "TEXT_MUTED": "#6B6459",
+        "ACCENT": "#5F6E55",
+        "ACCENT_HOVER": "#47543D",
+        "ACCENT_SOFT": "#E7EADF",
+        "ITEM_HOVER": "#F1EBDF",
+        "ITEM_SELECTED": "#E4E8DB",
+        "ITEM_SELECTED_BORDER": "#5F6E55",
+        "BUTTON_BG": "#F4EFE4",
+        "BUTTON_HOVER": "#EBE3D3",
+        "BUTTON_TEXT": "#302D27",
+        "MENU_BG": "#FCF9F2",
+        "MENU_ITEM_SEL": "#E8EBDF",
+        "BORDER_SOFT": "#E3DACA",
+        "DANGER": "#A8492F",
+        "SUCCESS": "#4E6B45",
     },
     "latte": {
         # Honey Crème: golden, sunlit honey tones — a warmer, sweeter café.
@@ -202,32 +203,32 @@ PALETTES = {
         "SUCCESS": "#97AE6C",
     },
     "minimal-night": {
-        # Midnight Mocha: chocolate-dark surfaces, latte-foam gold accents —
-        # the night sibling of the default latte theme.
-        "MAIN_BG": "#1A1411",
-        "MAIN_BG_ALT": "#241C17",
-        "SIDEBAR_BG": "#1E1713",
-        "SIDEBAR_BORDER": "#382C22",
-        "CARD_BG": "#231B15",
-        "INPUT_BG": "#272018",
-        "INPUT_BORDER": "#443527",
-        "INPUT_FOCUS": "#E2BE93",
-        "TEXT": "#F6ECDC",
-        "TEXT_MUTED": "#B09C85",
-        "ACCENT": "#D4A96C",
-        "ACCENT_HOVER": "#EAC282",
-        "ACCENT_SOFT": "#33261A",
-        "ITEM_HOVER": "#2C231A",
-        "ITEM_SELECTED": "#42301C",
-        "ITEM_SELECTED_BORDER": "#EAC282",
-        "BUTTON_BG": "#2C231A",
-        "BUTTON_HOVER": "#392D20",
-        "BUTTON_TEXT": "#F6ECDC",
-        "MENU_BG": "#241D16",
-        "MENU_ITEM_SEL": "#4B3520",
-        "BORDER_SOFT": "#382C22",
-        "DANGER": "#E07E67",
-        "SUCCESS": "#97AE6C",
+        # Quiet Table Night (default dark): a dim espresso lounge — deep
+        # brown-charcoal walls, warm off-white ink, a low lamp of sage.
+        "MAIN_BG": "#171410",
+        "MAIN_BG_ALT": "#1F1A15",
+        "SIDEBAR_BG": "#1B1712",
+        "SIDEBAR_BORDER": "#342C22",
+        "CARD_BG": "#201B16",
+        "INPUT_BG": "#241F19",
+        "INPUT_BORDER": "#3D3428",
+        "INPUT_FOCUS": "#A9BE9B",
+        "TEXT": "#F2EBDF",
+        "TEXT_MUTED": "#B9AE9D",
+        "ACCENT": "#93A886",
+        "ACCENT_HOVER": "#C2D3B4",
+        "ACCENT_SOFT": "#2A3226",
+        "ITEM_HOVER": "#262019",
+        "ITEM_SELECTED": "#2E3529",
+        "ITEM_SELECTED_BORDER": "#93A886",
+        "BUTTON_BG": "#262019",
+        "BUTTON_HOVER": "#302920",
+        "BUTTON_TEXT": "#F2EBDF",
+        "MENU_BG": "#211C16",
+        "MENU_ITEM_SEL": "#2C3527",
+        "BORDER_SOFT": "#2E2820",
+        "DANGER": "#E0866A",
+        "SUCCESS": "#9DBE8A",
     },
     "ocean-night": {
         # Café Azul: deep blue-slate night with a luminous teal counter.
@@ -603,7 +604,8 @@ DEFAULT_THEME = "minimal"
 # Display names for the picker: the keys stay stable IDs, the labels tell the
 # story ("Sakura Café" beats "rose-day" in a menu).
 THEME_LABELS = {
-    "minimal": "Latte Cream · all-day default",
+    "minimal": "Quiet Table · warm paper, sage & clay",
+    "minimal-night": "Quiet Table Night · dim espresso lounge",
     "latte": "Honey Crème · golden & warm",
     "rose-day": "Sakura Café · soft rose",
     "dawn": "Café Dawn · peachy first light",
@@ -612,7 +614,6 @@ THEME_LABELS = {
     "lavender-day": "Lavender Latte · violet calm",
     "cocoa-day": "Hot Cocoa · chocolate warmth",
     "cafe-night": "Espresso House · amber lamps",
-    "minimal-night": "Midnight Mocha · latte-foam gold",
     "ocean-night": "Café Azul · deep teal night",
     "forest-night": "Matcha Night · pine & moss",
     "rain-day": "Rainy Day · grey light, wet window",
@@ -660,6 +661,21 @@ DEFAULTS = {
     "RADIUS": "14px",        # cards, popups
     "RADIUS_LG": "18px",     # hero panel, omnibar
     "RADIUS_PILL": "999px",  # pills and chips
+    # Spacing scale (integers, for Python layouts).  One rhythm everywhere:
+    # 4 / 8 / 12 / 16 / 24 / 32.  Multiples of four keep rows on a common grid
+    # without every page inventing its own margins.
+    "SPACE_XS": 4,
+    "SPACE_SM": 8,
+    "SPACE_MD": 12,
+    "SPACE_LG": 16,
+    "SPACE_XL": 24,
+    "SPACE_XXL": 32,
+    # Typography: an editorial serif for display type and numerals, a legible
+    # humanist sans for the working interface, mono only for technical values.
+    # Locally installed families only — no font download, no network.
+    "FONT_DISPLAY": 'Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif',
+    "FONT_UI": '"Segoe UI", "Segoe UI Variable Text", "Helvetica Neue", Arial, sans-serif',
+    "FONT_MONO": '"Cascadia Mono", Consolas, "JetBrains Mono", "Courier New", monospace',
     # Kept for API compatibility; actual fallback is applied at app level via
     # QFont.setFamilies in litebrowser.main (QSS font-family cannot fall back).
     "FONT_FAMILY": '"Segoe UI", "Segoe UI Symbol", "Segoe UI Emoji", "Helvetica Neue", Arial, sans-serif',
@@ -669,8 +685,13 @@ DEFAULTS = {
 # Accent presets: each is a (base, hover, soft, focus) tuple. The user picks one in
 # Settings; it recolors buttons, active states, and focus rings across every theme.
 # Soft tokens are dark-tinted; _palette() re-blends them for light themes.
+# Every preset's base is dark/light enough to carry either white or near-black
+# text (decided per palette by TEXT_ON_ACCENT), and its hover is legible as text
+# on every surface the theme can paint.
 ACCENTS = {
-    "brass":     ("#D9A94F", "#F0C168", "#43301A", "#E5B763"),  # glowing café brass (default)
+    "sage":      ("#5F6E55", "#47543D", "#2A3626", "#5F6E55"),  # quiet botanical green (default)
+    "clay":      ("#A9603F", "#7F4326", "#40291F", "#A9603F"),  # terracotta cup
+    "brass":     ("#D9A94F", "#F0C168", "#43301A", "#E5B763"),  # glowing café brass
     "caramel":   ("#C08A3E", "#DAA654", "#3D2A12", "#D4974C"),  # spun sugar caramel
     "ember":     ("#E2784A", "#F5926A", "#3B221A", "#F0956B"),  # fireplace ember
     "teal":      ("#3AB5A4", "#5FD2C2", "#12332F", "#4CC4B4"),  # mint-tea counter
@@ -679,12 +700,15 @@ ACCENTS = {
     "rose":      ("#DD6292", "#F083B0", "#3D1F30", "#E8739F"),  # strawberry glaze
     "matcha":    ("#6E9440", "#8CBB54", "#223316", "#7EA64B"),  # whisked matcha
     "slate":     ("#94A1B2", "#B0BDCE", "#272E37", "#A4B1C2"),  # quiet stone
-    "sage":      ("#789d87", "#a1bba9", "#243a30", "#89af98"),
     "terracotta": ("#bb7563", "#d49a85", "#412923", "#c98472"),
     "iris":      ("#777fc3", "#a0a5da", "#282a46", "#8d95ce"),
     "petrol":    ("#378e9b", "#63adb8", "#17343c", "#4aa0ad"),
     "plum":      ("#ac739b", "#cb9cbd", "#392434", "#bd87ac"),
 }
+
+# Accent shown for a profile that never chose one.  Changing the default does
+# not rewrite stored choices: an explicit accent (preset or #hex) always wins.
+DEFAULT_ACCENT = "brass"
 _ACCENT_KEYS = ("ACCENT", "ACCENT_HOVER", "ACCENT_SOFT", "INPUT_FOCUS")
 
 
@@ -765,6 +789,46 @@ def _blend_hex(foreground: str, background: str, amount: float) -> str:
         return foreground if foreground.startswith("#") else f"#{foreground}"
 
 
+def _derive_semantics(palette: dict) -> dict:
+    """Add the semantic surface/status layer every theme shares.
+
+    The raw palettes keep their 24 art-directed tokens so no stored profile or
+    art theme has to change.  On top of them this derives the *roles* the new
+    interface actually paints with — canvas vs. paper vs. sunken well, hairline
+    rules, an accent wash for quiet highlights, and a warm secondary (clay) that
+    is not the primary accent.  Deriving them in one place means a theme cannot
+    half-adopt the design: every palette gets the same vocabulary, already
+    contrast-checked against its own surfaces.
+    """
+    light = _is_light_color(palette["MAIN_BG"])
+    palette["SURFACE"] = palette["CARD_BG"]
+    palette["SURFACE_ALT"] = palette["MAIN_BG_ALT"]
+    palette["SURFACE_SUNK"] = _blend_hex(palette["TEXT"], palette["MAIN_BG_ALT"], 0.05 if light else 0.14)
+    palette["EDITOR_BG"] = _blend_hex(palette["CARD_BG"], palette["MAIN_BG_ALT"], 0.35 if light else 0.25)
+    palette["NAV_BG"] = palette["SIDEBAR_BG"]
+    palette["RULE"] = palette["BORDER_SOFT"]
+    palette["RULE_STRONG"] = _blend_hex(palette["TEXT"], palette["BORDER_SOFT"], 0.18)
+    palette["ACCENT_WASH"] = _blend_hex(palette["ACCENT"], palette["MAIN_BG"], 0.13 if light else 0.20)
+    palette["ACCENT_QUIET"] = _blend_hex(palette["ACCENT"], palette["CARD_BG"], 0.30 if light else 0.34)
+    # A warm counterpoint to the accent.  Derived from the palette's own danger
+    # hue so it never clashes, and pulled back until it reads as clay, not alarm.
+    clay = _blend_hex(palette["DANGER"], "#B77756", 0.45 if light else 0.30)
+    # Clay is used as text (a section mark, an overdue timestamp) as well as a
+    # chip fill, so it is pulled into contrast before anything reads it.
+    clay = _readable_color(clay, palette["CARD_BG"])
+    palette["CLAY"] = _readable_color(clay, palette["MAIN_BG"])
+    palette["CLAY_SOFT"] = _blend_hex(palette["CLAY"], palette["MAIN_BG"], 0.14 if light else 0.20)
+    palette["WARNING"] = _blend_hex("#B07B18", palette["DANGER"], 0.35)
+    palette["WARNING_SOFT"] = _blend_hex(palette["WARNING"], palette["MAIN_BG"], 0.13 if light else 0.20)
+    palette["SUCCESS_SOFT"] = _blend_hex(palette["SUCCESS"], palette["MAIN_BG"], 0.13 if light else 0.20)
+    palette["DANGER_SOFT"] = _blend_hex(palette["DANGER"], palette["MAIN_BG"], 0.13 if light else 0.20)
+    palette["FOCUS_RING"] = palette["INPUT_FOCUS"]
+    palette["SELECT_BG"] = palette["ACCENT_WASH"]
+    palette["SELECT_FG"] = palette["TEXT"]
+    palette["ON_WARM"] = "#171a1c" if contrast_ratio("#171a1c", palette["CLAY"]) >= contrast_ratio("#ffffff", palette["CLAY"]) else "#ffffff"
+    return palette
+
+
 def _palette(mode: str, accent: str | None = None):
     palette = dict(DEFAULTS)
     # Unknown names fall back to the documented default theme, not a random one
@@ -772,21 +836,41 @@ def _palette(mode: str, accent: str | None = None):
     palette.update(PALETTES.get(mode, PALETTES[DEFAULT_THEME]))
     override = _accent_override(accent)
     palette.update(override)
+    # The preset exactly as chosen.  Night palettes lift ACCENT until it can
+    # carry text, so the stylesheet still records the untouched source ink.
+    palette["ACCENT_BASE"] = palette["ACCENT"]
     # Accent presets include a dark soft tone for night themes.  Reusing it on
     # cafe-day creates near-black active buttons, so derive a paper-tinted
     # accent surface for every light theme instead.
     if override and _is_light_color(palette["MAIN_BG"]):
         palette["ACCENT_SOFT"] = _blend_hex(palette["ACCENT"], palette["MAIN_BG"], 0.20)
+    elif override:
+        # A preset tuned for paper (a deep sage, a warm clay) disappears as a
+        # filled control on a night palette.  Lift it until it carries 4.5:1
+        # against the night canvas, then the same TEXT_ON_ACCENT rule picks
+        # near-black ink — a pale ceramic chip rather than a black hole.
+        # 5.0 rather than 4.5: the fill must clear 4.5 against *both* candidate inks so TEXT_ON_ACCENT stays a real choice, not a rounding accident.
+        palette["ACCENT"] = _readable_color(palette["ACCENT"], palette["MAIN_BG"], 5.0)
     palette["TEXT_ON_ACCENT"] = "#171a1c" if contrast_ratio("#171a1c", palette["ACCENT"]) >= contrast_ratio("#ffffff", palette["ACCENT"]) else "#ffffff"
+    # Mid-luminance accents cannot carry either ink at 4.5:1.  Nudge the fill
+    # away from the chosen ink until the filled button is genuinely readable
+    # (this is the only place a preset's base colour may be adjusted).
+    if contrast_ratio(palette["TEXT_ON_ACCENT"], palette["ACCENT"]) < 4.5:
+        away = "#ffffff" if not _is_light_color(palette["TEXT_ON_ACCENT"]) else "#141414"
+        for step in range(1, 21):
+            candidate = _blend_hex(away, palette["ACCENT"], step / 20)
+            if contrast_ratio(palette["TEXT_ON_ACCENT"], candidate) >= 4.5:
+                palette["ACCENT"] = candidate
+                break
     # Filled-button hover is distinct from accent-colored text on a surface.
     palette["ACCENT_FILL_HOVER"] = _readable_color(palette["ACCENT_HOVER"], palette["TEXT_ON_ACCENT"])
     palette["TEXT_ON_DANGER"] = "#171a1c" if contrast_ratio("#171a1c", palette["DANGER"]) >= contrast_ratio("#ffffff", palette["DANGER"]) else "#ffffff"
     for background in ("MAIN_BG", "CARD_BG", "MAIN_BG_ALT", "ACCENT_SOFT"):
         palette["ACCENT_HOVER"] = _readable_color(palette["ACCENT_HOVER"], palette[background])
-    for background in ("MAIN_BG", "CARD_BG", "MAIN_BG_ALT"):
+    for background in ("MAIN_BG", "CARD_BG", "MAIN_BG_ALT", "INPUT_BG"):
         palette["TEXT_MUTED"] = _readable_color(palette["TEXT_MUTED"], palette[background])
     palette["TEXT_DIM"] = _blend_hex(palette["TEXT"], palette["MAIN_BG"], 0.55)
-    return palette
+    return _derive_semantics(palette)
 
 
 def palette_tokens(mode: str = "minimal", accent: str | None = None) -> dict:
@@ -819,7 +903,9 @@ __all__ = [
     "_accent_override",
     "_blend_hex",
     "_is_light_color",
+    "_derive_semantics",
     "_palette",
+    "DEFAULT_ACCENT",
     "accent_display_name",
     "accent_keys",
     "is_night_theme",

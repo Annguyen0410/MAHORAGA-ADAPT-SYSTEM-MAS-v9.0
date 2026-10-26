@@ -321,14 +321,18 @@ def set_search_engine(base_dir, name):
 
 
 def get_accent(base_dir):
-    name = load_prefs(base_dir).get("accent", "brass")
-    return name if _theme_mod.valid_accent(name) else "brass"
+    # The fallback is the product's default accent, not a literal: a profile
+    # that never chose one follows the design system (see theme_data).
+    default = _theme_mod.DEFAULT_ACCENT
+    name = load_prefs(base_dir).get("accent", default)
+    return name if _theme_mod.valid_accent(name) else default
 
 
 @profile_transaction
 def set_accent(base_dir, name):
     data = load_prefs(base_dir)
-    data["accent"] = name if _theme_mod.valid_accent(name) else "brass"
+    default = _theme_mod.DEFAULT_ACCENT
+    data["accent"] = name if _theme_mod.valid_accent(name) else default
     save_prefs(base_dir, data)
 
 

@@ -93,16 +93,22 @@ class AIWindow(QMainWindow):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
+        # The nook opens like a page: a mark, a serif line, one deck sentence.
+        layout.addWidget(
+            components.masthead(
+                "AI · Reading nook",
+                "A companion at the table",
+                "Ask across notes, tasks, saved pages and open tabs. Every piece of context is opt-in and visible below.",
+            )
+        )
+
         hero = QFrame()
-        hero.setObjectName("HeroCard")
+        hero.setObjectName("AIComposer")
         hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(14, 12, 14, 12)
-        hero_layout.setSpacing(8)
+        hero_layout.setContentsMargins(16, 14, 16, 14)
+        hero_layout.setSpacing(9)
 
-        brand_row = QHBoxLayout()
-        brand_row.addWidget(components.page_header("AI Assistant", "Ask one assistant across Browser, Personal, Library, and this workspace"), 1)
-        hero_layout.addLayout(brand_row)
-
+        hero_layout.addWidget(components.eyebrow("Ask"))
         settings_row = QHBoxLayout()
         settings_row.setSpacing(8)
         self.cmb_provider = QComboBox()
@@ -122,7 +128,14 @@ class AIWindow(QMainWindow):
         settings_row.addWidget(self.ed_api_key, 1)
         self.btn_save_settings = QPushButton("Save AI settings")
         settings_row.addWidget(self.btn_save_settings)
-        hero_layout.addLayout(settings_row)
+        # Provider configuration is real capability, not the main story: it
+        # stays one chip away instead of occupying the top of the page.
+        self._setup_panel = QWidget()
+        setup_panel_layout = QVBoxLayout(self._setup_panel)
+        setup_panel_layout.setContentsMargins(0, 0, 0, 0)
+        setup_panel_layout.setSpacing(6)
+        setup_panel_layout.addLayout(settings_row)
+        self._setup_panel.hide()
 
         prompt_row = QHBoxLayout()
         self.ed_question = QLineEdit()
@@ -138,10 +151,23 @@ class AIWindow(QMainWindow):
         prompt_row.addWidget(self.btn_ask)
         prompt_row.addWidget(self.btn_capture_screenshot)
         prompt_row.addWidget(self.btn_reindex)
+        self.ed_question.setObjectName("AIQuestion")
         hero_layout.addLayout(prompt_row)
 
+        # Consent is a first-class row, not a checkbox lost among buttons.
+        hero_layout.addWidget(components.rule())
+        context_label_row = QHBoxLayout()
+        context_label_row.setSpacing(8)
+        context_label_row.addWidget(components.eyebrow("Context this question may use"))
+        context_label_row.addStretch(1)
+        self.btn_ai_setup = components.chip("Provider setup ▾", checkable=True, checked=False)
+        self.btn_ai_setup.setToolTip("Provider, model and API key settings")
+        self.btn_ai_setup.toggled.connect(self._setup_panel.setVisible)
+        context_label_row.addWidget(self.btn_ai_setup)
+        hero_layout.addLayout(context_label_row)
+
         badge_row = QHBoxLayout()
-        badge_row.setSpacing(6)
+        badge_row.setSpacing(10)
         self.lbl_index = components.badge("Index: —", "accent")
         badge_row.addWidget(self.lbl_index)
         self.lbl_context_scope = components.badge("Context: Workspace-wide")
@@ -174,17 +200,21 @@ class AIWindow(QMainWindow):
         self.chk_show_context = QCheckBox("Show sources")
         self.chk_show_context.setChecked(True)
         badge_row.addWidget(self.chk_show_context)
+        hero_layout.addLayout(badge_row)
+        hero_layout.addWidget(self._setup_panel)
+
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(6)
         self.btn_to_note = QPushButton("☰ Save to note")
         self.btn_to_task = QPushButton("☑ Create task")
         self.btn_save_set = QPushButton("◫ Save session")
         self.btn_export_thread = QPushButton("⇩ Export")
         self.btn_clear_thread = QPushButton("✕ Clear")
-        badge_row.addWidget(self.btn_to_note)
-        badge_row.addWidget(self.btn_to_task)
-        badge_row.addWidget(self.btn_save_set)
-        badge_row.addWidget(self.btn_export_thread)
-        badge_row.addWidget(self.btn_clear_thread)
-        hero_layout.addLayout(badge_row)
+        for _action in (self.btn_to_note, self.btn_to_task, self.btn_save_set, self.btn_export_thread, self.btn_clear_thread):
+            _action.setObjectName("QuietButton")
+            actions_row.addWidget(_action)
+        actions_row.addStretch(1)
+        hero_layout.addLayout(actions_row)
 
         layout.addWidget(hero)
 
@@ -192,11 +222,11 @@ class AIWindow(QMainWindow):
         layout.addWidget(body, 1)
 
         left_card = QFrame()
-        left_card.setObjectName("SectionCard")
+        left_card.setObjectName("AISide")
         left_layout = QVBoxLayout(left_card)
         left_layout.setContentsMargins(12, 12, 12, 12)
         left_layout.setSpacing(6)
-        left_layout.addWidget(components.section_header("Sessions", "Ask history"))
+        left_layout.addWidget(components.section_header("Sessions", "Ask history", kicker="Earlier"))
         self.history_list = QListWidget()
         self.history_list.setObjectName("CafeList")
         left_layout.addWidget(self.history_list, 1)
@@ -207,19 +237,20 @@ class AIWindow(QMainWindow):
         center_layout = QVBoxLayout(center_card)
         center_layout.setContentsMargins(12, 12, 12, 12)
         center_layout.setSpacing(6)
-        center_layout.addWidget(components.section_header("Assistant thread", "Answers from the assistant"))
+        center_layout.addWidget(components.section_header("The thread", "Answers, with their sources attached", kicker="Conversation"))
         self.txt_answer = QTextEdit()
+        self.txt_answer.setObjectName("AIThread")
         self.txt_answer.setReadOnly(True)
         self.txt_answer.setPlaceholderText("Answers from the assistant will appear here.")
         center_layout.addWidget(self.txt_answer, 1)
         body.addWidget(center_card)
 
         right_card = QFrame()
-        right_card.setObjectName("SectionCard")
+        right_card.setObjectName("AISide")
         right_layout = QVBoxLayout(right_card)
         right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(6)
-        right_layout.addWidget(components.section_header("Sources & prompts", "Retrieved sources + quick prompts"))
+        right_layout.addWidget(components.section_header("Sources", "What the answer actually read", kicker="Evidence"))
         self.txt_context = QTextEdit()
         self.txt_context.setReadOnly(True)
         self.txt_context.setPlaceholderText("Retrieved sources and injected workspace context show here.")
@@ -242,7 +273,7 @@ class AIWindow(QMainWindow):
         body.setStretchFactor(0, 0)
         body.setStretchFactor(1, 1)
         body.setStretchFactor(2, 0)
-        body.setSizes([180, 760, 220])
+        body.setSizes([170, 820, 240])
 
         self.setStyleSheet(theme.main_qss(prefs.resolved_auto_theme(self.base_dir), prefs.get_accent(self.base_dir)))
         self.btn_reindex.clicked.connect(self._reindex)

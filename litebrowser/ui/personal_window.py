@@ -653,15 +653,27 @@ class PersonalWindow(QMainWindow):
         nav = QWidget()
         nav.setObjectName("LeftRail")
         nav_layout = QVBoxLayout(nav)
-        nav_layout.setContentsMargins(8, 8, 8, 10)
-        nav_layout.setSpacing(5)
+        nav_layout.setContentsMargins(8, 10, 8, 10)
+        nav_layout.setSpacing(3)
         self.btn_nav_toggle = QPushButton("≪")
         self.btn_nav_toggle.setCheckable(True)
         self.btn_nav_toggle.setToolTip("Collapse / expand the sidebar")
         self.btn_nav_toggle.setObjectName("NavToggle")
         nav_layout.addWidget(self.btn_nav_toggle, 0, Qt.AlignRight)
-        self.nav_header = components.page_header("Personal Hub", "Your life dashboard")
-        self.nav_header._cafe_page_title.setFont(components._font(16, components.WEIGHT_BOLD))
+        # The rail names the room without spending a hero block on it: one
+        # serif line, one muted hint, then the shelf of pages.
+        self.nav_header = QWidget()
+        self.nav_header.setObjectName("RailBrandWrap")
+        nav_head_layout = QVBoxLayout(self.nav_header)
+        nav_head_layout.setContentsMargins(8, 0, 6, 4)
+        nav_head_layout.setSpacing(0)
+        nav_title = QLabel("Personal")
+        nav_title.setObjectName("RailBrand")
+        nav_head_layout.addWidget(nav_title)
+        nav_hint = QLabel("Notes, plan, cards, calendar")
+        nav_hint.setObjectName("RailProfile")
+        nav_hint.setWordWrap(True)
+        nav_head_layout.addWidget(nav_hint)
         nav_layout.addWidget(self.nav_header)
         self.nav_buttons = {}
         for key, label, glyph in (
@@ -672,7 +684,7 @@ class PersonalWindow(QMainWindow):
             ("review", "Review", "⇄"),
             ("calendar", "Calendar", "◷"),
             ("boards", "Boards", "◌"),
-            ("files", "Files", "▦"),
+            ("files", "Files", "▤"),
             ("sites", "Sites", "↗"),
         ):
             button = components.nav_button(label, glyph)
@@ -680,8 +692,14 @@ class PersonalWindow(QMainWindow):
             self.nav_buttons[key] = button
             nav_layout.addWidget(button)
         nav_layout.addStretch(1)
-        self.btn_save_set = QPushButton("Save Personal session")
-        self.btn_set_root = QPushButton("Set personal root")
+        # Session controls are housekeeping, not destinations: quiet links at
+        # the foot of the shelf instead of two filled buttons.
+        self.btn_save_set = QPushButton("Save session")
+        self.btn_save_set.setObjectName("QuietButton")
+        self.btn_save_set.setToolTip("Save the current Personal session state")
+        self.btn_set_root = QPushButton("Set root…")
+        self.btn_set_root.setObjectName("QuietButton")
+        self.btn_set_root.setToolTip("Choose the folder that stores personal data")
         nav_layout.addWidget(self.btn_save_set)
         nav_layout.addWidget(self.btn_set_root)
         # The nav rail lives in a splitter so it is both resizable by dragging
@@ -826,6 +844,8 @@ class PersonalWindow(QMainWindow):
             for button in getattr(self, "nav_buttons", {}).values():
                 button.setVisible(True)
                 button.setText(button.property("navGlyph") or "◇")
+                button.setToolTip(button.property("navLabel") or "")
+                self._set_icon_only(button, True)
                 button.setMinimumHeight(34)
                 button.setMaximumHeight(40)
             self.btn_save_set.setVisible(False)
@@ -838,7 +858,10 @@ class PersonalWindow(QMainWindow):
         narrow = width < 980
         tiny = width < 820
         xtiny = width < 600
-        default_w = 64 if xtiny else 98 if tiny else 112 if narrow else 126 if compact else 150
+        # The rail keeps its labels down to the narrowest desktop width: two
+        # unlabelled icon columns side by side read as a broken layout, not as
+        # a compact one.  Only phone-sized panes fall back to glyphs.
+        default_w = 64 if xtiny else 132 if tiny else 138 if narrow else 146 if compact else 162
         nav = self.findChild(QWidget, "LeftRail")
         if nav:
             # Never lock min == max: the divider must stay draggable (dragging
@@ -871,9 +894,24 @@ class PersonalWindow(QMainWindow):
                     "review": ("Review", "⇄"),
                 }
                 label, glyph = labels.get(key, (key.title(), "◇"))
-                button.setText(glyph if tiny else f"{glyph}  {label}")
+                icon_only = xtiny
+                button.setText(glyph if icon_only else f"{glyph}  {label}")
+                button.setToolTip(label)
+                self._set_icon_only(button, icon_only)
                 button.setMinimumHeight(34)
                 button.setMaximumHeight(40)
+
+    @staticmethod
+    def _set_icon_only(button, icon_only: bool):
+        """Keep the QSS in step with a glyph-only rail button."""
+        if bool(button.property("iconOnly")) == bool(icon_only):
+            return
+        button.setProperty("iconOnly", bool(icon_only))
+        style = button.style()
+        if style is not None:
+            style.unpolish(button)
+            style.polish(button)
+        button.update()
 
     def _toggle_nav_collapse(self, checked: bool):
         self._nav_collapsed = bool(checked)
@@ -962,13 +1000,19 @@ class PersonalWindow(QMainWindow):
                 btn.setToolTip(f"Review · {due} cards due")
 
     def _build_overview_page(self):
+        import time as _time
+
         w = QWidget()
         l = QVBoxLayout(w)
-        l.setContentsMargins(14, 12, 14, 14)
-        l.setSpacing(8)
-        tool_row = QHBoxLayout()
-        tool_row.addWidget(components.section_header("Life Dashboard", "Overview of your day"), 1)
-        l.addLayout(tool_row)
+        l.setContentsMargins(22, 18, 22, 18)
+        l.setSpacing(16)
+        l.addWidget(
+            components.masthead(
+                _time.strftime("Personal · %A %d %B"),
+                "Your day, at a glance",
+                "The open loop in one place: what is active, what is coming, and how the week is going.",
+            )
+        )
 
         stats_row = QHBoxLayout()
         stat_specs = (
@@ -988,20 +1032,36 @@ class PersonalWindow(QMainWindow):
 
         # Focus streak heatmap (12 weeks, Duolingo-style) — visible motivation.
         self.focus_heatmap = FocusHeatmap()
+        l.addWidget(components.section_header("Focus history", "Minutes poured across the last twelve weeks", kicker="Rhythm"))
         heatmap_card = QFrame()
         heatmap_card.setObjectName("SectionCard")
         heatmap_layout = QVBoxLayout(heatmap_card)
-        heatmap_layout.setContentsMargins(12, 10, 12, 10)
+        heatmap_layout.setContentsMargins(14, 12, 14, 12)
         heatmap_layout.addWidget(self.focus_heatmap)
         l.addWidget(heatmap_card)
 
         body = QHBoxLayout()
+        body.setSpacing(24)
         self.overview_focus_list = QListWidget()
         self.overview_focus_list.setObjectName("CafeList")
         self.overview_timeline_list = QListWidget()
         self.overview_timeline_list.setObjectName("CafeList")
-        body.addWidget(self._wrap_list_card("Focus", "Active tasks", self.overview_focus_list), 1)
-        body.addWidget(self._wrap_list_card("Upcoming", "Calendar events", self.overview_timeline_list), 1)
+        focus_col = QWidget()
+        focus_layout = QVBoxLayout(focus_col)
+        focus_layout.setContentsMargins(0, 0, 0, 0)
+        focus_layout.setSpacing(4)
+        focus_layout.addWidget(components.section_header("In hand", "Active tasks", kicker="Focus"))
+        focus_layout.addWidget(components.rule())
+        focus_layout.addWidget(self.overview_focus_list, 1)
+        upcoming_col = QWidget()
+        upcoming_layout = QVBoxLayout(upcoming_col)
+        upcoming_layout.setContentsMargins(0, 0, 0, 0)
+        upcoming_layout.setSpacing(4)
+        upcoming_layout.addWidget(components.section_header("Ahead", "Calendar events", kicker="Upcoming"))
+        upcoming_layout.addWidget(components.rule())
+        upcoming_layout.addWidget(self.overview_timeline_list, 1)
+        body.addWidget(focus_col, 1)
+        body.addWidget(upcoming_col, 1)
         l.addLayout(body, 1)
         return w
 
@@ -1067,9 +1127,9 @@ class PersonalWindow(QMainWindow):
     def _build_notes_page(self):
         w = QWidget()
         l = QVBoxLayout(w)
-        l.setContentsMargins(12, 10, 12, 12)
-        l.setSpacing(6)
-        l.addWidget(components.page_header("Notes", "SafeVault notes, clips, and study notes"))
+        l.setContentsMargins(22, 18, 22, 18)
+        l.setSpacing(10)
+        l.addWidget(components.page_header("Notes", "A quiet page for reading, writing and linking ideas", kicker="SafeVault"))
         top_row = QHBoxLayout()
         self.ed_note_search = QLineEdit()
         self.ed_note_search.setPlaceholderText("Search notes in SafeVault...")
@@ -1126,14 +1186,22 @@ class PersonalWindow(QMainWindow):
         self.btn_note_tools.toggled.connect(self._note_tools.setVisible)
         l.addWidget(self._note_tools)
 
-        # Find-within-note toolbar.
-        find_row = QHBoxLayout()
-        find_row.addWidget(QLabel("Find"))
+        # Find-within-note toolbar. It lives inside the writing column, not
+        # above the whole page: two full-width search fields stacked on top of
+        # each other made it unclear which one searched what.
+        self._find_bar = QWidget()
+        self._find_bar.setObjectName("NoteFindBar")
+        find_row = QHBoxLayout(self._find_bar)
+        find_row.setContentsMargins(0, 0, 0, 0)
+        find_row.setSpacing(6)
         self.ed_note_find = QLineEdit()
-        self.ed_note_find.setPlaceholderText("Find and highlight in this note...")
+        self.ed_note_find.setObjectName("NoteFind")
+        self.ed_note_find.setPlaceholderText("Find in this note…")
         self.btn_find_prev = QPushButton("‹")
+        self.btn_find_prev.setObjectName("FindStep")
         self.btn_find_prev.setToolTip("Previous match")
         self.btn_find_next = QPushButton("›")
+        self.btn_find_next.setObjectName("FindStep")
         self.btn_find_next.setToolTip("Next match")
         self.lbl_find_count = QLabel("")
         self.lbl_find_count.setObjectName("MutedLabel")
@@ -1141,7 +1209,6 @@ class PersonalWindow(QMainWindow):
         find_row.addWidget(self.btn_find_prev)
         find_row.addWidget(self.btn_find_next)
         find_row.addWidget(self.lbl_find_count)
-        l.addLayout(find_row)
 
         split = QSplitter(Qt.Horizontal)
         left_pane = QWidget()
@@ -1150,6 +1217,9 @@ class PersonalWindow(QMainWindow):
         left_layout.setSpacing(4)
         self.notes_list = MeiNotesList(self)
         self.notes_list.setObjectName("CafeList")
+        # A narrow shelf must elide its titles, not slice them mid-word.
+        self.notes_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.notes_list.setTextElideMode(Qt.ElideRight)
         self.notes_list.currentItemChanged.connect(self._load_selected_note)
         left_layout.addWidget(self.notes_list, 1)
         categories_hint = QLabel("Drag a note to a category to move it")
@@ -1167,8 +1237,10 @@ class PersonalWindow(QMainWindow):
         editor_layout.setContentsMargins(0, 0, 0, 0)
         self.neural_graph = NeuralGraphWidget()
         editor_layout.addWidget(self.neural_graph)
+        editor_layout.addWidget(self._find_bar)
         self.lbl_note_title = QLabel("No note selected")
-        self.lbl_note_title.setObjectName("MutedLabel")
+        self.lbl_note_title.setObjectName("NoteTitleLabel")
+        self.lbl_note_title.setWordWrap(True)
         editor_layout.addWidget(self.lbl_note_title)
         self.lbl_note_image = QLabel()
         self.lbl_note_image.setAlignment(Qt.AlignCenter)
@@ -1227,9 +1299,10 @@ class PersonalWindow(QMainWindow):
         split.addWidget(editor_wrap)
         self._notes_splitter = split
         split.setChildrenCollapsible(False)
+        split.setHandleWidth(10)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
-        split.setSizes([220, 820])
+        split.setSizes([250, 800])
         l.addWidget(split, 1)
 
         self.ed_note_search.textChanged.connect(self._schedule_notes_refresh)
@@ -2373,26 +2446,48 @@ class PersonalWindow(QMainWindow):
         l.setContentsMargins(12, 10, 12, 12)
         l.setSpacing(6)
         header = QHBoxLayout()
-        header.addWidget(components.page_header("Weekly Plan", "Plan your week · drag items between days"), 1)
+        header.addWidget(
+            components.page_header(
+                "Weekly Plan",
+                "A paper planner for the week: deadlines, blocks, and the study loop",
+                kicker="Planner",
+            ),
+            1,
+        )
         self.btn_plan_prev = QPushButton("‹")
         self.btn_plan_prev.setToolTip("Previous week")
         self.btn_plan_today = QPushButton("Today")
         self.btn_plan_next = QPushButton("›")
         self.lbl_plan_week = QLabel("")
-        self.lbl_plan_week.setObjectName("MutedLabel")
+        self.lbl_plan_week.setObjectName("PlanWeek")
         self.btn_plan_settings = QPushButton("⚙ Semester")
         self.btn_plan_settings.setToolTip(
             "Semester name and dates — the planner keeps its term settings in the plan store"
         )
         self.btn_plan_settings.clicked.connect(self._edit_plan_settings)
-        header.addWidget(self.btn_plan_prev)
-        header.addWidget(self.btn_plan_today)
-        header.addWidget(self.btn_plan_next)
-        header.addWidget(self.lbl_plan_week)
         header.addWidget(self.btn_plan_settings)
         l.addLayout(header)
 
-        form = QHBoxLayout()
+        # Week navigation gets its own quiet strip: the header says where you
+        # are, this says which week you are looking at.  Keeping them apart is
+        # what stops a date field from being clipped by five neighbours.
+        week_strip = QFrame()
+        week_strip.setObjectName("PlanToolbar")
+        week_layout = QHBoxLayout(week_strip)
+        week_layout.setContentsMargins(8, 4, 8, 4)
+        week_layout.setSpacing(6)
+        week_layout.addWidget(self.btn_plan_prev)
+        week_layout.addWidget(self.btn_plan_today)
+        week_layout.addWidget(self.btn_plan_next)
+        week_layout.addWidget(self.lbl_plan_week)
+        week_layout.addStretch(1)
+        l.addWidget(week_strip)
+
+        form_frame = QFrame()
+        form_frame.setObjectName("PlanToolbar")
+        form = QHBoxLayout(form_frame)
+        form.setContentsMargins(8, 6, 8, 6)
+        form.setSpacing(7)
         self.ed_plan_title = QLineEdit()
         self.ed_plan_title.setPlaceholderText("New assignment or task...")
         self.cmb_plan_kind = QComboBox()
@@ -2426,8 +2521,11 @@ class PersonalWindow(QMainWindow):
             "Pour a focus session for the selected item or block; the minutes are credited back"
         )
         form.addWidget(self.ed_plan_title, 2)
-        self.ed_plan_title.setMinimumWidth(0)
+        self.ed_plan_title.setMinimumWidth(120)
         self.ed_plan_date.setAccessibleName("Planned date")
+        # Date fields carry a calendar button; without a floor the form squeezed
+        # the year out of "2026-09-30" at 1440px.
+        self.ed_plan_date.setMinimumWidth(122)
         form.addWidget(QLabel("On"))
         form.addWidget(self.ed_plan_date)
         self.btn_plan_details = components.chip("Details ▾", checkable=True, checked=False)
@@ -2435,7 +2533,7 @@ class PersonalWindow(QMainWindow):
         form.addWidget(self.btn_plan_add)
         form.addWidget(self.btn_plan_study)
         form.addWidget(self.btn_plan_delete)
-        l.addLayout(form)
+        l.addWidget(form_frame)
         self._plan_details = QWidget()
         detail_grid = QGridLayout(self._plan_details)
         detail_grid.setContentsMargins(0, 0, 0, 0)
@@ -2527,20 +2625,26 @@ class PersonalWindow(QMainWindow):
         self.plan_day_lists = {}
         for offset in range(7):
             card = QFrame()
-            card.setObjectName("SectionCard")
+            card.setObjectName("PlanColumn")
             card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(5, 5, 5, 5)
-            card_layout.setSpacing(4)
+            card_layout.setContentsMargins(0, 0, 0, 0)
+            card_layout.setSpacing(6)
             day_label = QLabel("")
-            day_label.setObjectName("SectionTitle")
+            day_label.setObjectName("PlanDayHead")
             day_label.setAlignment(Qt.AlignCenter)
             day_list = PlannerDayList(self, "", card)
             day_list.setObjectName("CafeList")
             day_list.itemClicked.connect(self._planner_item_clicked)
             day_list.itemDoubleClicked.connect(self._planner_edit_clicked)
+            day_body = QFrame()
+            day_body.setObjectName("PlanColumnBody")
+            day_body_layout = QVBoxLayout(day_body)
+            day_body_layout.setContentsMargins(4, 4, 4, 4)
+            day_body_layout.setSpacing(0)
+            day_body_layout.addWidget(day_list, 1)
             card_layout.addWidget(day_label)
-            card_layout.addWidget(day_list, 1)
-            card.setMinimumWidth(140)
+            card_layout.addWidget(day_body, 1)
+            card.setMinimumWidth(128)
             columns.addWidget(card, 1)
             self.plan_day_lists[offset] = (day_label, day_list)
         self.plan_scroll = QScrollArea()
