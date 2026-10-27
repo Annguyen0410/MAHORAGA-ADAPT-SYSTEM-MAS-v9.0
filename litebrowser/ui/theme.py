@@ -782,11 +782,12 @@ QHeaderView::section {
 #LoadProgress::chunk { background-color: %(ACCENT)s; }
 
 /* ---------- the reading nook: AI workspace ---------- */
-#AIThread {
+#AIThread, #AIEvidence {
     background-color: %(EDITOR_BG)s;
     border: 1px solid %(RULE)s;
     border-radius: %(RADIUS)s;
     font-size: 13px;
+    padding: 0;
 }
 #AIComposer {
     background-color: %(SURFACE)s;
@@ -795,7 +796,38 @@ QHeaderView::section {
 }
 #AISide { background-color: %(SURFACE)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS)s; }
 #AIContextBar { background-color: transparent; border: none; }
-#AIQuestion { min-height: 36px; font-size: 13px; padding: 8px 12px; }
+#AIQuestion { min-height: 32px; font-size: 14px; padding: 8px 13px; }
+#AIContextOptions, #AIActions { background-color: transparent; border: none; }
+#AIContextScope { color: %(TEXT_MUTED)s; font-size: 10px; }
+#AIContextSummary, #AIHint { color: %(TEXT_MUTED)s; font-size: 10px; }
+#AIPrivacy { color: %(TEXT_MUTED)s; font-size: 10px; }
+#AIPrivacy[remote="true"] { color: %(DANGER)s; }
+#AIStatus { color: %(TEXT_MUTED)s; font-size: 10px; font-weight: 700; }
+#AIStatus[state="busy"] { color: %(ACCENT_HOVER)s; }
+#AIStatus[state="error"] { color: %(DANGER)s; }
+#AIEmptyState, #AIEvidenceEmpty {
+    background-color: %(SURFACE_SUNK)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS)s;
+}
+#AIEmptyTitle {
+    color: %(TEXT)s;
+    font-family: %(FONT_DISPLAY)s;
+    font-size: 19px;
+    font-weight: 600;
+}
+#AIEmptyHint { color: %(TEXT_MUTED)s; font-size: 11px; }
+#AIStarter {
+    background-color: transparent;
+    color: %(ACCENT_HOVER)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_XS)s;
+    padding: 7px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+#AIStarter:hover { background-color: %(ACCENT_WASH)s; border-color: %(ACCENT)s; color: %(ACCENT_HOVER)s; }
+#AIStarter:focus { border-color: %(ACCENT)s; }
 
 /* ---------- notes / planner / review ---------- */
 #NoteCanvas {

@@ -150,6 +150,7 @@ def masthead(kicker: str, title: str, deck: str = "", trailing: QWidget | None =
         text_col.addWidget(mark)
     title_lbl = display_title(title)
     text_col.addWidget(title_lbl)
+    deck_lbl = None
     if deck:
         deck_lbl = QLabel(deck)
         deck_lbl.setObjectName("DisplayDeck")
@@ -166,6 +167,7 @@ def masthead(kicker: str, title: str, deck: str = "", trailing: QWidget | None =
     divider.setFixedHeight(1)
     outer.addWidget(divider)
     head._masthead_title = title_lbl
+    head._masthead_deck = deck_lbl
     head._masthead_rule = divider
     return head
 
@@ -285,6 +287,7 @@ def section_header(title: str, subtitle: str = "", action: QPushButton | None = 
     lbl.setWordWrap(True)
     lbl.setFont(_font(12, WEIGHT_DEMI))
     text_col.addWidget(lbl)
+    sub = None
     if subtitle:
         sub = QLabel(subtitle)
         sub.setObjectName("MutedLabel")
@@ -294,6 +297,7 @@ def section_header(title: str, subtitle: str = "", action: QPushButton | None = 
         sub.setWordWrap(True)
         text_col.addWidget(sub)
     layout.addLayout(text_col, 1)
+    row._subtitle = sub
     if action is not None:
         layout.addWidget(action, 0, Qt.AlignVCenter)
     return row
