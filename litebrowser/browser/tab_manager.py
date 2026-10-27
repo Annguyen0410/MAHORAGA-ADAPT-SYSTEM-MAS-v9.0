@@ -122,13 +122,17 @@ class TabListItemWidget(QWidget):
         # Most tab rows are never hovered. Allocate a timer only for the
         # handful the user inspects instead of one QTimer per open tab.
         self._memory_timer = None
+        self._active = False
+        self._state_style = None
+        self._base_title_style = ""
 
         self.setAttribute(Qt.WA_Hover, True)
         self.setStyleSheet("background: transparent;")
         layout = QHBoxLayout(self)
-        # Slim 32px rows: tighter margins + spacing for a denser, professional desk.
-        layout.setContentsMargins(6, 2, 3, 2)
-        layout.setSpacing(5)
+        # Slim rows with enough air between the favicon, title and close action
+        # to scan a long desk without turning every tab into a card.
+        layout.setContentsMargins(6, 2, 4, 2)
+        layout.setSpacing(6)
 
         self.lbl_group = QLabel("")  # Chrome-style group color dot
         self.lbl_group.setFixedWidth(7)
@@ -146,14 +150,18 @@ class TabListItemWidget(QWidget):
         self.lbl_title.setWordWrap(False)
         self.lbl_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.lbl_title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self._base_title_style = ""
+        self.lbl_title.setAccessibleName(title)
         self.lbl_state = QLabel("")
         self.lbl_state.setFixedWidth(26)
         self.lbl_state.setAlignment(Qt.AlignCenter)
+        self.lbl_state.setAccessibleName("Tab state")
         self.btn_close = QToolButton()
         self.btn_close.setText("x")
         self.btn_close.setFixedSize(18, 18)
         self.btn_close.setCursor(Qt.PointingHandCursor)
+        # No native tooltip here: hover tooltips next to the WebEngine surface
+        # can trip the Windows compositor bug documented for the tab title.
+        self.btn_close.setAccessibleName("Close tab")
 
         layout.addWidget(self.lbl_icon)
         layout.addWidget(self.lbl_title, 1)
@@ -184,7 +192,28 @@ class TabListItemWidget(QWidget):
             % {"MUTED": pal["TEXT_MUTED"], "HOVER": pal["ITEM_HOVER"]}
         )
         self._base_title_style = f"color: {pal['TEXT']}; font-size: 11px; font-weight: 600; background: transparent;"
-        self.lbl_title.setStyleSheet(self._base_title_style)
+        self._apply_title_style()
+
+    def _apply_title_style(self):
+        """Compose the theme base, row state, and active emphasis in one place."""
+        style = self._state_style or self._base_title_style
+        if self._active:
+            style = style.rstrip(";") + "; font-weight: 700;"
+        self.lbl_title.setStyleSheet(style)
+
+    def set_active(self, active):
+        """Brighten the selected row without changing its stored title.
+
+        QSS paints the row background, but the title is a child widget with its
+        own inline colour, so the selected tab needs this explicit weight change
+        to stay distinguishable from hover and from a pinned neighbour.
+        """
+        active = bool(active)
+        if self._active == active:
+            return
+        self._active = active
+        self.setProperty("active", active)
+        self._apply_title_style()
 
     def _palette(self):
         base_dir = getattr(self.manager, "base_dir", None)
@@ -221,9 +250,11 @@ class TabListItemWidget(QWidget):
 
     def setText(self, value):
         self.lbl_title.setText(value)
+        self.lbl_title.setAccessibleName(value)
 
     def set_title_style(self, style):
-        self.lbl_title.setStyleSheet(style)
+        self._state_style = style
+        self._apply_title_style()
 
     def mouseReleaseEvent(self, event):
         # Chrome/Firefox standard: middle-click anywhere on the row closes the
@@ -547,6 +578,16 @@ class TabManager:
             browser.setUrl(QUrl(target_url))
         return browser
 
+    def refresh_active_rows(self, active_row=None):
+        """Keep the selected row's title weight in sync with the tab list."""
+        if active_row is None:
+            active_row = self.tab_list.currentRow()
+        for i in range(self.tab_list.count()):
+            item = self.tab_list.item(i)
+            widget = self._widget_for_item(item)
+            if widget is not None and hasattr(widget, "set_active"):
+                widget.set_active(i == active_row)
+
     def add_tab(self, qurl=None, label="New Tab", is_active=True, is_incognito=False, session_data=None):
         session_data = session_data or {}
         show_new_tab_page = qurl is None and not is_incognito and not session_data
@@ -589,7 +630,7 @@ class TabManager:
         )
         if is_pinned:
             widget.lbl_state.setText("Pin")
-            widget.lbl_title.setStyleSheet(
+            widget.set_title_style(
                 f"color: {self._pal['ACCENT_HOVER']}; font-size: 11px; font-weight: 700; background: transparent;"
             )
         if session_data.get("icon"):
@@ -740,7 +781,11 @@ class TabManager:
                 sleeping += 1
             else:
                 active += 1
-        self.lbl_tab_count.setText(f"{active} live · {sleeping} sleeping")
+        setter = getattr(self.window, "set_tab_count", None)
+        if callable(setter):
+            setter(active, sleeping)
+        else:
+            self.lbl_tab_count.setText(f"{active} live · {sleeping} sleeping")
         self.refresh_row_state_labels()
         if hasattr(self.window, "refresh_insight_summary"):
             self.window.refresh_insight_summary()
@@ -762,6 +807,7 @@ class TabManager:
             except Exception:
                 pass
         self.stack.setCurrentWidget(browser)
+        self.refresh_active_rows(i)
         pending = browser.property("pending_url")
         if pending:
             browser.setProperty("pending_url", None)
@@ -789,7 +835,7 @@ class TabManager:
         item.setData(TAB_META_ROLE, metadata)
         row = self.tab_list.row(item)
         widget.lbl_state.setText("Zz" if row < 0 else self.row_state_text(row))
-        widget.lbl_title.setStyleSheet(
+        widget.set_title_style(
             f"color: {self._pal['TEXT_MUTED']}; font-size: 11px; font-weight: 600; background: transparent;"
         )
 
@@ -802,7 +848,7 @@ class TabManager:
         item.setData(TAB_META_ROLE, metadata)
         row = self.tab_list.row(item)
         widget.lbl_state.setText(self.row_state_text(row) if row >= 0 else "")
-        widget.lbl_title.setStyleSheet(
+        widget.set_title_style(
             (
                 f"color: {self._pal['ACCENT_HOVER']}; font-size: 11px; font-weight: 700; background: transparent;"
             )
@@ -966,15 +1012,19 @@ class TabManager:
             state_lbl.setText("Pin" if pinned else "")
         if lbl is None:
             return
+        # The state chip says "Pin"; a second "Pin  " prefix in the title wasted
+        # the scarcest space in the desk.  Strip prefixes left by old builds.
+        title = lbl.text()
+        while title.startswith("Pin  "):
+            title = title[5:]
+        if title != lbl.text():
+            lbl.setText(title)
         if pinned:
-            if not lbl.text().startswith("Pin  "):
-                lbl.setText("Pin  " + lbl.text())
-            lbl.set_title_style(
+            widget.set_title_style(
                 f"color: {accent}; font-size: 11px; font-weight: 700; background: transparent;"
             )
         else:
-            lbl.setText(lbl.text().replace("Pin  ", ""))
-            lbl.set_title_style(
+            widget.set_title_style(
                 f"color: {text_color}; font-size: 11px; font-weight: 600; background: transparent;"
             )
         self._refresh_hibernate_timers()

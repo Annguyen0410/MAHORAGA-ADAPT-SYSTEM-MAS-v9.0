@@ -258,7 +258,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         self.sidebarWidget.setMaximumWidth(800)
         self.sidebar_layout = QVBoxLayout(self.sidebarWidget)
         self.sidebar_layout.setContentsMargins(8, 10, 8, 10)
-        self.sidebar_layout.setSpacing(6)
+        self.sidebar_layout.setSpacing(8)
         self.sidebar_layout.setAlignment(Qt.AlignTop)
         self._sidebar_anim = None
         # One header line: the collapse toggle on the left, the live/sleeping
@@ -271,8 +271,13 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         self.btn_collapse_sidebar.setObjectName("SidebarCollapse")
         self.btn_collapse_sidebar.setToolTip("Collapse / expand the tab desk")
         self.btn_collapse_sidebar.setText("‹")
+        self.btn_collapse_sidebar.setAccessibleName("Collapse tab desk")
         self.btn_collapse_sidebar.clicked.connect(self._toggle_sidebar_collapse)
         sidebar_title_row.addWidget(self.btn_collapse_sidebar)
+        self.lbl_tab_desk = QLabel("Tabs")
+        self.lbl_tab_desk.setObjectName("TabDeskTitle")
+        self.lbl_tab_desk.setToolTip("Open tabs in this workspace")
+        sidebar_title_row.addWidget(self.lbl_tab_desk)
         sidebar_title_row.addStretch(1)
         self.lbl_tab_count = QLabel("0 live · 0 sleeping")
         self.lbl_tab_count.setObjectName("TabCounter")
@@ -338,7 +343,8 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         # The full filter syntax used to be the placeholder, which the narrow
         # sidebar clipped mid-word ("group:…"). Keep the box quiet and teach the
         # syntax on hover instead.
-        self.tab_filter.setPlaceholderText("Search tabs…")
+        self.tab_filter.setPlaceholderText("Find a tab…")
+        self.tab_filter.setAccessibleName("Find a tab")
         self.tab_filter.setToolTip(
             "Filter the tab list\n"
             "    is:sleeping   is:pinned   is:live\n"
@@ -354,6 +360,8 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         tab_page_layout.addWidget(self.tab_filter)
         self.tab_list = QListWidget()
         self.tab_list.setObjectName("TabList")
+        self.tab_list.setAccessibleName("Open tabs")
+        self.tab_list.setSpacing(2)
         self.tab_list.currentRowChanged.connect(self._on_change_tab)
         self.tab_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tab_list.customContextMenuRequested.connect(self.show_tab_context_menu)
@@ -437,7 +445,8 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         self.btn_panel_reading.clicked.connect(lambda: self._switch_sidebar_panel(4))
         self.btn_new_tab = QPushButton("+  New Tab")
         self.btn_new_tab.setObjectName("NewTabBtn")
-        self.btn_new_tab.setToolTip("Ctrl+T")
+        self.btn_new_tab.setToolTip("Open a fresh tab (Ctrl+T)")
+        self.btn_new_tab.setAccessibleDescription("Opens a new tab in this workspace")
         self.btn_new_tab.clicked.connect(lambda: self.add_new_tab(None, "New Tab"))
         # The caret is part of the label, not Qt's ::menu-indicator subcontrol:
         # the subcontrol anchors itself to the bottom-right of a *styled*
@@ -453,7 +462,7 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         self.sidebar_footer.setObjectName("SidebarFooter")
         self.sidebar_footer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         sidebar_footer_layout = QVBoxLayout(self.sidebar_footer)
-        sidebar_footer_layout.setContentsMargins(0, 4, 0, 0)
+        sidebar_footer_layout.setContentsMargins(0, 8, 0, 0)
         sidebar_footer_layout.setSpacing(6)
         # Same width for both actions: two buttons of different lengths centred in
         # a column read as an accident, an even pair reads as a toolbar.
@@ -975,6 +984,31 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
 
         if getattr(self, "_topbar_collapsed", False):
             self._apply_topbar_collapse()
+        render_count = getattr(self, "_render_tab_count", None)
+        if callable(render_count):
+            render_count()
+
+    def set_tab_count(self, active, sleeping):
+        """Keep the desk count legible at the width the sidebar actually has."""
+        self._tab_counts = (max(0, int(active)), max(0, int(sleeping)))
+        self._render_tab_count()
+
+    def _render_tab_count(self):
+        if not hasattr(self, "lbl_tab_count"):
+            return
+        active, sleeping = getattr(self, "_tab_counts", (0, 0))
+        sidebar_width = self.sidebarWidget.width() if hasattr(self, "sidebarWidget") else 0
+        compact = sidebar_width < 176
+        if compact:
+            text = f"{active} · {sleeping}z"
+        else:
+            text = f"{active} live · {sleeping} sleeping"
+        self.lbl_tab_count.setText(text)
+        self.lbl_tab_count.setToolTip(
+            f"{active} live tab{'s' if active != 1 else ''} · "
+            f"{sleeping} sleeping tab{'s' if sleeping != 1 else ''}\n"
+            "Live tabs use a renderer; sleeping tabs reopen when selected."
+        )
 
 
     def _check_for_updates_from_browser(self):
@@ -2707,11 +2741,21 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         """Thorough collapse: hide the whole tab desk except the expand toggle
         so the web view gets every spare pixel (Opera-GX-style thin rail)."""
         collapsed = bool(getattr(self, "sidebar_collapsed", False))
-        tiny = self.width() < 900
+        width = self.sidebarWidget.width() if hasattr(self, "sidebarWidget") else 0
+        if hasattr(self, "lbl_tab_desk"):
+            self.lbl_tab_desk.setVisible(not collapsed and width >= 150)
         if hasattr(self, "lbl_tab_count"):
-            self.lbl_tab_count.setVisible(not tiny and not collapsed)
+            # Keep the count on the narrow desk too; it becomes "N · Nz" rather
+            # than disappearing, because tab state is the desk's core signal.
+            self.lbl_tab_count.setVisible(not collapsed and width >= 132)
+            render_count = getattr(self, "_render_tab_count", None)
+            if callable(render_count):
+                render_count()
         if hasattr(self, "workspace_combo"):
-            self.workspace_combo.setVisible(not tiny and not collapsed)
+            # The workspace switcher used to vanish below 900px; keep that
+            # narrow-desk rule so the compact header and tab search keep their
+            # room instead of stacking a third control above the list.
+            self.workspace_combo.setVisible(self.width() >= 900 and not collapsed)
         for attr in (
             "sidebar_stack",
             "sidebar_footer",
@@ -2898,7 +2942,10 @@ class SearchWindow(TopBarMixin, DockingMixin, MenusMixin, WindowToolsMixin, QMai
         btn = getattr(self, "btn_collapse_sidebar", None)
         if btn is None:
             return
-        btn.setProperty("collapsed", bool(getattr(self, "sidebar_collapsed", False)))
+        collapsed = bool(getattr(self, "sidebar_collapsed", False))
+        btn.setProperty("collapsed", collapsed)
+        btn.setAccessibleName("Expand tab desk" if collapsed else "Collapse tab desk")
+        btn.setToolTip("Expand the tab desk" if collapsed else "Collapse the tab desk")
         style = btn.style()
         style.unpolish(btn)
         style.polish(btn)

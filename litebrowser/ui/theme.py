@@ -385,6 +385,7 @@ QPushButton#TopAccentButton:disabled { background-color: %(MAIN_BG_ALT)s; color:
     font-weight: 700;
 }
 #TabCounter, #ZoomLabel { color: %(TEXT_MUTED)s; font-size: 10px; font-weight: 600; }
+#TabDeskTitle { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 12px; font-weight: 600; }
 #SiteStatePill, #Pill { background-color: %(MAIN_BG_ALT)s; color: %(TEXT_MUTED)s; border: 1px solid %(RULE)s; padding: 3px 10px; font-size: 10px; font-weight: 700; }
 #ZoomLabel { background-color: transparent; border: none; padding: 2px 6px; }
 #SiteStatePill, #ZoomLabel, #StatusPill, #Chip, #Pill { border-radius: %(RADIUS_PILL)s; }
@@ -535,6 +536,17 @@ QPushButton::menu-indicator, QToolButton::menu-indicator { image: none; width: 0
 }
 #TopIconButton:hover { background-color: %(ITEM_HOVER)s; border-color: %(RULE)s; color: %(TEXT)s; }
 #TopIconButton:checked { background-color: %(ACCENT_WASH)s; border-color: %(ACCENT)s; color: %(ACCENT_HOVER)s; }
+#ToolbarChip {
+    min-height: 26px;
+    background-color: transparent;
+    color: %(TEXT_MUTED)s;
+    border: 1px solid %(RULE)s;
+    border-radius: %(RADIUS_XS)s;
+    padding: 5px 10px;
+    font-size: 10px;
+    font-weight: 800;
+}
+#ToolbarChip:hover { color: %(TEXT)s; background-color: %(ITEM_HOVER)s; border-color: %(RULE_STRONG)s; }
 #SidebarPanelBtn {
     min-width: 32px; min-height: 30px;
     background-color: transparent;
@@ -614,14 +626,15 @@ QComboBox QAbstractItemView::item:selected { background-color: %(ACCENT_WASH)s; 
 #SearchEngine::drop-down, #WorkspaceCombo::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border: none; background: transparent; }
 #SearchEngine::down-arrow, #WorkspaceCombo::down-arrow { width: 9px; height: 9px; }
 #TabFilter {
-    min-height: 26px;
+    min-height: 28px;
     margin: 0 2px 6px 2px;
     background-color: %(MAIN_BG_ALT)s;
     border: 1px solid %(RULE)s;
     border-radius: %(RADIUS_XS)s;
     padding: 5px 9px;
-    font-size: 10px;
+    font-size: 11px;
 }
+#TabFilter:focus { background-color: %(INPUT_BG)s; border-color: %(ACCENT)s; }
 
 /* ---------- lists ---------- */
 #CafeList, #TabList, QListWidget, QTreeWidget {
@@ -659,6 +672,11 @@ QListWidget::item:selected, QTreeWidget::item:selected, #TabList::item:selected 
 }
 QListView#CafeList, QListView#TabList { background-color: transparent; }
 #CafeList::item:selected, #TabList::item:selected { background-color: %(ACCENT_WASH)s; color: %(TEXT)s; }
+#TabList:focus {
+    border: 1px solid %(ACCENT)s;
+    border-radius: %(RADIUS_XS)s;
+}
+#TabList:focus::item:selected { border-left: 3px solid %(ACCENT)s; }
 
 /* Inline omnibar feature finder: a card popped under the command bar. */
 #FeaturePopupList {
@@ -727,16 +745,18 @@ QHeaderView::section {
 #TopBar QToolButton:hover { background-color: %(ITEM_HOVER)s; color: %(TEXT)s; border-color: %(RULE)s; }
 #WebContainer { background-color: %(MAIN_BG)s; border: none; border-radius: 0; }
 #NewTabBtn {
-    min-height: 30px;
-    background-color: transparent;
+    min-height: 32px;
+    background-color: %(ACCENT_WASH)s;
     color: %(ACCENT_HOVER)s;
     border: 1px solid %(RULE)s;
     border-radius: %(RADIUS_XS)s;
-    padding: 6px 10px;
+    padding: 7px 12px;
     font-weight: 700;
 }
-#NewTabBtn:hover { background-color: %(ACCENT_WASH)s; border-color: %(ACCENT)s; }
-#SidebarFooter { background-color: transparent; }
+#NewTabBtn:hover { background-color: %(ACCENT_SOFT)s; border-color: %(ACCENT)s; }
+#OptionsBtn { border-color: transparent; }
+#OptionsBtn:hover { border-color: %(RULE_STRONG)s; }
+#SidebarFooter { background-color: transparent; border-top: 1px solid %(RULE)s; }
 #DormantTabView { background-color: %(SURFACE_SUNK)s; border: 1px dashed %(RULE_STRONG)s; border-radius: %(RADIUS)s; }
 #WebPanelDock { background-color: %(SURFACE)s; border-left: 1px solid %(RULE)s; }
 #SplitDock { background-color: %(SURFACE)s; border-right: 1px solid %(RULE)s; }

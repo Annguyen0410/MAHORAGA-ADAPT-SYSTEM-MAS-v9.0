@@ -125,9 +125,12 @@ class TopBarMixin:
         self.topbar_layout.addWidget(self.btn_forward)
         self.topbar_layout.addWidget(self.btn_reload)
         self.btn_vpn_hub = QPushButton()
-        self.btn_vpn_hub.setObjectName("TopAccentButton")
+        # A utility, not the toolbar's primary action: the address field owns
+        # that emphasis. The quiet chip stays available without pulling the eye.
+        self.btn_vpn_hub.setObjectName("ToolbarChip")
         self.btn_vpn_hub.setText("VPN")
         self.btn_vpn_hub.setToolTip("Quick VPN / proxy presets")
+        self.btn_vpn_hub.setAccessibleName("VPN and proxy presets")
         self.btn_vpn_hub.clicked.connect(lambda: dialogs.show_vpn_hub(self))
         self.topbar_layout.addWidget(self.btn_vpn_hub)
         self.topbar_layout.addSpacing(4)
@@ -141,6 +144,8 @@ class TopBarMixin:
             self.search_engine.setCurrentIndex(saved_index)
         self.search_engine.setMinimumWidth(78)
         self.search_engine.setMaximumWidth(118)
+        self.search_engine.setToolTip("Choose the search engine")
+        self.search_engine.setAccessibleName("Search engine")
         self.search_engine.currentIndexChanged.connect(self._on_search_engine_changed)
         self.topbar_layout.addWidget(self.search_engine)
         # One address field: the connection pill and the address used to be two
@@ -148,6 +153,7 @@ class TopBarMixin:
         # as a row of unrelated controls.
         self.address_cluster = QFrame()
         self.address_cluster.setObjectName("AddressCluster")
+        self.address_cluster.setAccessibleName("Address bar")
         self.address_cluster.setProperty("focused", False)
         cluster_layout = QHBoxLayout(self.address_cluster)
         cluster_layout.setContentsMargins(0, 0, 0, 0)
@@ -169,6 +175,7 @@ class TopBarMixin:
             self.style().standardIcon(QStyle.SP_DialogCloseButton),
             QLineEdit.TrailingPosition,
         )
+        self.url_clear_action.setToolTip("Clear the address")
         self.url_clear_action.triggered.connect(self.url_bar.clear)
         self.url_clear_action.setVisible(False)
         self.url_bar.textChanged.connect(lambda text: self.url_clear_action.setVisible(bool(text)))
@@ -179,6 +186,9 @@ class TopBarMixin:
         QApplication.clipboard().dataChanged.connect(self._on_clipboard_changed)
         cluster_layout.addWidget(self.url_bar, 1)
         self.topbar_layout.addWidget(self.address_cluster, 1)
+        # A little air separates the address field from the utility actions; the
+        # topbar otherwise reads as one long row of equal controls.
+        self.topbar_layout.addSpacing(4)
         # Opera GX-style web panels: messenger/media dock beside the page.
         self.btn_panels = QToolButton()
         self.btn_panels.setObjectName("TopIconButton")
@@ -204,6 +214,7 @@ class TopBarMixin:
         self.btn_page_menu.setMenu(self.page_menu)
         self.btn_page_menu.setPopupMode(QToolButton.InstantPopup)
         self.topbar_layout.addWidget(self.btn_page_menu)
+        self.topbar_layout.addSpacing(4)
         self.btn_toggle_topbar = QToolButton()
         self.btn_toggle_topbar.setObjectName("TopIconButton")
         self.btn_toggle_topbar.setText("▾")

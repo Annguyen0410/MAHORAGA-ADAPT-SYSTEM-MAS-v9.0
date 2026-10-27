@@ -1,5 +1,5 @@
 from html import escape as _html_escape
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from litebrowser.core import app_paths, app_version, prefs
 
@@ -63,8 +63,10 @@ def _resolve_theme_tokens(mode, accent):
         "@INPUT_BORDER@": p["INPUT_BORDER"],
         "@TEXT@": p["TEXT"],
         "@TEXT_MUTED@": p["TEXT_MUTED"],
+        "@TEXT_ON_ACCENT@": p["TEXT_ON_ACCENT"],
         "@ACCENT@": p["ACCENT"],
         "@ACCENT_HOVER@": p["ACCENT_HOVER"],
+        "@ACCENT_FILL_HOVER@": p["ACCENT_FILL_HOVER"],
         "@BORDER_SOFT@": p["BORDER_SOFT"],
         "@ACCENT_SOFT@": p["ACCENT_SOFT"],
         "@GLOW1@": _rgba(p["ACCENT"], 0.16),
@@ -73,10 +75,47 @@ def _resolve_theme_tokens(mode, accent):
     }
 
 
-# 5.8 "café bar" speed dial — a shop awning, a hero with rising steam, and
-# menu-card shortcuts. Palette-driven so every theme stays in sync with the shell.
+def _link_parts(url):
+    """Return (host, path) from an already-validated link.
+
+    Only existing URL data is used: there is no attempt to invent titles or
+    metadata for history rows that do not store a title.
+    """
+    parsed = urlparse(str(url or ""))
+    host = (parsed.netloc or "").removeprefix("www.")
+    path = unquote(parsed.path or "").strip("/")
+    return host, path
+
+
+def _path_label(path):
+    if not path:
+        return ""
+    segment = str(path).rsplit("/", 1)[-1].strip()
+    stem, dot, extension = segment.rpartition(".")
+    if dot and extension.lower() in {"html", "htm", "php", "asp", "aspx", "jsp"}:
+        segment = stem
+    return segment.replace("-", " ").replace("_", " ").strip()
+
+
+def _link_label(url, title=""):
+    label = str(title or "").strip()
+    if label:
+        return label
+    host, path = _link_parts(url)
+    return _path_label(path) or host or url
+
+
+def _display_host(url):
+    host, _path = _link_parts(url)
+    return host or "local file"
+
+
+# The speed dial is a small editorial desk: a hero and search, then a main
+# column for Project Hub and the saved shelf, with recent pages in the margin.
+# The grid changes shape at 1080/900/760/600px instead of stretching every tile.
 _NEW_TAB_CSS = """
 * { box-sizing: border-box; }
+html { background: @MAIN_BG@; }
 body {
   margin: 0;
   min-height: 100vh;
@@ -93,7 +132,7 @@ body {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 14px 30px;
+  padding: 14px clamp(20px, 4vw, 42px);
   color: @TEXT_MUTED@;
   background: @CARD_BG@;
   border-bottom: 1px solid @BORDER_SOFT@;
@@ -118,27 +157,22 @@ body {
 }
 
 .shell {
-  max-width: 1000px;
+  width: min(1280px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 46px 30px 44px;
+  padding: 36px 0 44px;
 }
 
-/* A single quiet wisp beside the masthead — the only literal nod to warmth,
-   and the thing the new-tab steam preference still controls. */
 .hero {
   display: flex;
   align-items: flex-start;
-  gap: 26px;
-  border: none;
+  gap: 28px;
   border-bottom: 1px solid @BORDER_SOFT@;
-  border-radius: 0;
-  padding: 0 0 34px;
-  background: transparent;
+  padding: 0 0 30px;
 }
-.hero-copy { flex: 1; min-width: 0; }
+.hero-copy { flex: 1; min-width: 0; max-width: 800px; }
 .hero-mark {
   flex: 0 0 auto;
-  padding-top: 6px;
+  padding-top: 8px;
   opacity: .55;
 }
 .steam {
@@ -174,27 +208,29 @@ body {
   text-transform: uppercase;
 }
 h1 {
-  margin: 13px 0 10px;
+  margin: 12px 0 10px;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 44px;
+  font-size: clamp(34px, 4.2vw, 52px);
   font-weight: 600;
   letter-spacing: -.02em;
-  line-height: 1.06;
+  line-height: 1.05;
   color: @TEXT@;
 }
 .hero p {
-  max-width: 580px;
-  margin: 0 0 22px;
+  max-width: 650px;
+  margin: 0 0 20px;
   color: @TEXT_MUTED@;
   font-size: 14px;
   line-height: 1.6;
 }
-.search-bar { max-width: 680px; }
+.search-form { max-width: 760px; width: 100%; }
 form { margin: 0; }
+.search-row { display: flex; align-items: stretch; gap: 8px; }
 input[type="search"] {
+  min-width: 0;
   width: 100%;
-  padding: 15px 17px;
-  border-radius: 10px;
+  padding: 14px 16px;
+  border-radius: 9px;
   border: 1px solid @INPUT_BORDER@;
   background: @INPUT_BG@;
   color: @TEXT@;
@@ -207,20 +243,43 @@ input[type="search"]:focus {
   border-color: @ACCENT@;
   box-shadow: 0 0 0 3px @GLOW1@;
 }
+.search-go {
+  flex: 0 0 auto;
+  min-width: 92px;
+  padding: 0 18px;
+  border: 1px solid @ACCENT@;
+  border-radius: 9px;
+  background: @ACCENT@;
+  color: @TEXT_ON_ACCENT@;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.search-go:hover { background: @ACCENT_FILL_HOVER@; border-color: @ACCENT_FILL_HOVER@; }
+.search-go:focus-visible { outline: 2px solid @ACCENT@; outline-offset: 3px; }
+
+.desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, .8fr);
+  gap: clamp(24px, 4vw, 44px);
+  align-items: start;
+}
+.desk-main, .desk-side { min-width: 0; }
+.desk-side {
+  border-left: 1px solid @BORDER_SOFT@;
+  padding-left: 28px;
+}
 
 /* Sections are open headings on the paper, divided by hairlines. */
-.section {
-  margin-top: 30px;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-}
+.section { margin-top: 28px; }
+.desk-main > .section:first-child, .desk-side > .section:first-child { margin-top: 0; }
 .section h2 {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   color: @TEXT_MUTED@;
   font-size: 10px;
   font-weight: 800;
@@ -228,11 +287,16 @@ input[type="search"]:focus {
   text-transform: uppercase;
 }
 .section h2 .rule { flex: 1; height: 1px; background: @BORDER_SOFT@; }
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
+.section-note {
+  max-width: 680px;
+  margin: 0 0 14px;
+  color: @TEXT_MUTED@;
+  font-size: 12px;
+  line-height: 1.55;
 }
+.tiles { display: grid; gap: 10px; }
+.hub-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.shelf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tile {
   position: relative;
   display: flex;
@@ -242,8 +306,8 @@ input[type="search"]:focus {
   background: @CARD_BG@;
   border: 1px solid @BORDER_SOFT@;
   border-radius: 10px;
-  min-height: 68px;
-  padding: 12px 13px;
+  min-height: 76px;
+  padding: 11px 12px;
   text-align: left;
   overflow: hidden;
   transition: border-color .15s ease, background .15s ease;
@@ -275,8 +339,25 @@ input[type="search"]:focus {
   font-family: Georgia, serif;
 }
 .tile:hover .tile-mark { border-color: @ACCENT@; }
-.tile-label {
+.tile-copy {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tile-kicker {
+  overflow: hidden;
+  color: @TEXT_MUTED@;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tile-label {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -286,43 +367,129 @@ input[type="search"]:focus {
   font-weight: 600;
   line-height: 1.35;
 }
-/* Recent pour list */
+.tile-sub {
+  overflow: hidden;
+  color: @TEXT_MUTED@;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Recent browsing: a compact margin list, not another card wall. */
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid @BORDER_SOFT@;
+}
 .recent-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: @TEXT_MUTED@;
+  color: @TEXT;
   text-decoration: none;
-  padding: 12px 10px;
-  border-radius: 10px;
+  padding: 11px 0;
   border-bottom: 1px solid @BORDER_SOFT@;
   transition: color .12s ease, padding-left .12s ease, background .12s ease;
 }
-.recent-row::before { content: "◦"; color: @ACCENT_HOVER@; }
-.recent-row .recent-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recent-row .recent-host {
-  flex: 0 0 auto;
+.recent-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.recent-title {
+  overflow: hidden;
+  color: @TEXT@;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-sub {
+  overflow: hidden;
+  color: @TEXT_MUTED@;
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-host {
+  flex: 0 0 auto;
+  max-width: 120px;
+  overflow: hidden;
   color: @ACCENT_HOVER@;
   background: @ACCENT_SOFT@;
   border: 1px solid @INPUT_BORDER@;
   border-radius: 999px;
-  padding: 2px 9px;
+  padding: 2px 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
-.recent-row:hover { color: @TEXT@; background: @MAIN_BG_ALT@; padding-left: 14px; }
+.recent-row:hover {
+  color: @ACCENT_HOVER@;
+  background: @MAIN_BG_ALT@;
+  padding-left: 6px;
+  padding-right: 6px;
+}
 .recent-row:last-child { border-bottom: none; }
 
-.empty { color: @TEXT_MUTED@; font-size: 13px; padding: 8px 4px; }
-/* Keyboard users get a visible ring on every interactive row. */
+.empty {
+  grid-column: 1 / -1;
+  color: @TEXT_MUTED@;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 8px 2px;
+}
+.command-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 13px;
+  color: @TEXT_MUTED@;
+  font-size: 10px;
+}
+.command-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.code {
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid @BORDER_SOFT@;
+  background: @MAIN_BG_ALT@;
+  color: @TEXT_MUTED@;
+  font-size: 10px;
+}
+.hint-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 24px;
+}
+.hint {
+  font-size: 10px;
+  letter-spacing: .02em;
+  color: @TEXT_MUTED@;
+  border: 1px solid @BORDER_SOFT@;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: @CARD_BG@;
+}
+.footer-note {
+  margin-top: 20px;
+  color: @TEXT_MUTED@;
+  font-size: 10px;
+  line-height: 1.5;
+}
 a:focus-visible {
   outline: 2px solid @ACCENT@;
   outline-offset: 2px;
   border-radius: 8px;
 }
-/* Quiet themed scrollbar for the page itself. */
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
@@ -332,40 +499,33 @@ a:focus-visible {
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover { background: @ACCENT@; background-clip: content-box; }
-.hint-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 26px;
-}
-.hint {
-  font-size: 10px;
-  letter-spacing: .04em;
-  color: @TEXT_MUTED@;
-  border: 1px solid @BORDER_SOFT@;
-  border-radius: 999px;
-  padding: 5px 11px;
-  background: @CARD_BG@;
-}
-.code {
-  padding: 2px 8px;
-  border-radius: 6px;
-  border: 1px solid @BORDER_SOFT@;
-  background: @MAIN_BG_ALT@;
-  font-size: 12px;
-}
-.footer-note {
-  margin-top: 34px;
-  text-align: left;
-  color: @TEXT_MUTED@;
-  font-size: 11px;
-}
 
-@media (max-width: 680px) {
-  h1 { font-size: 33px; }
-  .shell { padding: 30px 16px 32px; }
+@media (max-width: 1080px) {
+  .shell { width: min(calc(100% - 40px), 1040px); }
+  .desk { gap: 26px; }
+  .desk-side { padding-left: 24px; }
+}
+@media (max-width: 900px) {
+  .shell { width: min(calc(100% - 40px), 820px); }
+  .desk { grid-template-columns: 1fr; gap: 0; }
+  .desk-side { border-left: none; padding-left: 0; }
+  .desk-side > .section:first-child { margin-top: 28px; }
+}
+@media (max-width: 760px) {
+  .hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .shell { width: calc(100% - 32px); padding: 24px 0 32px; }
   .awning { padding: 12px 16px; }
+  .hero { gap: 14px; padding-bottom: 24px; }
+  .hero-mark { display: none; }
+  h1 { font-size: 34px; }
+  .hero p { font-size: 13px; }
+  .search-row { flex-direction: column; }
+  .search-go { min-height: 40px; }
+  .hub-grid, .shelf-grid { grid-template-columns: 1fr; }
+  .tile { min-height: 64px; }
+  .recent-host { display: none; }
 }
 """
 
@@ -381,7 +541,11 @@ def build_new_tab_html(base_dir, app_dir=None, search_engine="Google", mode=None
     bookmarks = prefs.load_bookmarks(base_dir)
     entries = prefs.load_history_entries(base_dir)
     entries.sort(key=lambda item: -item[0])
-    recent = [url for _, url in entries[:12] if url.startswith("http")]
+    recent = [
+        safe_url
+        for _ts, url in entries[:12]
+        if (safe_url := _safe_link_url(url)).startswith(("http://", "https://"))
+    ]
 
     seen = set()
     quick_links = []
@@ -389,51 +553,81 @@ def build_new_tab_html(base_dir, app_dir=None, search_engine="Google", mode=None
         url = _safe_link_url(item.get("url", ""))
         if url and url not in seen:
             seen.add(url)
-            quick_links.append((url, item.get("title", "")[:24] or url[:24]))
+            quick_links.append(
+                {
+                    "url": url,
+                    "label": _link_label(url, item.get("title", "")),
+                    "host": _display_host(url),
+                }
+            )
     # Early-break: v6.5 audited a full O(N) walk of the entire history file
     # even after the 12 slots were filled (history is sorted newest-first).
     if len(quick_links) < 12:
-        for _, url in entries:
+        for _ts, raw_url in entries:
             if len(quick_links) >= 12:
                 break
-            url = _safe_link_url(url)
-            if url.startswith(("http://", "https://")) and url not in seen:
-                seen.add(url)
-                quick_links.append((url, url.replace("https://", "").replace("http://", "")[:24]))
+            url = _safe_link_url(raw_url)
+            if not url.startswith(("http://", "https://")) or url in seen:
+                continue
+            seen.add(url)
+            quick_links.append(
+                {
+                    "url": url,
+                    "label": _link_label(url),
+                    "host": _display_host(url),
+                }
+            )
 
     tiles_html = ""
-    for url, label in quick_links:
-        # Per-site glyph: first letter of the host looks like a favicon chip
-        # and stops every tile showing the identical teacup emoji.
-        try:
-            host = urlparse(url).netloc.removeprefix("www.")
-        except Exception:
-            host = ""
+    for link in quick_links:
+        url = link["url"]
+        label = link["label"]
+        host = link["host"]
         glyph = escape_html((host[:1] or "•").upper())
+        kicker = (
+            '<span class="tile-kicker">%s</span>' % escape_html(host)
+            if host and host.casefold() != label.casefold()
+            else ""
+        )
         tiles_html += (
-            '<a href="%s" class="tile" title="%s"><span class="tile-mark tile-mark-letter">%s</span>'
-            '<span class="tile-label">%s</span></a>'
-            % (escape_html(url), escape_html(url), glyph, escape_html(label))
+            '<a href="%s" class="tile shelf-tile" title="%s">'
+            '<span class="tile-mark tile-mark-letter">%s</span>'
+            '<span class="tile-copy">%s<span class="tile-label">%s</span></span>'
+            "</a>"
+            % (
+                escape_html(url),
+                escape_html(url),
+                glyph,
+                kicker,
+                escape_html(label),
+            )
         )
     if not tiles_html:
-        tiles_html = '<div class="empty">Save bookmarks or visit more pages to build your cafe shelf.</div>'
+        tiles_html = (
+            '<div class="empty">Save a bookmark or visit a page to build your shelf. '
+            "Bookmarks and recent pages stay on this device.</div>"
+        )
 
     recent_rows = ""
     for url in recent:
-        try:
-            host = urlparse(url).netloc or ""
-        except Exception:
-            host = ""
-        host = host[:26]
-        label = url.replace("https://", "").replace("http://", "")[:60]
+        host, path = _link_parts(url)
+        title = _path_label(path) or host or "Home"
+        sub = host + (("/" + path) if path else "")
         recent_rows += (
             '<a href="%s" class="recent-row" title="%s">'
-            '<span class="recent-url">%s</span>'
+            '<span class="recent-copy"><span class="recent-title">%s</span>'
+            '<span class="recent-sub">%s</span></span>'
             '<span class="recent-host">%s</span></a>'
-            % (escape_html(url), escape_html(url), escape_html(label), escape_html(host or "link"))
+            % (
+                escape_html(url),
+                escape_html(url),
+                escape_html(title),
+                escape_html(sub or url),
+                escape_html(host or "link"),
+            )
         )
     if not recent_rows:
-        recent_rows = '<div class="empty">No recent browsing yet.</div>'
+        recent_rows = '<div class="empty">No recent browsing yet. Pages you open will appear here.</div>'
 
     hub_tiles = ""
     for site in app_paths.bundled_sites(app_dir):
@@ -443,24 +637,33 @@ def build_new_tab_html(base_dir, app_dir=None, search_engine="Google", mode=None
         if not tile_url:
             continue
         hub_tiles += (
-            '<a href="%s" class="tile" title="%s — %s"><span class="tile-mark">%s</span><span class="tile-label">%s</span></a>'
+            '<a href="%s" class="tile hub-tile" title="%s — %s">'
+            '<span class="tile-mark">%s</span>'
+            '<span class="tile-copy"><span class="tile-label">%s</span>'
+            '<span class="tile-sub">%s</span></span></a>'
             % (
                 escape_html(tile_url),
                 escape_html(site["display"]),
                 escape_html(site.get("subtitle", "")),
                 escape_html(site.get("glyph", "▦")),
                 escape_html(site["display"]),
+                escape_html(site.get("subtitle", "")),
             )
         )
     support_section = ""
     if hub_tiles:
         support_section = """
-    <div class="section">
+    <section class="section hub-section">
       <h2>Project Hub — Your App Chain <span class="rule"></span></h2>
-      <p style="font-size:14px;margin:0 0 14px;">Jump straight into any of the bundled apps (all run locally on your machine). Online versions (if deployed) live in Project Hub.</p>
-      <div class="tiles">%s</div>
-      <p style="font-size:12px;margin:14px 0 0;">Omnibar: <code class="code">/hub</code> · <code class="code">/cql</code> · <code class="code">/mas</code> · <code class="code">/leaderboard</code> · <code class="code">/linklumina</code> · <code class="code">/bimat</code> · <code class="code">/boitoan</code></p>
-    </div>
+      <p class="section-note">Jump straight into any of the bundled apps. They run locally; online versions, when deployed, live in Project Hub.</p>
+      <div class="tiles hub-grid">%s</div>
+      <div class="command-strip">
+        <span class="command-label">Omnibar</span>
+        <code class="code">/hub</code><code class="code">/cql</code><code class="code">/mas</code>
+        <code class="code">/leaderboard</code><code class="code">/linklumina</code>
+        <code class="code">/bimat</code><code class="code">/boitoan</code>
+      </div>
+    </section>
     """ % hub_tiles
 
     engine_label = search_engine or prefs.DEFAULT_SEARCH_ENGINE
@@ -475,7 +678,7 @@ def build_new_tab_html(base_dir, app_dir=None, search_engine="Google", mode=None
     steam_html = (
         '<div class="hero-mark"><span class="steam"><i></i><i></i><i></i></span></div>'
         if prefs.get_new_tab_steam(base_dir) and not reduce_motion
-        else ''
+        else ""
     )
     css = _NEW_TAB_CSS
     if reduce_motion:
@@ -484,7 +687,7 @@ def build_new_tab_html(base_dir, app_dir=None, search_engine="Google", mode=None
         css = css.replace(token, value)
 
     html = """<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="%s">
@@ -494,33 +697,43 @@ def build_new_tab_html(base_dir, app_dir=None, search_engine="Google", mode=None
 <body>
   <div class="awning"><span class="cup-logo">M</span> @BRAND@ · The Quiet Table</div>
   <div class="shell">
-    <div class="hero">
+    <header class="hero">
       <div class="hero-copy">
         <div class="eyebrow">%s</div>
         <h1>%s</h1>
         <p>Search the web, reopen your work, or return to what you were reading. Everything stays on this device.</p>
-        <form action="%s" method="get" class="search-bar">
-          <input type="search" name="%s" placeholder="Search %s or type a URL..." autofocus />
+        <form action="%s" method="get" class="search-form" role="search">
+          <div class="search-row">
+            <input type="search" name="%s" id="mei-search" placeholder="Search %s or enter a URL..." aria-label="Search the web or enter a URL" autofocus />
+            <button type="submit" class="search-go">Search</button>
+          </div>
         </form>
       </div>
       %s
+    </header>
+    <div class="desk">
+      <main class="desk-main">
+        %s
+        <section class="section shelf-section">
+          <h2>Saved shelf <span class="rule"></span></h2>
+          <p class="section-note">Bookmarks first, then the pages you return to most recently.</p>
+          <div class="tiles shelf-grid">%s</div>
+        </section>
+      </main>
+      <aside class="desk-side">
+        <section class="section recent-section">
+          <h2>Recently opened <span class="rule"></span></h2>
+          <div class="recent-list">%s</div>
+        </section>
+        <div class="hint-row">
+          <span class="hint">? Help · F1</span>
+          <span class="hint">Ctrl+T new tab</span>
+          <span class="hint">Ctrl+K command</span>
+          <span class="hint">/agent · /brief · /group-tabs</span>
+        </div>
+        <div class="footer-note">Local-first. No account required.</div>
+      </aside>
     </div>
-    %s
-    <div class="section">
-      <h2>Saved shelf <span class="rule"></span></h2>
-      <div class="tiles">%s</div>
-    </div>
-    <div class="section">
-      <h2>Recently opened <span class="rule"></span></h2>
-      <div>%s</div>
-    </div>
-    <div class="hint-row">
-      <span class="hint">? Help · F1</span>
-      <span class="hint">Ctrl+T new tab</span>
-      <span class="hint">Ctrl+K command</span>
-      <span class="hint">/agent · /brief · /group-tabs</span>
-    </div>
-    <div class="footer-note">Local-first. No account required.</div>
   </div>
 </body>
 </html>""" % (

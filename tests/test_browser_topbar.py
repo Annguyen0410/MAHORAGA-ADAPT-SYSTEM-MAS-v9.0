@@ -334,6 +334,16 @@ class TestChromeStaysExtracted(unittest.TestCase):
         self.assertIn("#AddressCluster #UrlBar", qss)
         self.assertIn('#AddressCluster[focused="true"]', qss)
 
+    def test_vpn_is_a_quiet_utility_not_a_second_primary_button(self):
+        host = _TopBarHost()
+        try:
+            self.assertEqual(host.btn_vpn_hub.objectName(), "ToolbarChip")
+            self.assertEqual(host.btn_vpn_hub.accessibleName(), "VPN and proxy presets")
+        finally:
+            host.close()
+        qss = _read(os.path.join("litebrowser", "ui", "theme.py"))
+        self.assertIn("#ToolbarChip", qss)
+
     def test_qt_menu_carets_stay_switched_off(self):
         # Qt anchors ::menu-indicator to the bottom-right of a styled button,
         # which drew the "Control" caret below its own edge. The caret is part of
