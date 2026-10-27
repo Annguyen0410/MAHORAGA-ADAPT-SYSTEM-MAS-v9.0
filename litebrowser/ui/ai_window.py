@@ -289,6 +289,7 @@ class AIWindow(QMainWindow):
         self.prompt_list.itemDoubleClicked.connect(self._apply_prompt_template)
         self.history_list.itemDoubleClicked.connect(self._load_history_item)
         self.btn_save_settings.clicked.connect(self._save_settings_with_notice)
+        self.chk_show_context.toggled.connect(self._on_show_sources_toggled)
         self.query_finished.connect(self._finish_assistant_query)
         self._ollama_models_ready.connect(self._on_ollama_models_ready)
         self._load_settings()
@@ -461,8 +462,28 @@ class AIWindow(QMainWindow):
         payload = item.data(Qt.UserRole) or {}
         self.ed_question.setText(payload.get("question", ""))
         self.txt_answer.setPlainText(payload.get("answer", ""))
-        self.txt_context.setPlainText(payload.get("context", ""))
+        # Loading an earlier answer is also selecting it as the save/export
+        # target. Without these assignments the thread actions still pointed at
+        # whichever answer happened to be last, which is a silent data bug.
+        self._last_question = payload.get("question", "")
+        self._last_answer = payload.get("answer", "")
+        self._last_context = payload.get("context", "")
+        self._render_source_text()
         self.lbl_context_scope.setText(payload.get("context_label", "Context: Workspace-wide"))
+
+    def _render_source_text(self):
+        """Keep the evidence pane consistent with the show-sources choice."""
+        if not self._last_context:
+            self.txt_context.clear()
+        elif self.chk_show_context.isChecked():
+            self.txt_context.setPlainText(self._last_context)
+        else:
+            self.txt_context.setPlainText("(Sources hidden. Check Show sources to inspect them.)")
+
+    def _on_show_sources_toggled(self, _checked):
+        # The checkbox used to take effect only on the next answer, leaving the
+        # previous answer's evidence visible after the user asked to hide it.
+        self._render_source_text()
 
     def _ask(self):
         question = (self.ed_question.text() or "").strip()
@@ -487,6 +508,10 @@ class AIWindow(QMainWindow):
             )
             if self.chk_show_context.isChecked():
                 self.txt_context.setPlainText(context)
+            else:
+                # Do not leave the previous answer's evidence visible while a
+                # new, intentionally hidden request is in flight.
+                self.txt_context.clear()
         if self.chk_browser_context.isChecked() and (
             context_label == "Workspace-wide" or research is not None
         ):
@@ -713,6 +738,12 @@ class AIWindow(QMainWindow):
         try:
             result = future.result()
         except Exception as exc:
+            # Do not leave a previous answer attached to the failed question;
+            # the save actions would otherwise persist the wrong answer.
+            self._last_answer = ""
+            self._last_context = ""
+            self.txt_context.clear()
+            self.lbl_context_scope.setText("Context: request failed")
             self.txt_answer.setPlainText(f"Assistant request failed: {exc}")
             return
         self._last_answer = result.get("answer", "")
@@ -726,10 +757,7 @@ class AIWindow(QMainWindow):
             {"provider": result.get("provider", ""), "context": context_label},
         )
         self.lbl_context_scope.setText(f"Context: {context_label}")
-        if self.chk_show_context.isChecked():
-            self.txt_context.setPlainText(self._last_context or "(no sources)")
-        else:
-            self.txt_context.setPlainText("(hidden)")
+        self._render_source_text()
         if not provider_label:
             provider_label = self.cmb_provider.currentText()
         answer = self._last_answer or "No answer returned."
@@ -757,16 +785,19 @@ class AIWindow(QMainWindow):
         try:
             self._auto_save_set()
         except OSError:
-            # Locking must not fail because the disk is full. Keep the prompt
-            # history for the normal save path, but clear visible private data.
+            # Locking must not fail because the disk is full. Visible private
+            # data is cleared below even when the auto-save could not run.
             pass
-        else:
-            self._prompt_history = []
         self._clear_thread()
 
     def _clear_thread(self):
         """Empty the in-memory thread, session list, and visible answer panes."""
         self._thread_items = []
+        # Clear belongs to the thread, not just its view: the next Save session
+        # and the close-time auto-save must not resurrect prompts the user
+        # explicitly discarded. This also makes relock clear private prompts
+        # when the auto-save above failed.
+        self._prompt_history = []
         self.history_list.clear()
         self.txt_answer.clear()
         self.txt_context.clear()
