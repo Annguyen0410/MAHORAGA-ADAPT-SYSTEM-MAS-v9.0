@@ -143,7 +143,10 @@ class TestHomeFlowStrip(_HomeBase):
         self.page.refresh()
         self.assertIn("1 overdue", self.page.lbl_flow.text())
         self.assertIn("next:", self.page.lbl_flow.text())
-        self.assertIn("Late essay", self.page.btn_flow_next.text())
+        # The margin verb stays short; the recommendation is still carried by
+        # its accessible name (and by the filled Next step button).
+        self.assertEqual(self.page.btn_flow_next.text(), "Continue")
+        self.assertIn("Late essay", self.page.btn_flow_next.accessibleName())
         self.assertTrue(self.page.btn_flow_next.isEnabled())
 
     def test_continue_button_routes_the_recommendation_through_the_shell(self):

@@ -110,6 +110,18 @@ def _format_ts(ts_value: int) -> str:
     return _time_utils.format_ts(ts_value)
 
 
+def _repolish(widget) -> None:
+    """Re-apply the shell stylesheet after a dynamic object name change.
+
+    Qt resolves object-name selectors when a widget is polished, so a badge that
+    switches from ``BadgeAccent`` to ``Badge`` (or back) keeps its old paint until
+    it is unpolished and polished again.
+    """
+    style = widget.style()
+    style.unpolish(widget)
+    style.polish(widget)
+
+
 def _panel(title: str, subtitle: str = "", action: QPushButton | None = None) -> tuple[QFrame, QVBoxLayout]:
     """Create a roomy, card-like section used by the calm secondary screens."""
     card = QFrame()
@@ -331,8 +343,10 @@ class _EditorialSplit(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(0, 0, 0, 0)
-        self._grid.setHorizontalSpacing(26)
-        self._grid.setVerticalSpacing(22)
+        # One gutter for both axes, on the 24px spacing scale. The dashboard is
+        # read as two columns, so the gap between them is the widest on the page.
+        self._grid.setHorizontalSpacing(24)
+        self._grid.setVerticalSpacing(20)
         self._reflow()
 
     def _reflow(self):
@@ -381,8 +395,10 @@ class HomeDashboardPage(QWidget):
         content = QWidget()
         content.setObjectName("HomeScrollContent")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(24, 22, 24, 22)
-        content_layout.setSpacing(18)
+        # A tighter rhythm than the first pass: greeting, command line and the
+        # first card are one scan, not three separate screens.
+        content_layout.setContentsMargins(24, 18, 24, 20)
+        content_layout.setSpacing(16)
         self.home_scroll.setWidget(content)
         layout.addWidget(self.home_scroll)
         layout = content_layout
@@ -399,9 +415,12 @@ class HomeDashboardPage(QWidget):
         trailing_layout.setContentsMargins(0, 0, 0, 0)
         trailing_layout.setSpacing(2)
         trailing_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
-        self.lbl_today = QLabel(time.strftime("%A %d %B · %H:%M"))
+        # The masthead kicker already carries the date; the trailing line is
+        # just the clock, with the full date kept in its tooltip.
+        self.lbl_today = QLabel(time.strftime("%H:%M"))
         self.lbl_today.setObjectName("MastheadDate")
         self.lbl_today.setAlignment(Qt.AlignRight)
+        self.lbl_today.setToolTip(time.strftime("%A, %d %B %Y"))
         trailing_layout.addWidget(self.lbl_today)
         self.lbl_home_version = QLabel(f"v{app_version.APP_VERSION}")
         self.lbl_home_version.setObjectName("MutedLabel")
@@ -419,8 +438,11 @@ class HomeDashboardPage(QWidget):
         layout.addWidget(masthead)
 
         # ---- one command line, the full width of the table
-        start_lbl = components.eyebrow("Start here")
-        layout.addWidget(start_lbl)
+        start_block = QWidget()
+        start_layout = QVBoxLayout(start_block)
+        start_layout.setContentsMargins(0, 0, 0, 0)
+        start_layout.setSpacing(6)
+        start_layout.addWidget(components.eyebrow("Start here"))
         command_row = QHBoxLayout()
         command_row.setSpacing(10)
         self.ed_home_command = QLineEdit()
@@ -435,7 +457,8 @@ class HomeDashboardPage(QWidget):
         self.btn_home_command.setAccessibleName("Run the Home command")
         self.btn_home_command.setMinimumHeight(40)
         command_row.addWidget(self.btn_home_command)
-        layout.addLayout(command_row)
+        start_layout.addLayout(command_row)
+        layout.addWidget(start_block)
         self.btn_home_command.clicked.connect(self._run_home_command)
         self.ed_home_command.returnPressed.connect(self._run_home_command)
 
@@ -580,9 +603,14 @@ class HomeDashboardPage(QWidget):
         if not widgets:
             return
         listing = widgets["list"]
-        minimum, maximum = self._desk_list_bounds()
         rows = listing.count()
         row_height = listing.sizeHintForRow(0) if rows else 26
+        if key == "next":
+            # One recommendation: the filled button carries the action, so the
+            # row only needs room for its explanation.
+            listing.setFixedHeight(max(30, min(48, row_height * max(1, rows) + 6)))
+            return
+        minimum, maximum = self._desk_list_bounds()
         listing.setFixedHeight(max(minimum, min(maximum, row_height * max(1, rows) + 8)))
 
     def _customize_home(self):
@@ -655,7 +683,8 @@ class HomeDashboardPage(QWidget):
         self.ed_home_command.clear()
 
     def _tick_clock(self):
-        self.lbl_today.setText(time.strftime("%A, %d %B · %H:%M"))
+        self.lbl_today.setText(time.strftime("%H:%M"))
+        self.lbl_today.setToolTip(time.strftime("%A, %d %B %Y"))
 
     def _toggle_all_features(self, shown: bool):
         """Show/hide the launcher grid + quick commands (collapsed by default)."""
@@ -675,14 +704,8 @@ class HomeDashboardPage(QWidget):
         primary.setObjectName("HomeDeskColumn")
         primary_layout = QVBoxLayout(primary)
         primary_layout.setContentsMargins(0, 0, 0, 0)
-        primary_layout.setSpacing(18)
+        primary_layout.setSpacing(16)
         primary_layout.addWidget(self._desk_section())
-
-        feature_row = QHBoxLayout()
-        feature_row.setSpacing(8)
-        feature_row.addWidget(self.btn_all_features)
-        feature_row.addStretch(1)
-        primary_layout.addLayout(feature_row)
         primary_layout.addWidget(self._more_panel)
         primary_layout.addWidget(self._metrics_section())
         primary_layout.addStretch(1)
@@ -691,7 +714,7 @@ class HomeDashboardPage(QWidget):
         secondary.setObjectName("HomeMarginColumn")
         secondary_layout = QVBoxLayout(secondary)
         secondary_layout.setContentsMargins(0, 0, 0, 0)
-        secondary_layout.setSpacing(18)
+        secondary_layout.setSpacing(16)
         secondary_layout.addWidget(self._today_card())
         secondary_layout.addWidget(self._research_workspace_card())
         secondary_layout.addWidget(self._reflect_card())
@@ -770,7 +793,8 @@ class HomeDashboardPage(QWidget):
         layout.addWidget(
             components.section_header(
                 "The desk",
-                "Where you were, what is due, and the one thing to do next",
+                "Your next step, today's plate, and what is still waiting",
+                self.btn_all_features,
                 kicker="Working session",
             )
         )
@@ -796,7 +820,7 @@ class HomeDashboardPage(QWidget):
         layout = QVBoxLayout(section)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        layout.addWidget(components.section_header("At a glance", "Still open across the table", kicker="Numbers"))
+        layout.addWidget(components.section_header("At a glance", "The table in numbers", kicker="Numbers"))
         stat_specs = [
             ("task", "pending tasks"),
             ("events", "upcoming events"),
@@ -805,19 +829,33 @@ class HomeDashboardPage(QWidget):
             ("focus", "min focused today"),
         ]
         self._stat_labels = {}
+        self._stat_tiles = {}
         tiles = []
         for key, label in stat_specs:
             tile = components.stat_tile("0", label)
             tiles.append(tile)
+            self._stat_tiles[key] = tile
             self._stat_labels[key] = tile._value
         layout.addWidget(components.stat_row(tiles))
         return section
+
+    def _set_stat(self, key: str, value: str):
+        """Set a number and let zero read as a quiet footnote, not a headline."""
+        tile = getattr(self, "_stat_tiles", {}).get(key)
+        if tile is None:
+            return
+        label = tile._value
+        label.setText(str(value))
+        quiet = str(value).strip() in {"0", "—"}
+        if label.property("quiet") != quiet:
+            label.setProperty("quiet", quiet)
+            _repolish(label)
 
     def _research_workspace_card(self):
         card = QFrame()
         card.setObjectName("SectionCard")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 16, 18, 16)
+        layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(6)
         self.btn_research_manage = quiet_button("Manage", "Manage saved research workspaces")
         self.btn_research_manage.clicked.connect(self._manage_research_workspaces)
@@ -839,27 +877,27 @@ class HomeDashboardPage(QWidget):
         layout.addWidget(self.lbl_research_links)
         self.research_items = QListWidget()
         self.research_items.setObjectName("CafeList")
-        self.research_items.setMaximumHeight(94)
+        self.research_items.setMaximumHeight(104)
+        self.research_items.setTextElideMode(Qt.ElideRight)
+        self.research_items.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.research_items.setToolTip("Double-click a linked item to open it where it lives")
         self.research_items.itemDoubleClicked.connect(self._open_research_item)
         layout.addWidget(self.research_items)
-        # Two rows of two: a margin column is ~500px, and four buttons in one
-        # line was what forced Home to scroll sideways at 1440.
-        actions = QGridLayout()
+        # One row of verbs: the margin card is wide enough for three short
+        # labels, and the old 2x2 grid left a dead row under an empty desk.
+        actions = QHBoxLayout()
         actions.setContentsMargins(0, 4, 0, 0)
-        actions.setHorizontalSpacing(6)
-        actions.setVerticalSpacing(6)
-        self.btn_research_resume = QPushButton("Resume tabs")
-        self.btn_research_ai = QPushButton("Ask AI with context")
-        self.btn_research_capture = QPushButton("Capture to desk")
+        actions.setSpacing(6)
+        self.btn_research_resume = ghost_button("Resume", "Restore this desk's saved tabs")
+        self.btn_research_ai = ghost_button("Ask AI", "Ask the assistant with this desk's linked items as context")
+        self.btn_research_capture = ghost_button("Capture", "Save a note, task, page, or card into this desk")
         self.btn_research_resume.clicked.connect(self._resume_research_workspace)
         self.btn_research_ai.clicked.connect(self._ask_research_workspace)
         self.btn_research_capture.clicked.connect(self.shell.open_quick_capture)
-        actions.addWidget(self.btn_research_resume, 0, 0, 1, 2)
-        actions.addWidget(self.btn_research_ai, 1, 0)
-        actions.addWidget(self.btn_research_capture, 1, 1)
-        actions.setColumnStretch(0, 1)
-        actions.setColumnStretch(1, 1)
+        actions.addWidget(self.btn_research_resume)
+        actions.addWidget(self.btn_research_ai)
+        actions.addStretch(1)
+        actions.addWidget(self.btn_research_capture)
         layout.addLayout(actions)
         return card
 
@@ -867,14 +905,20 @@ class HomeDashboardPage(QWidget):
         workspace = tab_sets.get_active_research_workspace(self.shell.profile_dir)
         self._active_research = workspace
         active = bool(workspace)
+        # The resume/ask verbs only mean something with an active desk; hiding
+        # them is calmer than two greyed-out buttons. Capture always stays put.
+        self.btn_research_resume.setVisible(active)
+        self.btn_research_ai.setVisible(active)
         self.btn_research_resume.setEnabled(active)
         self.btn_research_ai.setEnabled(active)
         self.btn_research_manage.setEnabled(True)
         if not workspace:
-            self.lbl_research_workspace.setText("No active research workspace. Save one from Browser → Options → Sessions & Spaces.")
-            self.lbl_research_links.clear()
+            self.lbl_research_workspace.setText("No active research desk yet.")
+            self.lbl_research_links.setText(
+                "Save a tab set from Browser → Options → Sessions & Spaces to link it here."
+            )
             self.research_items.clear()
-            self.research_items.addItem(components.hint_list_item("Captures and linked items will appear here", "○"))
+            self.research_items.setVisible(False)
             return
         counts = [f"{len(workspace.get('tabs', []))} tabs"]
         self.research_items.clear()
@@ -895,12 +939,19 @@ class HomeDashboardPage(QWidget):
                     if not title:
                         continue
                     item = QListWidgetItem(f"{label.rstrip('s')}: {str(title)[:140]}")
+                    item.setToolTip(str(title))
                     item.setData(Qt.UserRole, {"kind": reference_kinds[field], "id": item_id})
                     self.research_items.addItem(item)
         self.lbl_research_workspace.setText(f"{workspace.get('title', 'Research workspace')}  ·  " + "  ·  ".join(counts))
         self.lbl_research_links.setText("Double-click a linked item to open it." if self.research_items.count() else "No linked items yet. Capture something to this desk to start the chain.")
-        if not self.research_items.count():
-            self.research_items.addItem(components.hint_list_item("No linked items", "○"))
+        self.research_items.setVisible(bool(self.research_items.count()))
+        self._fit_research_list()
+
+    def _fit_research_list(self):
+        """A linked-items list grows with its rows, not to a fixed empty box."""
+        rows = self.research_items.count()
+        row_height = self.research_items.sizeHintForRow(0) if rows else 26
+        self.research_items.setFixedHeight(max(34, min(104, row_height * max(1, rows) + 8)))
 
     def _open_research_item(self, item):
         payload = item.data(Qt.UserRole) if item is not None else None
@@ -937,20 +988,25 @@ class HomeDashboardPage(QWidget):
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(4)
         else:
-            layout.setContentsMargins(18 if emphasis == "primary" else 16, 16, 18, 16)
+            # The primary and the plate share the same inner rhythm, so their
+            # headings and list rows start on one baseline beside each other.
+            layout.setContentsMargins(16, 14, 16, 14)
             layout.setSpacing(6)
         header_row = QHBoxLayout()
         header_row.setSpacing(6)
         kicker = {"next": "The one thing", "today": "On the plate", "due": "Waiting", "in_progress": "Half-finished"}.get(key, "")
+        # "Next step" already says what it is; the reason row and the button's
+        # tooltip carry the loop's explanation without a second subtitle line.
+        subtitle = "" if key == "next" else ("" if emphasis == "open" else desk_service.BLOCK_SUBTITLES[key])
         header_row.addWidget(
             components.section_header(
                 desk_service.BLOCK_TITLES[key],
-                "" if emphasis == "open" else desk_service.BLOCK_SUBTITLES[key],
+                subtitle,
                 kicker=kicker,
             ),
             1,
         )
-        badge = components.badge("0", "accent")
+        badge = components.badge("0", "plain")
         header_row.addWidget(badge, 0, Qt.AlignTop)
         layout.addLayout(header_row)
         if emphasis == "open":
@@ -958,24 +1014,25 @@ class HomeDashboardPage(QWidget):
         listing = QListWidget()
         listing.setObjectName("CafeList")
         listing.setToolTip("Double-click a row to open where it lives")
+        listing.setTextElideMode(Qt.ElideRight)
+        listing.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         listing.itemDoubleClicked.connect(self._open_desk_row)
-        layout.addWidget(listing, 1)
-        buttons = QVBoxLayout() if key == "next" else QHBoxLayout()
-        buttons.setSpacing(6)
+        layout.addWidget(listing)
         if key == "next":
             self.btn_desk_continue = QPushButton("▶ Continue")
             self.btn_desk_continue.setObjectName("TopAccentButton")
             self.btn_desk_continue.setMinimumWidth(0)
             self.btn_desk_continue.setToolTip("Run the next step of the loop")
             self.btn_desk_continue.clicked.connect(self._run_flow_next)
-            buttons.addWidget(self.btn_desk_continue)
             self.btn_desk_ritual = QPushButton("☕ Study session")
+            self.btn_desk_ritual.setObjectName("GhostButton")
             self.btn_desk_ritual.setToolTip("Sit down properly: pick a pour, set the timer, study")
             self.btn_desk_ritual.clicked.connect(self._start_ritual)
-            buttons.addWidget(self.btn_desk_ritual)
-        buttons.addStretch(1)
-        if key == "next":
-            layout.addLayout(buttons)
+            actions = QVBoxLayout()
+            actions.setSpacing(6)
+            actions.addWidget(self.btn_desk_continue)
+            actions.addWidget(self.btn_desk_ritual)
+            layout.addLayout(actions)
         self._desk_cards[key] = {"card": card, "list": listing, "badge": badge}
         return card
 
@@ -985,16 +1042,28 @@ class HomeDashboardPage(QWidget):
             return
         desk = desk_service.build_desk(self.shell.profile_dir)
         self._desk = desk
-        self.lbl_desk.setText(f"{desk.get('headline', '')}   ·   {desk.get('pulse', '')}".strip(" ·"))
+        headline = desk.get("headline", "")
+        self.lbl_desk.setText(headline[:1].upper() + headline[1:] if headline else "")
+        self.lbl_desk.setToolTip(desk.get("pulse", ""))
         for key, widgets in self._desk_cards.items():
             block = desk_service.block_by_key(desk, key)
             listing = widgets["list"]
             listing.clear()
-            widgets["badge"].setText(str(block.get("count", 0)))
+            count = block.get("count", 0)
+            badge = widgets["badge"]
+            badge.setText(str(count))
+            badge.setObjectName("BadgeAccent" if count else "Badge")
+            _repolish(badge)
             rows = block.get("rows", [])
             for row in rows:
-                item = QListWidgetItem(f"{row.get('marker', '')}{row.get('title', '')}")
-                item.setToolTip(row.get("subtitle", "") or row.get("title", ""))
+                title = row.get("title", "")
+                reason = row.get("subtitle", "")
+                # The next step's button already carries the recommendation;
+                # repeating it inside the same card made the action appear
+                # twice. The row explains why the loop chose it instead.
+                text = f"{row.get('marker', '')}{reason or title}" if key == "next" else f"{row.get('marker', '')}{title}"
+                item = QListWidgetItem(text)
+                item.setToolTip(f"{title} — {reason}" if key == "next" and reason else (reason or title))
                 item.setData(Qt.UserRole, row)
                 listing.addItem(item)
             if not rows:
@@ -1062,48 +1131,57 @@ class HomeDashboardPage(QWidget):
         shell.handle_omnibar()
 
     def _today_card(self):
-        """Today's plate plus the loop: what is on it, and what to do about it.
+        """The day's agenda, aligned with the desk's own header rhythm.
 
-        The agenda list answers "what is on my plate"; the strip above it answers
-        "what is next" by reading every store (planner, cards, captures, links) —
-        so Home is a doorway into the process, not a report about it.
+        The section heading and the loop's pulse sit outside the paper, so the
+        agenda card starts on the same baseline as the desk cards beside it.
+        Continue remains a quiet doorway here — the filled primary lives on the
+        Next step card, where there is exactly one.
         """
         if not hasattr(self, "recent_tasks"):
             self.recent_tasks = QListWidget()
             self.recent_tasks.setObjectName("CafeList")
-        card = QFrame()
-        card.setObjectName("DeskPanel")
-        card.setProperty("emphasis", "open")
-        layout = QVBoxLayout(card)
+            self.recent_tasks.setTextElideMode(Qt.ElideRight)
+            self.recent_tasks.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        section = QWidget()
+        section.setObjectName("HomeTodayColumn")
+        layout = QVBoxLayout(section)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
+        self.btn_flow_next = quiet_button("Continue", "Run the next step of the loop")
+        self.btn_flow_next.clicked.connect(self._run_flow_next)
+        self.btn_agenda_promote = quiet_button(
+            "→ Planner",
+            "Promote the selected inbox task into the Weekly Plan (the two stay linked)",
+        )
+        self.btn_agenda_promote.clicked.connect(self._promote_agenda_task)
+        actions = QWidget()
+        actions.setObjectName("SectionActions")
+        actions_layout = QHBoxLayout(actions)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(2)
+        actions_layout.addWidget(self.btn_flow_next)
+        actions_layout.addWidget(self.btn_agenda_promote)
         layout.addWidget(
             components.section_header(
-                "Today", "Planner deadlines, quick tasks, and the study loop", kicker="The day"
+                "Today's agenda",
+                "",
+                actions,
+                kicker="The day",
             )
         )
         self.lbl_flow = QLabel("")
         self.lbl_flow.setObjectName("MutedLabel")
         self.lbl_flow.setWordWrap(True)
         layout.addWidget(self.lbl_flow)
-        flow_row = QHBoxLayout()
-        flow_row.setSpacing(6)
-        self.btn_flow_next = QPushButton("▶ Continue")
-        self.btn_flow_next.setToolTip("Run the next step of the loop")
-        self.btn_flow_next.clicked.connect(self._run_flow_next)
-        self.btn_agenda_promote = QPushButton("→ Planner")
-        self.btn_agenda_promote.setToolTip(
-            "Promote the selected inbox task into the Weekly Plan (the two stay linked)"
-        )
-        self.btn_agenda_promote.clicked.connect(self._promote_agenda_task)
-        flow_row.addWidget(self.btn_flow_next)
-        flow_row.addWidget(self.btn_agenda_promote)
-        flow_row.addStretch(1)
-        layout.addLayout(flow_row)
-        # A slightly lower floor than the other cards leaves room for the strip
-        # without pushing the dashboard past the viewport.
-        layout.addWidget(self.recent_tasks)
-        return card
+        agenda_card = QFrame()
+        agenda_card.setObjectName("SectionCard")
+        agenda_layout = QVBoxLayout(agenda_card)
+        agenda_layout.setContentsMargins(8, 8, 8, 8)
+        agenda_layout.setSpacing(0)
+        agenda_layout.addWidget(self.recent_tasks)
+        layout.addWidget(agenda_card)
+        return section
 
     def _reflect_card(self):
         """The week's evidence: what was poured, what the streak is, what was skipped.
@@ -1114,18 +1192,21 @@ class HomeDashboardPage(QWidget):
         has been waiting the longest.
         """
         card = QFrame()
-        card.setObjectName("DeskPanel")
-        card.setProperty("emphasis", "open")
-        card.setMaximumHeight(250)
+        card.setObjectName("HomeReflection")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        self.btn_reflect_study = QPushButton("▶ Study the oldest one")
-        self.btn_reflect_study.setToolTip("Pour a focus session for the item that has waited longest")
+        self.btn_reflect_study = quiet_button(
+            "▶ Study the oldest one",
+            "Pour a focus session for the item that has waited longest",
+        )
         self.btn_reflect_study.clicked.connect(self._study_neglected)
         layout.addWidget(
             components.section_header(
-                "This week", "Poured minutes, streaks, and what got skipped", self.btn_reflect_study, kicker="Reflection"
+                "This week",
+                "Poured minutes and what got skipped",
+                self.btn_reflect_study,
+                kicker="Reflection",
             )
         )
         self.lbl_reflect = QLabel("")
@@ -1134,7 +1215,9 @@ class HomeDashboardPage(QWidget):
         layout.addWidget(self.lbl_reflect)
         self.reflect_items = QListWidget()
         self.reflect_items.setObjectName("CafeList")
-        self.reflect_items.setMaximumHeight(96)
+        self.reflect_items.setMaximumHeight(104)
+        self.reflect_items.setTextElideMode(Qt.ElideRight)
+        self.reflect_items.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.reflect_items.setToolTip("Double-click a row to open it in the Weekly Plan")
         self.reflect_items.itemDoubleClicked.connect(self._open_reflect_item)
         layout.addWidget(self.reflect_items)
@@ -1148,11 +1231,22 @@ class HomeDashboardPage(QWidget):
         self.reflect_items.clear()
         for row in review.get("neglected", []):
             item = QListWidgetItem(f"{row.get('title', '')} — {row.get('detail', '')}")
+            item.setToolTip(f"{row.get('title', '')} — {row.get('detail', '')}")
             item.setData(Qt.UserRole, {"kind": row.get("kind", "planner-item"), "id": row.get("id", "")})
             self.reflect_items.addItem(item)
         if self.reflect_items.count() == 0:
             self.reflect_items.addItem(components.hint_list_item("Nothing was skipped this week", "✓"))
-        self.btn_reflect_study.setEnabled(self.reflect_items.count() > 0 and bool(review.get("neglected")))
+        self._fit_reflect_list()
+        has_rows = bool(review.get("neglected"))
+        self.btn_reflect_study.setEnabled(has_rows)
+        # A disabled verb above an empty week is just another grey box; the
+        # sentence already says there is nothing to study.
+        self.btn_reflect_study.setVisible(has_rows)
+
+    def _fit_reflect_list(self):
+        rows = self.reflect_items.count()
+        row_height = self.reflect_items.sizeHintForRow(0) if rows else 26
+        self.reflect_items.setFixedHeight(max(34, min(104, row_height * max(1, rows) + 8)))
 
     def _study_neglected(self):
         """Reflect → study: the row at the top of the list becomes the next pour."""
@@ -1185,7 +1279,9 @@ class HomeDashboardPage(QWidget):
         self._flow_next = action
         label = action.get("label") or "▶ Continue"
         self.btn_flow_next.setAccessibleName(label)
-        self.btn_flow_next.setText(label if len(label) <= 24 else label[:21] + "…")
+        # The filled Continue lives on the Next step card. This one is the same
+        # route in the margin, so it stays a short, quiet doorway.
+        self.btn_flow_next.setText("Continue")
         self.btn_flow_next.setToolTip(action.get("reason") or "The loop is clear")
         self.btn_flow_next.setEnabled(bool(action))
 
@@ -1243,30 +1339,40 @@ class HomeDashboardPage(QWidget):
         )
         if locked:
             # Home is public chrome, not a bypass around Personal's passcode.
-            for label in self._stat_labels.values():
-                label.setText("—")
+            for key in self._stat_labels:
+                self._set_stat(key, "—")
             for listing in (self.recent_notes, self.recent_tasks, self.recent_closed, self.reflect_items):
                 listing.clear()
                 listing.addItem(components.hint_list_item("Unlock Personal to continue", "○"))
-            for widgets in self._desk_cards.values():
+            for key, widgets in self._desk_cards.items():
                 widgets["list"].clear()
                 widgets["list"].addItem(components.hint_list_item("Your private desk is locked", "○"))
                 widgets["badge"].setText("—")
+                widgets["badge"].setObjectName("Badge")
+                _repolish(widgets["badge"])
+                self._fit_desk_list(key)
             self._flow_next = {}
             self._desk = {}
             self.lbl_desk.setText("Your quiet corner is ready. Open Personal to unlock your desk.")
+            self.lbl_desk.setToolTip("")
             self.lbl_flow.setText("Private workspace locked")
             self.lbl_reflect.clear()
             self.lbl_brief.setText("Unlock Personal to see your morning brief.")
             self.lbl_research_workspace.setText("Unlock Personal to see your research desk.")
             self.lbl_research_links.clear()
             self.research_items.clear()
-            self.research_items.addItem(components.hint_list_item("Unlock Personal to see linked research items", "○"))
+            self.research_items.setVisible(False)
             self._active_research = None
-            for button in (self.btn_research_resume, self.btn_research_ai, self.btn_research_capture):
-                button.setEnabled(False)
+            self.btn_research_resume.setVisible(False)
+            self.btn_research_ai.setVisible(False)
+            self.btn_research_capture.setEnabled(False)
+            self.btn_reflect_study.setVisible(False)
             self.btn_desk_continue.setEnabled(False)
             self.btn_flow_next.setEnabled(False)
+            rows = self.recent_tasks.count()
+            row_height = self.recent_tasks.sizeHintForRow(0) if rows else 26
+            self.recent_tasks.setFixedHeight(max(34, min(230, row_height * max(1, rows) + 8)))
+            self._fit_reflect_list()
             self.week_chart._counts = [0] * 7
             self.domain_chart._rows = []
             self.week_chart.update()
@@ -1275,11 +1381,11 @@ class HomeDashboardPage(QWidget):
         snapshot = life_service.get_dashboard_snapshot(self.shell.profile_dir)
         self._refresh_research_workspace()
         self.btn_research_capture.setEnabled(True)
-        self._stat_labels["task"].setText(str(snapshot["tasks_pending"]))
-        self._stat_labels["events"].setText(str(len(snapshot["events_upcoming"])))
-        self._stat_labels["pages"].setText(str(snapshot["saved_pages_total"]))
-        self._stat_labels["boards"].setText(str(snapshot["boards_total"]))
-        self._stat_labels["focus"].setText(f"{focus_service.today_focus_seconds(self.shell.profile_dir) // 60}")
+        self._set_stat("task", str(snapshot["tasks_pending"]))
+        self._set_stat("events", str(len(snapshot["events_upcoming"])))
+        self._set_stat("pages", str(snapshot["saved_pages_total"]))
+        self._set_stat("boards", str(snapshot["boards_total"]))
+        self._set_stat("focus", str(focus_service.today_focus_seconds(self.shell.profile_dir) // 60))
         if getattr(self, "week_chart", None) is not None:
             self.week_chart.refresh()
         if getattr(self, "domain_chart", None) is not None:

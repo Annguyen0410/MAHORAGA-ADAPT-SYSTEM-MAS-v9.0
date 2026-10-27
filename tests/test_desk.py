@@ -381,6 +381,30 @@ class TestHomeDesk(unittest.TestCase):
         self.page._open_desk_row(target)
         self.assertEqual(self.shell.commands, ["/review"])
 
+    def test_the_next_step_explains_instead_of_repeating_its_action(self):
+        personal_service.create_note(self.base, "Krebs cycle", "citrate")
+        self.page.refresh()
+        listing = self.page._desk_cards["next"]["list"]
+        row_text = "\n".join(listing.item(i).text() for i in range(listing.count()))
+        self.assertIn("A captured note has no flashcards yet", row_text)
+        self.assertNotIn("Turn “Krebs cycle” into cards", row_text, "the button already says that")
+        self.assertIn("Krebs cycle", self.page.btn_desk_continue.text())
+
+    def test_zero_metrics_stay_quiet_and_nonzero_ones_speak_up(self):
+        self.page.refresh()
+        value = self.page._stat_tiles["task"]._value
+        self.assertTrue(value.property("quiet"))
+        life_service.add_task(self.base, "One more thing")
+        self.page.refresh()
+        self.assertFalse(value.property("quiet"))
+
+    def test_empty_research_desk_is_a_sentence_not_an_empty_box(self):
+        self.page.refresh()
+        self.assertIn("No active research desk", self.page.lbl_research_workspace.text())
+        self.assertTrue(self.page.research_items.isHidden())
+        self.assertTrue(self.page.btn_research_resume.isHidden())
+        self.assertTrue(self.page.btn_research_capture.isEnabled())
+
     def test_the_study_session_button_opens_the_ritual(self):
         from litebrowser.ui.dialogs import study_ritual as ritual_dialog
 

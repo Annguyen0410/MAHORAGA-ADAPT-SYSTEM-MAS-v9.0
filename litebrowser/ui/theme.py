@@ -240,7 +240,7 @@ QStackedWidget { background-color: %(MAIN_BG)s; }
 }
 #PageSubtitle, #MutedLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
 #SectionTitle { color: %(TEXT)s; font-size: 12px; font-weight: 700; }
-#SectionHeaderRow { background: transparent; }
+#SectionHeaderRow, #SectionActions { background: transparent; }
 #SectionKicker { color: %(TEXT_MUTED)s; font-size: 10px; }
 #Numeric, #StatValue { font-family: %(FONT_DISPLAY)s; color: %(TEXT)s; }
 
@@ -445,6 +445,8 @@ QPushButton#TopAccentButton:disabled { background-color: %(MAIN_BG_ALT)s; color:
 }
 #StatTile:hover { border-color: %(RULE)s; background-color: %(ITEM_HOVER)s; }
 #StatValue { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 22px; font-weight: 600; }
+/* A zero is still a fact, but it should not compete with a number that matters. */
+#StatValue[quiet="true"] { color: %(TEXT_MUTED)s; font-weight: 500; }
 #StatLabel { color: %(TEXT_MUTED)s; font-size: 10px; }
 #StatRow { background: transparent; }
 #EmptyState {
