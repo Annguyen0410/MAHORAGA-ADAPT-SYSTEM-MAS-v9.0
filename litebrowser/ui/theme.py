@@ -838,17 +838,30 @@ QHeaderView::section {
     font-size: 14px;
 }
 #NoteCanvas:focus { border-color: %(ACCENT)s; }
+/* The writing size is a control, so it lives in the one place Qt actually
+   paints a plain-text edit from: the stylesheet font set here (a widget
+   setFont is re-polished away, and a document font alone left the widget and
+   the layout disagreeing). personal_window._apply_note_font_size sets the
+   textSize property and re-polishes — the old point-size call was a no-op. */
 QPlainTextEdit#NoteEditor, #NoteEditor {
     background-color: %(EDITOR_BG)s;
     border: 1px solid %(RULE)s;
     border-radius: %(RADIUS)s;
     padding: 18px 22px;
-    font-size: 14px;
+    font-size: 15px;
     selection-background-color: %(ACCENT_WASH)s;
     selection-color: %(TEXT)s;
 }
+QPlainTextEdit#NoteEditor[textSize="13"], #NoteEditor[textSize="13"] { font-size: 13px; }
+QPlainTextEdit#NoteEditor[textSize="14"], #NoteEditor[textSize="14"] { font-size: 14px; }
+QPlainTextEdit#NoteEditor[textSize="16"], #NoteEditor[textSize="16"] { font-size: 16px; }
+QPlainTextEdit#NoteEditor[textSize="18"], #NoteEditor[textSize="18"] { font-size: 18px; }
+QPlainTextEdit#NoteEditor[textSize="20"], #NoteEditor[textSize="20"] { font-size: 20px; }
 QPlainTextEdit#NoteEditor:focus { border-color: %(ACCENT)s; background-color: %(EDITOR_BG)s; }
 #NoteTitleLabel { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 20px; font-weight: 600; }
+/* Transient writing-column notices (a move, a wiki-link open). Clay, not the
+   note's title: these used to overwrite the title label itself. */
+#NoteStatus { color: %(CLAY)s; font-size: 11px; }
 #NoteFindBar { background: transparent; }
 #NoteFind {
     min-height: 22px;

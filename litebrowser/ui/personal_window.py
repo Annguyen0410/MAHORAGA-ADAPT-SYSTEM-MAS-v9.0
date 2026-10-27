@@ -420,6 +420,11 @@ class CategoryDropList(QListWidget):
 
 WIKILINK_RE = re.compile(r"\[\[([^\[\]]+)\]\]")
 
+# Writing sizes in CSS pixels, matching the textSize rules in the stylesheet so
+# the Tools row control actually moves the editor (see _apply_note_font_size).
+NOTE_FONT_SIZES = (13, 14, 15, 16, 18, 20)
+NOTE_FONT_DEFAULT = 15
+
 
 class WikiLinkHighlighter(QSyntaxHighlighter):
     """Paints [[wiki-links]] in the accent color and underlines them, so the
@@ -628,6 +633,7 @@ class PersonalWindow(QMainWindow):
         self.embedded = embedded
         self.current_note_id = None
         self.current_note_category = "General"
+        self._note_title = ""
         self._note_dirty = False
         self._suppress_note_dirty = False
         self.current_board_id = None
@@ -1139,7 +1145,10 @@ class PersonalWindow(QMainWindow):
         self.cmb_note_category.setEditable(True)
         self.cmb_note_category.setMinimumWidth(130)
         self.cmb_note_font = QComboBox()
-        self.cmb_note_font.addItems(["12", "14", "16", "18", "20"])
+        # Pixel sizes, matching how the editor font is applied (see
+        # _apply_note_font_size): the old list was point sizes while the control
+        # was labelled as a size in the editor's own pixels.
+        self.cmb_note_font.addItems([str(size) for size in NOTE_FONT_SIZES])
         self.btn_new_note = QPushButton("New note")
         self.btn_delete_note = QPushButton("Delete")
         self.btn_save_note = QPushButton("Save")
@@ -1160,6 +1169,15 @@ class PersonalWindow(QMainWindow):
         # collapsible row rather than stealing 1300px from the editor.
         note_actions = QHBoxLayout()
         note_actions.addWidget(self.btn_note_back)
+        # Transient messages ("Moved 2 notes to Work", "Opened [[X]]") get their
+        # own label. They used to be written into the note title, which then
+        # read as the note's name to the delete prompt, the flashcard back and
+        # the AI context sent to the shell.
+        self.lbl_note_status = QLabel("")
+        self.lbl_note_status.setObjectName("NoteStatus")
+        self.lbl_note_status.setAccessibleName("Note status message")
+        self.lbl_note_status.setWordWrap(True)
+        note_actions.addWidget(self.lbl_note_status, 1)
         note_actions.addStretch(1)
         self.lbl_note_save = QLabel("Saved locally")
         self.lbl_note_save.setObjectName("MutedLabel")
@@ -1179,8 +1197,9 @@ class PersonalWindow(QMainWindow):
         tools.addWidget(self.btn_delete_note, 0, 2)
         self.btn_delete_note.setObjectName("DangerButton")
         tools.addWidget(self.cmb_note_font, 1, 0)
-        self.cmb_note_font.setAccessibleName("Note font size")
-        self.cmb_note_font.setCurrentText("14")
+        self.cmb_note_font.setAccessibleName("Note text size")
+        self.cmb_note_font.setToolTip("Writing size for the note editor")
+        self.cmb_note_font.setCurrentText(str(NOTE_FONT_DEFAULT))
         tools.addWidget(self.chk_neural_graph, 1, 1, 1, 2)
         self._note_tools.hide()
         self.btn_note_tools.toggled.connect(self._note_tools.setVisible)
@@ -1253,7 +1272,7 @@ class PersonalWindow(QMainWindow):
         self.note_editor = QPlainTextEdit()
         self.note_editor.setObjectName("NoteEditor")
         self.note_editor.setAccessibleName("Note content")
-        self.note_editor.setFont(components._font(16, components.WEIGHT_NORMAL))
+        self.note_editor.setFont(components._font(NOTE_FONT_DEFAULT, components.WEIGHT_NORMAL))
         self.note_editor.setPlaceholderText("Longform notes, clipped notes, study notes...\n\nTip: type [[ to link another note — Obsidian-style, with autocomplete.")
         editor_layout.addWidget(self.note_editor, 1)
         # Wiki-links: accent-highlight [[targets]] + completion from note titles.
@@ -1333,6 +1352,10 @@ class PersonalWindow(QMainWindow):
         if not self.embedded:
             self.btn_note_ai.hide()
         self._apply_neural_graph_visibility()
+        # Nothing is open yet on a cold start: the column states that instead of
+        # presenting a live editor with no note behind it.
+        self._apply_note_font_size()
+        self._set_writing_active(False)
         return w
 
     def _schedule_notes_refresh(self):
@@ -1361,9 +1384,31 @@ class PersonalWindow(QMainWindow):
             self.neural_graph.set_animation_running(False)
 
     def _apply_note_font_size(self):
-        font = self.note_editor.font()
-        font.setPointSize(int(self.cmb_note_font.currentText()))
-        self.note_editor.setFont(font)
+        """The writing size, applied where Qt actually reads it.
+
+        The editor is styled by the window stylesheet, which re-applies its own
+        font at every polish — the old ``setPointSize`` on the widget font was
+        therefore a no-op (and mixed point sizes into a combo labelled in
+        pixels). The size is a themed stylesheet rule selected by a dynamic
+        property; the document font is then synced to the polished widget font
+        so layout and cursor agree.
+        """
+        try:
+            size = int(self.cmb_note_font.currentText())
+        except (TypeError, ValueError):
+            size = NOTE_FONT_DEFAULT
+        size = min(max(size, min(NOTE_FONT_SIZES)), max(NOTE_FONT_SIZES))
+        self.note_editor.setProperty("textSize", str(size))
+        style = self.note_editor.style()
+        if style is not None:
+            style.unpolish(self.note_editor)
+            style.polish(self.note_editor)
+        font = QFont(self.note_editor.font())
+        if font.pixelSize() > 0:
+            document = self.note_editor.document()
+            if document is not None:
+                document.setDefaultFont(font)
+        self.note_editor.update()
 
     def _on_note_text_changed(self):
         self._update_note_stats()
@@ -1561,24 +1606,17 @@ class PersonalWindow(QMainWindow):
             # the open note afterwards, so keep the editor untouched here.
             if self._suppress_note_dirty:
                 return
-            self.current_note_id = None
-            self.current_note_category = "General"
-            self.lbl_note_title.setText("No note selected")
-            self._suppress_note_dirty = True
-            try:
-                self.note_editor.setPlainText("")
-            finally:
-                self._suppress_note_dirty = False
-            self._clear_note_attachments()
-            self._find_in_note()
+            self._show_no_note_state()
             return
         note = personal_service.read_note(self.base_dir, current.data(Qt.UserRole))
         if not note:
             return
         self.current_note_id = note["id"]
         self.current_note_category = note.get("category") or "General"
+        self._note_title = note["title"]
         self._note_loaded_content = note["content"]
         self._note_dirty = False
+        self._set_writing_active(True)
         self._suppress_note_dirty = True
         try:
             prev_content = self.note_editor.toPlainText()
@@ -1593,6 +1631,41 @@ class PersonalWindow(QMainWindow):
         self.lbl_note_save.setText("Saved locally")
         self._refresh_backlinks(note)
         self._find_in_note()
+
+    def _show_no_note_state(self):
+        """Nothing is open: an intentional empty column, never a dead editor.
+
+        The editor used to stay live with no note behind it, so anything typed
+        there was dropped on the next selection without a word. Disabling the
+        writing surface while nothing is open (and explaining it) is the honest
+        version of the same screen.
+        """
+        self.current_note_id = None
+        self.current_note_category = "General"
+        self._note_title = ""
+        self._note_dirty = False
+        self.lbl_note_title.setText("No note selected")
+        self._suppress_note_dirty = True
+        try:
+            self.note_editor.setPlainText("")
+        finally:
+            self._suppress_note_dirty = False
+        self._clear_note_attachments()
+        self._find_in_note()
+        self._set_writing_active(False)
+
+    def _set_writing_active(self, active: bool):
+        """Enable the writing surface only while a note is behind it.
+
+        A read-only editor keeps selection, copy and find usable, and stops the
+        old failure mode where text typed with nothing open disappeared on the
+        next selection without a word.
+        """
+        self.note_editor.setReadOnly(not active)
+        self.btn_save_note.setEnabled(bool(active))
+        self.ed_note_find.setEnabled(bool(active))
+        self.btn_find_prev.setEnabled(bool(active))
+        self.btn_find_next.setEnabled(bool(active))
 
     def _refresh_backlinks(self, note):
         """'Linked mentions' — every note whose content references this one."""
@@ -1769,8 +1842,31 @@ class PersonalWindow(QMainWindow):
         return True
 
     def _flash(self, message: str):
-        if hasattr(self, "lbl_note_title"):
-            self.lbl_note_title.setText(message)
+        """Show a transient status line in the writing column.
+
+        Never the note title: ``_flash`` wrote into ``lbl_note_title`` before,
+        so a drag-to-category or a wiki-link open replaced the open note's
+        title with a status sentence and the next reader of that label (delete
+        prompt, flashcard back, the AI context sent to the shell) treated the
+        status text as the note's name.
+        """
+        label = getattr(self, "lbl_note_status", None)
+        if label is None:
+            return
+        label.setText(message or "")
+        timer = getattr(self, "_note_status_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(6000)
+            timer.timeout.connect(self._clear_note_status)
+            self._note_status_timer = timer
+        timer.start()
+
+    def _clear_note_status(self):
+        label = getattr(self, "lbl_note_status", None)
+        if label is not None:
+            label.clear()
 
     def _back_to_all_notes(self):
         """Return to the full note list: clear any category filter + selection."""
@@ -1951,9 +2047,9 @@ class PersonalWindow(QMainWindow):
             self.select_note(self.current_note_id)
         self._refresh_overview()
         if moved:
-            self.lbl_note_title.setText(f"Moved {moved} notes to {category}")
+            self._flash(f"Moved {moved} note(s) to {category}")
         else:
-            self.lbl_note_title.setText("Could not move the notes")
+            self._flash("Could not move the notes")
 
     def _save_note(self):
         if not self.current_note_id:
@@ -1981,6 +2077,7 @@ class PersonalWindow(QMainWindow):
         self.current_note_category = note.get("category") or "General"
         self._note_loaded_content = note["content"]
         self._note_dirty = False
+        self._set_writing_active(True)
         self.lbl_note_save.setText("Saved locally")
         self._refresh_notes()
         self.select_note(self.current_note_id)
@@ -1994,7 +2091,7 @@ class PersonalWindow(QMainWindow):
         if not shell or not hasattr(shell, "ai_page"):
             QMessageBox.information(self, "AI", "Open Personal Hub inside the main shell to use the assistant.")
             return
-        title = self.lbl_note_title.text().strip() or "Current note"
+        title = self._note_title or "Current note"
         body = self.note_editor.toPlainText().strip()
         question = f"Summarize and improve this note: {title}"
         if not shell.switch_workspace("ai"):
@@ -2006,10 +2103,12 @@ class PersonalWindow(QMainWindow):
         if not self.current_note_id:
             return
         deleted_id = self.current_note_id
+        # The note's own title, not the title label: the label carries the
+        # category suffix and once held transient status text.
         confirm = QMessageBox.question(
             self,
             "Delete note",
-            "Delete this note permanently?\n\n" + (self.lbl_note_title.text() or deleted_id),
+            "Delete this note permanently?\n\n" + (self._note_title or deleted_id),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -2022,11 +2121,13 @@ class PersonalWindow(QMainWindow):
         removed_cards = flashcard_service.delete_cards_for_note(self.base_dir, deleted_id)
         prefs.set_note_order(self.base_dir, [nid for nid in prefs.get_note_order(self.base_dir) if nid != deleted_id])
         self.current_note_id = None
+        self._note_title = ""
         self._note_dirty = False
         self.note_editor.setPlainText("")
         self.lbl_note_title.setText("No note selected")
         self._clear_note_attachments()
         self._find_in_note()
+        self._set_writing_active(False)
         self._refresh_notes()
         self._refresh_overview()
         if removed_cards:
@@ -2049,7 +2150,7 @@ class PersonalWindow(QMainWindow):
             front, back = front.strip(), back.strip()
         else:
             front = selection[:200]
-            back = f"From: {self.lbl_note_title.text().split('  |  ')[0]}"
+            back = f"From: {self._note_title}"
         if not front or not back:
             QMessageBox.information(self, "Flashcards", "Selection did not yield both sides of a card.")
             return
