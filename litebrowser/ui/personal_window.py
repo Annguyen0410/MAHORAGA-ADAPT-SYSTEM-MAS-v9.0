@@ -434,6 +434,9 @@ NOTE_FONT_DEFAULT = 15
 # drop target all read it); the rendered row payload travels beside it.
 NOTE_ID_ROLE = Qt.UserRole
 NOTE_ROW_ROLE = Qt.UserRole + 1
+# Same split for boards: the id stays on UserRole for deep links and tests,
+# the rendered row payload travels beside it.
+BOARD_ROW_ROLE = Qt.UserRole + 1
 # Reading measure: a comfortable line of prose, in pixels.
 NOTE_MEASURE_MAX = 760
 
@@ -534,6 +537,129 @@ def _note_row_payload(note: dict) -> dict:
     return {"title": note.get("title") or "(untitled)", "category": category, "meta": "  ·  ".join(bits)}
 
 
+def _count_label(count: int, singular: str, plural: str) -> str:
+    return f"{count} {singular if count == 1 else plural}"
+
+
+def _board_row_payload(board: dict) -> dict:
+    """The board's own counts, straight from its saved nodes/edges/strokes."""
+    nodes = board.get("nodes") if isinstance(board.get("nodes"), list) else []
+    edges = board.get("edges") if isinstance(board.get("edges"), list) else []
+    strokes = board.get("strokes") if isinstance(board.get("strokes"), list) else []
+    bits = []
+    if nodes:
+        bits.append(_count_label(len(nodes), "card", "cards"))
+    if edges:
+        bits.append(_count_label(len(edges), "link", "links"))
+    if strokes:
+        bits.append(_count_label(len(strokes), "stroke", "strokes"))
+    return {
+        "title": board.get("title") or "Untitled board",
+        "category": "",
+        "meta": "  ·  ".join(bits) if bits else "Empty board",
+    }
+
+
+def _color_dot(color: str, size: int = 14) -> QPixmap:
+    """Small round swatch: fills read as ink/paper, white keeps a hairline."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    value = QColor(color)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(QPen(QColor(0, 0, 0, 70), 1))
+    painter.setBrush(QBrush(value if value.isValid() else QColor("#292d32")))
+    painter.drawEllipse(1, 1, size - 2, size - 2)
+    painter.end()
+    return pixmap
+
+
+class FlowLayout(QtWidgets.QLayout):
+    """Left-to-right layout that wraps its cells instead of clipping them.
+
+    The board tool settings live in one flow: on a wide window they sit on one
+    line, and as the canvas narrows the fields move to a new line rather than
+    disappearing behind a horizontal scrollbar or being cut off at the edge.
+    """
+
+    def __init__(self, parent=None, margin: int = 0, hspacing: int = 8, vspacing: int = 5):
+        super().__init__(parent)
+        self._items = []
+        self._hspace = hspacing
+        self._vspace = vspacing
+        self.setContentsMargins(margin, margin, margin, margin)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index):
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+
+    def _do_layout(self, rect, test_only):
+        margins = self.contentsMargins()
+        area = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
+        x, y, line_height = area.x(), area.y(), 0
+        for item in self._items:
+            hint = item.sizeHint()
+            next_x = x + hint.width() + self._hspace
+            if next_x - self._hspace > area.right() + 1 and line_height > 0:
+                x = area.x()
+                y += line_height + self._vspace
+                next_x = x + hint.width() + self._hspace
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(x, y, hint.width(), hint.height()))
+            x = next_x
+            line_height = max(line_height, hint.height())
+        return y + line_height - rect.y() + margins.bottom()
+
+
+class BoardSettingsHost(QWidget):
+    """Hosts the wrapping settings flow and grows when the fields wrap.
+
+    A QVBoxLayout will happily hand this widget its one-line size hint even
+    when its FlowLayout needs two lines, which clipped the wrapped row. The
+    host asks its own layout for the height the current width needs and keeps
+    that as its minimum, so all the controls stay inside the toolbar.
+    """
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        layout = self.layout()
+        if layout is None or not layout.hasHeightForWidth() or event.size().width() <= 0:
+            return
+        needed = layout.heightForWidth(event.size().width())
+        if needed > 0 and self.minimumHeight() != needed:
+            self.setMinimumHeight(needed)
+            self.updateGeometry()
+
+
 class NoteRowDelegate(QStyledItemDelegate):
     """A note row: an elided title over a quiet category · age · length line.
 
@@ -546,14 +672,16 @@ class NoteRowDelegate(QStyledItemDelegate):
 
     ROW_HEIGHT = 50
     LINE_GAP = 2
+    # Subclasses point this at their own payload role (boards reuse the paint).
+    PAYLOAD_ROLE = NOTE_ROW_ROLE
 
     def sizeHint(self, option, index):
-        if index.data(NOTE_ROW_ROLE):
+        if index.data(self.PAYLOAD_ROLE):
             return QSize(0, self.ROW_HEIGHT)
         return super().sizeHint(option, index)
 
     def paint(self, painter, option, index):
-        payload = index.data(NOTE_ROW_ROLE)
+        payload = index.data(self.PAYLOAD_ROLE)
         if not payload:
             super().paint(painter, option, index)
             return
@@ -618,6 +746,13 @@ class NoteRowDelegate(QStyledItemDelegate):
                 meta_metrics.elidedText(str(payload.get("meta") or ""), Qt.ElideRight, meta_rect.width()),
             )
         painter.restore()
+
+
+class BoardRowDelegate(NoteRowDelegate):
+    """A board row in the same vocabulary: elided title over its own counts."""
+
+    ROW_HEIGHT = 48
+    PAYLOAD_ROLE = BOARD_ROW_ROLE
 
 
 class WikiLinkHighlighter(QSyntaxHighlighter):
@@ -1024,7 +1159,7 @@ class PersonalWindow(QMainWindow):
     def _apply_compact_layout(self):
         width = max(0, self.width())
         if hasattr(self, "_boards_splitter"):
-            self._boards_splitter.setSizes([110 if width < 980 else 200, max(240, width - 340)])
+            self._boards_splitter.setSizes([160 if width < 980 else 210, max(240, width - 340)])
         if hasattr(self, "categories_list"):
             self.categories_list.setVisible(width >= 680)
             self._categories_hint.setVisible(width >= 680)
@@ -3820,54 +3955,48 @@ class PersonalWindow(QMainWindow):
         w = QWidget()
         l = QVBoxLayout(w)
         l.setContentsMargins(12, 10, 12, 12)
-        l.setSpacing(6)
-        l.addWidget(components.page_header("Idea Boards", "Sticky cards, pan, and draw"))
-        # Eleven equal boxes in one row became: the verb you came for, three
-        # mode chips (they are a state, not an action), the pen settings, and a
-        # menu holding the round chores (new/delete board, clear ink/links, save).
-        row = QHBoxLayout()
-        self.btn_add_card = primary_button("Add sticky")
+        l.setSpacing(8)
+        l.addWidget(components.page_header("Idea Boards", "Sticky cards, ink and links on one wall"))
+
+        # ---- Primary toolbar: the verbs, then the mode those verbs act in. ----
+        self._board_toolbar = QWidget()
+        self._board_toolbar.setObjectName("BoardToolbar")
+        toolbar_layout = QVBoxLayout(self._board_toolbar)
+        toolbar_layout.setContentsMargins(8, 6, 8, 7)
+        toolbar_layout.setSpacing(6)
+
+        primary = QHBoxLayout()
+        primary.setSpacing(6)
+        self.btn_add_card = primary_button("Add sticky", "Drop a sticky card at the centre of the canvas")
         self.btn_mode_pan = components.chip("Pan")
         self.btn_mode_draw = components.chip("Draw")
         self.btn_mode_link = components.chip("Link")
-        self.cmb_board_tool = QComboBox()
-        for tool in BoardView.TOOLS:
-            self.cmb_board_tool.addItem(tool.capitalize(), tool)
-        self.cmb_board_tool.setAccessibleName("Drawing tool")
-        self.cmb_board_tool.setToolTip("Pen, pencil, translucent marker, stroke eraser and shapes")
-        self.cmb_pen_color = QComboBox()
-        for label, color in (("Ink", "#292d32"), ("Espresso", "#6f4e37"), ("Coral", "#c75b52"), ("Honey", "#c89331"), ("Forest", "#42795c"), ("Ocean", "#3e799f"), ("Lilac", "#8462b1"), ("White", "#ffffff")):
-            pixmap = QPixmap(16, 16)
-            pixmap.fill(QColor(color))
-            self.cmb_pen_color.addItem(QIcon(pixmap), label, color)
-        self.cmb_pen_color.setAccessibleName("Pen color preset")
-        self.btn_pen_custom = ghost_button("Color…", "Choose any drawing color")
-        self.cmb_pen_width = QComboBox()
-        for label, value in (("1 px", 1.0), ("3 px", 3.0), ("6 px", 6.0), ("12 px", 12.0), ("24 px", 24.0)):
-            self.cmb_pen_width.addItem(label, value)
-        self.cmb_pen_width.setCurrentIndex(1)
-        self.cmb_pen_width.setAccessibleName("Stroke size")
-        self.spin_board_opacity = QSpinBox()
-        self.spin_board_opacity.setRange(5, 100)
-        self.spin_board_opacity.setValue(100)
-        self.spin_board_opacity.setSuffix("%")
-        self.spin_board_opacity.setAccessibleName("Ink opacity")
-        self.btn_canvas_color = ghost_button("Paper…", "Choose the canvas background color")
-        self.btn_board_undo = ghost_button("Undo", "Undo board change (Ctrl+Z on canvas)")
-        self.btn_board_redo = ghost_button("Redo", "Redo board change (Ctrl+Shift+Z on canvas)")
+        for button, name, tip in (
+            (self.btn_mode_pan, "Pan mode", "Pan mode: drag the canvas; cards stay draggable"),
+            (self.btn_mode_draw, "Draw mode", "Draw mode: drag on the paper to sketch"),
+            (self.btn_mode_link, "Link mode", "Link mode: click a sticky card, then another, to connect them"),
+        ):
+            button.setAccessibleName(name)
+            button.setToolTip(tip)
         self.board_mode_group = QButtonGroup(self)
         self.board_mode_group.setExclusive(True)
-        self.board_mode_group.addButton(self.btn_mode_pan)
-        self.board_mode_group.addButton(self.btn_mode_draw)
-        self.board_mode_group.addButton(self.btn_mode_link)
-        row.addWidget(self.btn_add_card)
-        row.addWidget(self.btn_mode_pan)
-        row.addWidget(self.btn_mode_draw)
-        row.addWidget(self.btn_mode_link)
-        row.addWidget(self.btn_board_undo)
-        row.addWidget(self.btn_board_redo)
-        row.addStretch(1)
-        row.addWidget(
+        for button in (self.btn_mode_pan, self.btn_mode_draw, self.btn_mode_link):
+            self.board_mode_group.addButton(button)
+        self.btn_board_undo = ghost_button("Undo", "Undo board change (Ctrl+Z on canvas)")
+        self.btn_board_redo = ghost_button("Redo", "Redo board change (Ctrl+Shift+Z on canvas)")
+        mode_caption = QLabel("Mode")
+        mode_caption.setObjectName("BoardToolLabel")
+        primary.addWidget(self.btn_add_card)
+        primary.addSpacing(4)
+        primary.addWidget(mode_caption)
+        primary.addWidget(self.btn_mode_pan)
+        primary.addWidget(self.btn_mode_draw)
+        primary.addWidget(self.btn_mode_link)
+        primary.addSpacing(4)
+        primary.addWidget(self.btn_board_undo)
+        primary.addWidget(self.btn_board_redo)
+        primary.addStretch(1)
+        primary.addWidget(
             more_menu(
                 (
                     ("New board…", self._add_board),
@@ -3881,66 +4010,199 @@ class PersonalWindow(QMainWindow):
                 tooltip="Board chores: create, delete, clear, save",
             )
         )
-        l.addLayout(row)
-        # A second short tool row keeps creation/navigation distinct from ink.
-        tools = QHBoxLayout()
-        tools.setSpacing(6)
-        for label, control in (("Tool", self.cmb_board_tool), ("Ink", self.cmb_pen_color), ("Size", self.cmb_pen_width), ("Opacity", self.spin_board_opacity)):
-            tools.addWidget(QLabel(label))
-            tools.addWidget(control)
-        tools.addWidget(self.btn_pen_custom)
-        tools.addWidget(self.btn_canvas_color)
-        tools.addStretch(1)
-        self.btn_board_zoom_out = ghost_button("−", "Zoom out")
-        self.btn_board_zoom_reset = ghost_button("100%", "Reset canvas zoom")
-        self.btn_board_zoom_in = ghost_button("+", "Zoom in")
-        self.btn_board_fit = ghost_button("Fit", "Fit the entire canvas")
-        toolbar = QWidget()
-        toolbar.setLayout(tools)
-        self._board_tools_scroll = QScrollArea()
-        self._board_tools_scroll.setWidget(toolbar)
-        self._board_tools_scroll.setWidgetResizable(True)
-        self._board_tools_scroll.setFrameShape(QFrame.NoFrame)
-        self._board_tools_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._board_tools_scroll.setFixedHeight(58)
-        l.addWidget(self._board_tools_scroll)
-        self.lbl_board_hint = QLabel("Select a board, then draw. Ctrl+wheel to zoom · Space or middle-drag to pan.")
-        self.lbl_board_hint.setWordWrap(True)
-        self.lbl_board_hint.setObjectName("MutedLabel")
-        zoom_row = QHBoxLayout()
-        zoom_row.addWidget(self.lbl_board_hint, 1)
-        for button in (self.btn_board_zoom_out, self.btn_board_zoom_reset, self.btn_board_zoom_in, self.btn_board_fit):
-            zoom_row.addWidget(button)
-        l.addLayout(zoom_row)
+        toolbar_layout.addLayout(primary)
 
+        rule = QFrame()
+        rule.setObjectName("BoardToolRule")
+        rule.setFixedHeight(1)
+        toolbar_layout.addWidget(rule)
+
+        # ---- Secondary row: ink and paper. It wraps (FlowLayout) instead of
+        # clipping at narrow widths, and every control keeps its caption. ----
+        self.cmb_board_tool = QComboBox()
+        for tool in BoardView.TOOLS:
+            self.cmb_board_tool.addItem(tool.capitalize(), tool)
+        self.cmb_board_tool.setAccessibleName("Drawing tool")
+        self.cmb_board_tool.setToolTip("Pen, pencil, translucent marker, stroke eraser and shapes")
+        self.cmb_board_tool.setMinimumWidth(92)
+        self.cmb_pen_color = QComboBox()
+        for label, color in (("Ink", "#292d32"), ("Espresso", "#6f4e37"), ("Coral", "#c75b52"), ("Honey", "#c89331"), ("Forest", "#42795c"), ("Ocean", "#3e799f"), ("Lilac", "#8462b1"), ("White", "#ffffff")):
+            self.cmb_pen_color.addItem(QIcon(_color_dot(color)), label, color)
+        self.cmb_pen_color.setAccessibleName("Pen color preset")
+        self.cmb_pen_color.setToolTip("Ink colour for new strokes")
+        self.cmb_pen_color.setMinimumWidth(98)
+        self.btn_pen_custom = ghost_button("Color…", "Choose any drawing color")
+        self.cmb_pen_width = QComboBox()
+        for label, value in (("1 px", 1.0), ("3 px", 3.0), ("6 px", 6.0), ("12 px", 12.0), ("24 px", 24.0)):
+            self.cmb_pen_width.addItem(label, value)
+        self.cmb_pen_width.setCurrentIndex(1)
+        self.cmb_pen_width.setAccessibleName("Stroke size")
+        self.cmb_pen_width.setToolTip("Width of new strokes")
+        self.spin_board_opacity = QSpinBox()
+        self.spin_board_opacity.setRange(5, 100)
+        self.spin_board_opacity.setValue(100)
+        self.spin_board_opacity.setSuffix("%")
+        self.spin_board_opacity.setAccessibleName("Ink opacity")
+        self.spin_board_opacity.setToolTip("Opacity of new strokes")
+        self.btn_canvas_color = ghost_button("Paper…", "Choose the canvas background color")
+        self.btn_canvas_color.setEnabled(False)
+        self.chk_board_grid = QCheckBox("Grid")
+        self.chk_board_grid.setChecked(True)
+        self.chk_board_grid.setAccessibleName("Show dot grid")
+        self.chk_board_grid.setToolTip("Show a faint dot grid on the paper; it is not part of the board")
+
+        self._board_settings = BoardSettingsHost()
+        self._board_settings.setObjectName("BoardSettings")
+        self._board_flow = FlowLayout(self._board_settings, margin=0, hspacing=12, vspacing=5)
+        for caption, control in (
+            ("Tool", self.cmb_board_tool),
+            ("Ink", self.cmb_pen_color),
+            ("Size", self.cmb_pen_width),
+            ("Opacity", self.spin_board_opacity),
+        ):
+            self._board_flow.addWidget(self._board_tool_field(caption, control))
+        self._board_flow.addWidget(self._board_tool_field("", self.btn_pen_custom))
+        self._board_flow.addWidget(self._board_tool_field("", self.btn_canvas_color))
+        self._board_flow.addWidget(self._board_tool_field("", self.chk_board_grid))
+        toolbar_layout.addWidget(self._board_settings)
+        l.addWidget(self._board_toolbar)
+
+        # ---- Shelf + canvas. The canvas gets the stretch; the shelf is
+        # resizable but never collapses to nothing. ----
         split = QSplitter(Qt.Horizontal)
         self._boards_splitter = split
+        split.setHandleWidth(8)
+        split.setChildrenCollapsible(False)
+
+        list_pane = QWidget()
+        list_pane.setObjectName("BoardListPane")
+        shelf = QVBoxLayout(list_pane)
+        shelf.setContentsMargins(0, 0, 0, 0)
+        shelf.setSpacing(4)
+        self.btn_new_board = components.chip("+ New", checkable=False)
+        self.btn_new_board.setToolTip("Create a new board")
+        self.btn_new_board.setAccessibleName("New board")
+        self._boards_header = components.section_header("Boards", "No boards yet", action=self.btn_new_board)
+        self._boards_header_subtitle = getattr(self._boards_header, "_subtitle", None)
+        shelf.addWidget(self._boards_header)
         self.boards_list = QListWidget()
         self.boards_list.setObjectName("CafeList")
-        self.boards_list.setMinimumWidth(90)
-        self.boards_list.setMaximumWidth(240)
+        self.boards_list.setAccessibleName("Boards")
+        self.boards_list.setMinimumWidth(148)
+        self.boards_list.setMaximumWidth(320)
+        self.boards_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.boards_list.setTextElideMode(Qt.ElideRight)
+        self.boards_list.setItemDelegate(BoardRowDelegate(self.boards_list))
+        self.boards_list.setUniformItemSizes(True)
         self.boards_list.currentItemChanged.connect(self._load_selected_board)
-        split.addWidget(self.boards_list)
+        shelf.addWidget(self.boards_list, 1)
+        split.addWidget(list_pane)
+
+        canvas_pane = QWidget()
+        canvas_pane.setObjectName("BoardCanvasPane")
+        stage = QVBoxLayout(canvas_pane)
+        stage.setContentsMargins(0, 0, 0, 0)
+        stage.setSpacing(4)
+
+        # The open board's name and the zoom cluster share one quiet line above
+        # the paper, so the canvas itself stays unobstructed.
+        head = QWidget()
+        head.setObjectName("BoardHead")
+        head_row = QHBoxLayout(head)
+        head_row.setContentsMargins(2, 0, 2, 0)
+        head_row.setSpacing(6)
+        self.lbl_board_title = QLabel("No board open")
+        self.lbl_board_title.setObjectName("BoardTitle")
+        # "Ignored" lets a long board name yield to the zoom cluster instead of
+        # pushing it off the edge; the full name stays in the tooltip.
+        title_policy = getattr(QSizePolicy, "Ignored", None) or getattr(QSizePolicy.Policy, "Ignored", None)
+        self.lbl_board_title.setSizePolicy(title_policy, QSizePolicy.Preferred)
+        self.lbl_board_title.setAccessibleName("Open board")
+        head_row.addWidget(self.lbl_board_title, 1)
+        self.btn_board_zoom_out = ghost_button("−", "Zoom out")
+        self.btn_board_zoom_out.setAccessibleName("Zoom out")
+        self.btn_board_zoom_reset = ghost_button("100%", "Reset canvas zoom")
+        self.btn_board_zoom_reset.setAccessibleName("Reset zoom")
+        self.btn_board_zoom_reset.setMinimumWidth(58)
+        self.btn_board_zoom_in = ghost_button("+", "Zoom in")
+        self.btn_board_zoom_in.setAccessibleName("Zoom in")
+        self.btn_board_fit = ghost_button("Fit", "Fit the entire canvas")
+        self.btn_board_fit.setAccessibleName("Fit canvas")
+        for button in (self.btn_board_zoom_out, self.btn_board_zoom_reset, self.btn_board_zoom_in, self.btn_board_fit):
+            head_row.addWidget(button)
+        stage.addWidget(head)
+
         self.board_scene = QGraphicsScene(self)
         self.board_scene.setSceneRect(0, 0, 2200, 1400)
         # Paper is white by default, independent from the application theme.
         self.board_scene.setBackgroundBrush(QBrush(QColor("#ffffff")))
         self.board_view = BoardView()
         self.board_view.setScene(self.board_scene)
+        # The desk follows the theme; the saved paper colour never does.
+        try:
+            desk = QColor(theme.palette().get("SURFACE_SUNK", "#b7b8b8"))
+            if desk.isValid():
+                self.board_view.set_desk_color(desk.darker(104).name())
+        except (KeyError, RuntimeError, TypeError):
+            pass
         self.board_view.set_history_callbacks(self._board_snapshot, self._restore_board_snapshot)
         self.board_view.setEnabled(False)
+        self.board_view.set_grid_visible(self.chk_board_grid.isChecked())
         self._board_autosave = QTimer(self)
         self._board_autosave.setSingleShot(True)
         self._board_autosave.setInterval(700)
         self._board_autosave.timeout.connect(lambda: self._save_current_board_positions(notify=False))
         self.board_view.stroke_finished.connect(self._board_autosave.start)
-        split.addWidget(self.board_view)
-        split.setChildrenCollapsible(True)
+
+        self._board_empty = QFrame()
+        self._board_empty.setObjectName("EmptyState")
+        empty_box = QVBoxLayout(self._board_empty)
+        empty_box.setContentsMargins(24, 28, 24, 28)
+        empty_box.setSpacing(8)
+        empty_box.setAlignment(Qt.AlignCenter)
+        empty_glyph = QLabel("◈")
+        empty_glyph.setObjectName("EmptyGlyph")
+        empty_glyph.setAlignment(Qt.AlignCenter)
+        empty_box.addWidget(empty_glyph)
+        self._board_empty_title = QLabel("No boards yet")
+        self._board_empty_title.setObjectName("BoardEmptyTitle")
+        self._board_empty_title.setAlignment(Qt.AlignCenter)
+        self._board_empty_title.setWordWrap(True)
+        empty_box.addWidget(self._board_empty_title)
+        self._board_empty_hint = QLabel("A board is a wall for one idea — sticky cards, ink and arrows. Create one to start sketching.")
+        self._board_empty_hint.setObjectName("BoardEmptyHint")
+        self._board_empty_hint.setAlignment(Qt.AlignCenter)
+        self._board_empty_hint.setWordWrap(True)
+        empty_box.addWidget(self._board_empty_hint)
+        empty_actions = QHBoxLayout()
+        empty_actions.setSpacing(8)
+        empty_actions.addStretch(1)
+        self.btn_empty_new_board = primary_button("New board", "Create a board and open its canvas")
+        empty_actions.addWidget(self.btn_empty_new_board)
+        empty_actions.addStretch(1)
+        empty_box.addLayout(empty_actions)
+
+        self._board_stack = QStackedWidget()
+        self._board_stack.setObjectName("BoardStage")
+        self._board_stack.addWidget(self.board_view)
+        self._board_stack.addWidget(self._board_empty)
+        self._board_stack.setCurrentIndex(1)
+        stage.addWidget(self._board_stack, 1)
+
+        self.lbl_board_hint = QLabel("")
+        self.lbl_board_hint.setObjectName("BoardHint")
+        self.lbl_board_hint.setAccessibleName("Board status")
+        self.lbl_board_hint.setWordWrap(True)
+        self.lbl_board_hint.hide()
+        stage.addWidget(self.lbl_board_hint)
+
+        split.addWidget(canvas_pane)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
-        split.setSizes([200, 860])
+        split.setSizes([210, 900])
         l.addWidget(split, 1)
 
+        self.btn_add_card.setEnabled(False)
         self.btn_add_card.clicked.connect(self._add_board_card)
         self.btn_mode_pan.clicked.connect(lambda: self._set_board_mode("pan"))
         self.btn_mode_draw.clicked.connect(lambda: self._set_board_mode("draw"))
@@ -3951,6 +4213,9 @@ class PersonalWindow(QMainWindow):
         self.cmb_board_tool.currentIndexChanged.connect(self._select_board_tool)
         self.btn_pen_custom.clicked.connect(self._choose_pen_color)
         self.btn_canvas_color.clicked.connect(self._choose_canvas_color)
+        self.chk_board_grid.toggled.connect(self.board_view.set_grid_visible)
+        self.btn_new_board.clicked.connect(self._add_board)
+        self.btn_empty_new_board.clicked.connect(self._add_board)
         self.btn_board_undo.clicked.connect(self.board_view.undo)
         self.btn_board_redo.clicked.connect(self.board_view.redo)
         self.btn_board_undo.setEnabled(False)
@@ -3960,11 +4225,36 @@ class PersonalWindow(QMainWindow):
         self.btn_board_zoom_in.clicked.connect(lambda: self.board_view.set_zoom(self.board_view.transform().m11() * 1.2))
         self.btn_board_zoom_reset.clicked.connect(lambda: self.board_view.set_zoom(1.0))
         self.btn_board_fit.clicked.connect(self.board_view.fit_canvas)
-        self.board_view.zoom_changed.connect(lambda value: self.btn_board_zoom_reset.setText(f"{value}%"))
+        self.board_view.zoom_changed.connect(self._on_board_zoom_changed)
         self.board_view.link_created.connect(self._add_board_edge)
         self.btn_mode_pan.setChecked(True)
         self._apply_board_pen()
         return w
+
+    def _board_tool_field(self, caption: str, control) -> QWidget:
+        """A caption + control kept together when the settings row wraps."""
+        field = QWidget()
+        field.setObjectName("BoardToolField")
+        row = QHBoxLayout(field)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(5)
+        if caption:
+            label = QLabel(caption)
+            label.setObjectName("BoardToolLabel")
+            row.addWidget(label)
+        row.addWidget(control)
+        return field
+
+    def _on_board_zoom_changed(self, value: int):
+        self.btn_board_zoom_reset.setText(f"{value}%")
+        self.btn_board_zoom_reset.setToolTip(f"Canvas zoom {value}% · reset to 100%")
+
+    def _update_paper_swatch(self, color: str):
+        """Show the open board's saved paper colour on the Paper… control."""
+        if not hasattr(self, "btn_canvas_color"):
+            return
+        self.btn_canvas_color.setIcon(QIcon(_color_dot(color)))
+        self.btn_canvas_color.setToolTip(f"Paper {str(color).upper()} · choose the canvas background color")
 
     def _refresh_boards(self):
         current = self.current_board_id
@@ -3974,10 +4264,17 @@ class PersonalWindow(QMainWindow):
         self.boards_list.blockSignals(True)
         self.boards_list.clear()
         for board in boards:
-            item = QListWidgetItem(board.get("title", "Untitled board"))
+            title = board.get("title") or "Untitled board"
+            payload = _board_row_payload(board)
+            item = QListWidgetItem(title)
             item.setData(Qt.UserRole, board.get("id", ""))
+            item.setData(BOARD_ROW_ROLE, payload)
+            item.setToolTip(f"{title}\n{payload['meta']}")
             self.boards_list.addItem(item)
         self.boards_list.blockSignals(False)
+        if self._boards_header_subtitle is not None:
+            count = len(boards)
+            self._boards_header_subtitle.setText(_count_label(count, "board", "boards") if count else "No boards yet")
         if current and current == getattr(self, "_board_loaded_id", None):
             # Refresh metadata without destroying the live undo stack/canvas.
             self.boards_list.blockSignals(True)
@@ -4071,18 +4368,37 @@ class PersonalWindow(QMainWindow):
         self.board_view.cancel_gesture()
         self.board_view._clear_link_start()
         self.board_scene.clear()
-        self.current_board_id = current.data(Qt.UserRole) if current else None
+        self.current_board_id = selected_id
         self._board_loaded_id = self.current_board_id
         self.board_view.reset_history()
         self.board_view.setEnabled(bool(self.current_board_id))
         self.btn_add_card.setEnabled(bool(self.current_board_id))
+        self.btn_canvas_color.setEnabled(bool(self.current_board_id))
+        self._board_stack.setCurrentIndex(0 if self.current_board_id else 1)
+        self.lbl_board_hint.setVisible(bool(self.current_board_id))
         if not self.current_board_id:
-            self.lbl_board_hint.setText("Create a board to start sketching ideas, tasks, or study maps.")
+            # A blank sheet with no board behind it looked like a broken canvas;
+            # the stage now says what it is and offers the one next step.
+            self.lbl_board_title.setText("No board open")
+            self.lbl_board_title.setToolTip("")
+            has_boards = self.boards_list.count() > 0
+            self._board_empty_title.setText("Choose a board" if has_boards else "No boards yet")
+            self._board_empty_hint.setText(
+                "Pick one from the shelf to open its canvas."
+                if has_boards
+                else "A board is a wall for one idea — sticky cards, ink and arrows. Create one to start sketching."
+            )
+            self.lbl_board_hint.setText("")
             return
         boards = life_service.load_boards(self.base_dir)
         for board in boards:
             if board.get("id") == self.current_board_id:
-                self.board_view.set_background(board.get("background", "#ffffff"))
+                title = board.get("title") or "Untitled board"
+                self.lbl_board_title.setText(title)
+                self.lbl_board_title.setToolTip(title)
+                background = board.get("background", "#ffffff")
+                self.board_view.set_background(background)
+                self._update_paper_swatch(background)
                 card_by_id = {}
                 for node in board.get("nodes", []):
                     item = StickyCardItem(node)
@@ -4102,6 +4418,22 @@ class PersonalWindow(QMainWindow):
                     f"{len(board.get('nodes', []))} sticky cards · {len(board.get('edges', []))} links · {len(board.get('strokes', []))} ink strokes"
                 )
                 break
+
+    def _update_board_row(self, board: dict):
+        """Refresh one shelf row's title/counts in place."""
+        if not hasattr(self, "boards_list"):
+            return
+        board_id = board.get("id")
+        for index in range(self.boards_list.count()):
+            item = self.boards_list.item(index)
+            if item.data(Qt.UserRole) != board_id:
+                continue
+            title = board.get("title") or "Untitled board"
+            payload = _board_row_payload(board)
+            item.setText(title)
+            item.setData(BOARD_ROW_ROLE, payload)
+            item.setToolTip(f"{title}\n{payload['meta']}")
+            return
 
     def _add_board_card(self):
         if not self.current_board_id:
@@ -4138,7 +4470,10 @@ class PersonalWindow(QMainWindow):
         color = self.cmb_pen_color.currentData() or "#6f4e37"
         width = float(self.cmb_pen_width.currentData() or 3.0)
         self.board_view.set_pen(color, width, self.spin_board_opacity.value() / 100)
-        self.btn_pen_custom.setText(f"Color {color.upper()}")
+        # A swatch carries the current ink; the old "Color #292D32" label made
+        # this control the widest thing in the settings row for no benefit.
+        self.btn_pen_custom.setText("Color…")
+        self.btn_pen_custom.setIcon(QIcon(_color_dot(color)))
         self.btn_pen_custom.setToolTip(f"Current ink: {color.upper()} · choose a custom color")
 
     def _select_board_tool(self):
@@ -4149,7 +4484,7 @@ class PersonalWindow(QMainWindow):
         if color.isValid():
             idx = self.cmb_pen_color.findData(color.name())
             if idx < 0:
-                self.cmb_pen_color.addItem(color.name().upper(), color.name())
+                self.cmb_pen_color.addItem(QIcon(_color_dot(color.name())), color.name().upper(), color.name())
                 idx = self.cmb_pen_color.count() - 1
             self.cmb_pen_color.setCurrentIndex(idx)
             self._apply_board_pen()
@@ -4161,6 +4496,7 @@ class PersonalWindow(QMainWindow):
         if color.isValid():
             before = self._board_snapshot()
             self.board_view.set_background(color.name())
+            self._update_paper_swatch(color.name())
             self.board_view.record_change(before)
 
     def _board_snapshot(self):
@@ -4178,7 +4514,9 @@ class PersonalWindow(QMainWindow):
         self.board_view.cancel_gesture()
         self.board_view._clear_link_start()
         self.board_scene.clear()
-        self.board_view.set_background(snapshot.get("background", "#ffffff"))
+        background = snapshot.get("background", "#ffffff")
+        self.board_view.set_background(background)
+        self._update_paper_swatch(background)
         cards = {}
         for node in snapshot["nodes"]:
             card = StickyCardItem(node)
@@ -4256,10 +4594,14 @@ class PersonalWindow(QMainWindow):
             if getattr(self, "_board_saved_id", None) == self.current_board_id and disk_snapshot != self._board_disk_snapshot:
                 raise ValueError("Another window changed this board; your local canvas is kept, not overwritten")
             board.update(snapshot)
-            if life_service.update_board(self.base_dir, board) is None:
+            saved = life_service.update_board(self.base_dir, board)
+            if saved is None:
                 raise ValueError("The board disappeared while saving")
             self._board_saved_id = self.current_board_id
             self._board_disk_snapshot = copy.deepcopy(snapshot)
+            # Keep the shelf's counts true after a stroke or a new card without
+            # rebuilding the list (which would drop the live undo stack).
+            self._update_board_row(saved)
             self.lbl_board_hint.setText(f"Saved locally · {len(snapshot['nodes'])} cards · {len(snapshot['strokes'])} strokes · Ctrl+wheel to zoom")
             if notify:
                 self._flash("Board saved locally")

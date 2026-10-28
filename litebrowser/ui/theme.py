@@ -938,6 +938,15 @@ QPushButton#NoteSave:disabled { color: %(TEXT_DIM)s; border-color: %(RULE)s; bac
 #CalendarMonth { background-color: %(SURFACE)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS)s; }
 #CalendarSide { background-color: transparent; }
 #BoardToolbar { background-color: %(SURFACE)s; border: 1px solid %(RULE)s; border-radius: %(RADIUS)s; padding: 6px; }
+/* The board page keeps the quiet table chrome around the paper: one toolbar
+   card, a hairline between verbs and ink settings, and no boxes of its own. */
+#BoardToolRule { background-color: %(RULE)s; border: none; }
+#BoardToolLabel { color: %(TEXT_MUTED)s; font-size: 11px; }
+#BoardSettings, #BoardToolField, #BoardListPane, #BoardCanvasPane, #BoardHead, #BoardStage { background-color: transparent; }
+#BoardTitle { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 15px; font-weight: 600; }
+#BoardEmptyTitle { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 18px; font-weight: 600; }
+#BoardEmptyHint { color: %(TEXT_MUTED)s; font-size: 12px; }
+#BoardHint { color: %(TEXT_MUTED)s; font-size: 11px; }
 #SettingsNav { background-color: transparent; }
 #SettingsSection { background-color: transparent; border: none; }
 #LibraryToolbar { background-color: transparent; }

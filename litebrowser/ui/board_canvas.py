@@ -82,6 +82,10 @@ class BoardView(QtWidgets.QGraphicsView):
         self.pen_width = 3.0
         self.pen_opacity = 1.0
         self.background_color = "#ffffff"
+        # The desk around the paper follows the active theme (set by the page);
+        # the paper itself is the board's saved colour and never themed.
+        self.desk_color = "#b7b8b8"
+        self.grid_visible = True
         self._drawing_item = None
         self._drawing_points = []
         self._link_start = None
@@ -138,14 +142,66 @@ class BoardView(QtWidgets.QGraphicsView):
         self.background_color = value.name() if value.isValid() else "#ffffff"
         self.viewport().update()
 
+    def set_desk_color(self, color):
+        """Tint the area around the paper; the saved paper colour is untouched."""
+        value = QtGui.QColor(str(color))
+        self.desk_color = value.name() if value.isValid() else "#b7b8b8"
+        self.viewport().update()
+
+    def set_grid_visible(self, visible):
+        self.grid_visible = bool(visible)
+        self.viewport().update()
+
     def drawBackground(self, painter, rect):
-        # Paper is independent from chrome/theme; outside it is a neutral desk.
-        painter.fillRect(rect, QtGui.QColor("#b7b8b8"))
-        if self.scene():
-            paper = self.sceneRect()
-            painter.fillRect(paper, QtGui.QColor(self.background_color))
-            painter.setPen(QtGui.QPen(QtGui.QColor("#9da0a3"), 1 / max(self.transform().m11(), 0.1)))
-            painter.drawRect(paper)
+        # Paper is independent from chrome/theme; outside it is the desk the
+        # page tinted. A soft shadow lifts the sheet without decorating the
+        # drawing surface itself.
+        painter.fillRect(rect, QtGui.QColor(self.desk_color))
+        if not self.scene():
+            return
+        paper = self.sceneRect()
+        if paper.isEmpty():
+            return
+        scale = max(self.transform().m11(), 0.01)
+        painter.fillRect(
+            QtCore.QRectF(paper).translated(4 / scale, 5 / scale),
+            QtGui.QColor(0, 0, 0, 40),
+        )
+        painter.fillRect(paper, QtGui.QColor(self.background_color))
+        if self.grid_visible:
+            self._draw_dot_grid(painter, rect, paper, scale)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#9da0a3"), 1 / scale))
+        painter.drawRect(paper)
+
+    def _draw_dot_grid(self, painter, rect, paper, scale):
+        """A faint dot grid, at a constant on-screen pitch, clipped to view.
+
+        Its colour is derived from the paper's luminance so it stays a whisper
+        on white paper and still reads on a dark custom background. Only dots
+        inside the exposed rect are built, so panning a large board stays cheap.
+        """
+        visible = QtCore.QRectF(rect).intersected(paper)
+        if visible.isEmpty():
+            return
+        paper_color = QtGui.QColor(self.background_color)
+        luminance = (paper_color.red() * 299 + paper_color.green() * 587 + paper_color.blue() * 114) / 1000
+        ink = QtGui.QColor(0, 0, 0, 30) if luminance >= 150 else QtGui.QColor(255, 255, 255, 38)
+        step = max(8.0, 26.0 / scale)
+        left = paper.left() + math.ceil((visible.left() - paper.left()) / step) * step
+        top = paper.top() + math.ceil((visible.top() - paper.top()) / step) * step
+        points = []
+        y = top
+        while y <= visible.bottom() + 0.5:
+            x = left
+            while x <= visible.right() + 0.5:
+                points.append(QtCore.QPointF(x, y))
+                x += step
+            y += step
+        if points:
+            # Constant on-screen dot weight: the pen is in scene units, so it
+            # divides by the zoom (a fixed 1.0 became a 4 px blob at 4×).
+            painter.setPen(QtGui.QPen(ink, max(0.3, 1.5 / scale), Qt.SolidLine, Qt.RoundCap))
+            painter.drawPoints(QtGui.QPolygonF(points))
 
     def set_zoom(self, value):
         value = max(0.1, min(4.0, _number(value, 1.0)))
