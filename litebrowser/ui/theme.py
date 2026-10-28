@@ -862,6 +862,26 @@ QPlainTextEdit#NoteEditor:focus { border-color: %(ACCENT)s; background-color: %(
 /* Transient writing-column notices (a move, a wiki-link open). Clay, not the
    note's title: these used to overwrite the title label itself. */
 #NoteStatus { color: %(CLAY)s; font-size: 11px; }
+/* Save gains the accent fill only while a note is actually unsaved, so the one
+   accent in the writing column always means "there is work to keep". */
+QPushButton#NoteSave {
+    background-color: transparent;
+    color: %(TEXT_MUTED)s;
+    border: 1px solid %(RULE)s;
+    padding: 5px 12px;
+}
+QPushButton#NoteSave:hover { color: %(TEXT)s; background-color: %(ITEM_HOVER)s; border-color: %(RULE_STRONG)s; }
+QPushButton#NoteSave[dirty="true"] {
+    background-color: %(ACCENT)s; color: %(TEXT_ON_ACCENT)s;
+    border-color: %(ACCENT)s; font-weight: 600;
+}
+QPushButton#NoteSave[dirty="true"]:hover { background-color: %(ACCENT_FILL_HOVER)s; border-color: %(ACCENT_FILL_HOVER)s; }
+QPushButton#NoteSave:disabled { color: %(TEXT_DIM)s; border-color: %(RULE)s; background-color: transparent; }
+#NoteSaveState { color: %(TEXT_MUTED)s; font-size: 11px; }
+#NoteSaveState[state="dirty"] { color: %(CLAY)s; }
+#NoteSaveState[state="error"] { color: %(DANGER)s; }
+#NoteEmptyTitle { color: %(TEXT)s; font-family: %(FONT_DISPLAY)s; font-size: 18px; font-weight: 600; }
+#NoteEmptyHint { color: %(TEXT_MUTED)s; font-size: 12px; }
 #NoteFindBar { background: transparent; }
 #NoteFind {
     min-height: 22px;

@@ -22,6 +22,8 @@ from PyQt5.QtCore import (
     QEvent,
     QFileSystemWatcher,
     QPointF,
+    QRect,
+    QSize,
     QStringListModel,
     Qt,
     QTimer,
@@ -31,6 +33,7 @@ from PyQt5.QtGui import (
     QBrush,
     QColor,
     QFont,
+    QFontMetrics,
     QIcon,
     QKeySequence,
     QPainter,
@@ -80,6 +83,8 @@ from PyQt5.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStackedWidget,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -424,6 +429,195 @@ WIKILINK_RE = re.compile(r"\[\[([^\[\]]+)\]\]")
 # the Tools row control actually moves the editor (see _apply_note_font_size).
 NOTE_FONT_SIZES = (13, 14, 15, 16, 18, 20)
 NOTE_FONT_DEFAULT = 15
+
+# The note id stays on Qt.UserRole (drag-reorder, deep links and the category
+# drop target all read it); the rendered row payload travels beside it.
+NOTE_ID_ROLE = Qt.UserRole
+NOTE_ROW_ROLE = Qt.UserRole + 1
+# Reading measure: a comfortable line of prose, in pixels.
+NOTE_MEASURE_MAX = 760
+
+
+def _repolish(widget):
+    """Re-apply the stylesheet so a dynamic property takes effect."""
+    style = widget.style()
+    if style is not None:
+        style.unpolish(widget)
+        style.polish(widget)
+    widget.update()
+
+
+def _option_is_selected(option, index) -> bool:
+    """Whether the row is selected — read without Qt flag arithmetic.
+
+    The documented ``option.state & QStyle.State_Selected`` test crashed the
+    whole process inside the list's paint pass on the Qt/PyQt build this app
+    ships with (STATUS_STACK_BUFFER_OVERRUN, no traceback), so the selection is
+    asked of the view's own selection model instead. A synthetic option with no
+    widget — a test painting a row by hand — simply reports unselected.
+    """
+    widget = getattr(option, "widget", None)
+    if widget is None or index is None:
+        return False
+    try:
+        if not index.isValid():
+            return False
+        selection = widget.selectionModel()
+        return bool(selection.isSelected(index)) if selection is not None else False
+    except (AttributeError, TypeError, RuntimeError):
+        return False
+
+
+def _text_width(metrics: QFontMetrics, text: str) -> int:
+    """QFontMetrics.width() is gone in Qt6; horizontalAdvance() is Qt5.11+."""
+    advance = getattr(metrics, "horizontalAdvance", None)
+    if advance is not None:
+        return int(advance(text))
+    return int(metrics.width(text))
+
+
+def _friendly_age(epoch: str) -> str:
+    """"today" / "3d ago" for a note's mtime — plain language, no invented data."""
+    try:
+        stamp = int(epoch)
+    except (TypeError, ValueError):
+        return ""
+    if stamp <= 0:
+        return ""
+    seconds = max(0, int(time.time()) - stamp)
+    if seconds < 90:
+        return "just now"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days == 1:
+        return "yesterday"
+    if days < 14:
+        return f"{days}d ago"
+    if days < 60:
+        return f"{days // 7}w ago"
+    if days < 365:
+        return f"{days // 30}mo ago"
+    return f"{days // 365}y ago"
+
+
+def _note_preview(note: dict, limit: int = 160) -> str:
+    """The note's own opening lines, minus the heading that repeats the title.
+
+    Built from the stored content only — no guessed titles, no summaries.
+    """
+    lines = (note.get("content") or "").splitlines()
+    if lines and lines[0].lstrip().startswith("#"):
+        lines = lines[1:]
+    text = " ".join(line.strip() for line in lines if line.strip())
+    return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
+def _note_word_count(note: dict) -> int:
+    return sum(1 for _ in re.finditer(r"\S+", note.get("content") or ""))
+
+
+def _note_row_payload(note: dict) -> dict:
+    """Everything the row delegate paints, derived from the note record."""
+    category = (note.get("category") or "General").strip() or "General"
+    bits = []
+    age = _friendly_age(note.get("updated_at", ""))
+    if age:
+        bits.append(age)
+    words = _note_word_count(note)
+    if words:
+        bits.append(f"{words} words" if words != 1 else "1 word")
+    return {"title": note.get("title") or "(untitled)", "category": category, "meta": "  ·  ".join(bits)}
+
+
+class NoteRowDelegate(QStyledItemDelegate):
+    """A note row: an elided title over a quiet category · age · length line.
+
+    Painted rather than plain-labelled so a long title elides at the column edge
+    instead of being clipped mid-word, and so the shelf carries a little
+    metadata without turning every row into a box. The theme still paints the
+    row itself (hover, selected wash, focus), so this only draws text on top.
+    Rows without a payload — the empty-list hint — keep the default painting.
+    """
+
+    ROW_HEIGHT = 50
+    LINE_GAP = 2
+
+    def sizeHint(self, option, index):
+        if index.data(NOTE_ROW_ROLE):
+            return QSize(0, self.ROW_HEIGHT)
+        return super().sizeHint(option, index)
+
+    def paint(self, painter, option, index):
+        payload = index.data(NOTE_ROW_ROLE)
+        if not payload:
+            super().paint(painter, option, index)
+            return
+        base = QStyleOptionViewItem(option)
+        self.initStyleOption(base, index)
+        base.text = ""
+        super().paint(painter, base, index)
+
+        inner = option.rect.adjusted(11, 6, -8, -5)
+        if inner.width() < 24 or inner.height() < 18:
+            return
+        try:
+            p = theme.palette()
+        except (AttributeError, KeyError, RuntimeError, TypeError):
+            # A paint pass must never be the thing that crashes the window.
+            return
+        title_font = components._font(13, components.WEIGHT_DEMI)
+        meta_font = components._font(10, components.WEIGHT_NORMAL)
+        title_metrics = QFontMetrics(title_font)
+        meta_metrics = QFontMetrics(meta_font)
+        block = title_metrics.height() + self.LINE_GAP + meta_metrics.height()
+        top = inner.top() + max(0, (inner.height() - block) // 2)
+
+        painter.save()
+        painter.setFont(title_font)
+        # The wash + left rule come from the theme; the title picks up the accent
+        # ink so the open note is unmistakable at a glance.
+        painter.setPen(QColor(p["ACCENT_HOVER"] if _option_is_selected(option, index) else p["TEXT"]))
+        painter.drawText(
+            QRect(inner.left(), top, inner.width(), title_metrics.height()),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            title_metrics.elidedText(str(payload.get("title") or ""), Qt.ElideRight, inner.width()),
+        )
+
+        meta_top = top + title_metrics.height() + self.LINE_GAP
+        meta_rect = QRect(inner.left(), meta_top, inner.width(), meta_metrics.height())
+        painter.setFont(meta_font)
+        category = str(payload.get("category") or "")
+        if category:
+            painter.setPen(QColor(p["CLAY"]))
+            chip = meta_metrics.elidedText(category, Qt.ElideRight, max(0, inner.width() - 20))
+            painter.drawText(meta_rect, Qt.AlignLeft | Qt.AlignVCenter, chip)
+            used = _text_width(meta_metrics, chip) + _text_width(meta_metrics, "  ·  ")
+            rest = QRect(
+                meta_rect.left() + used,
+                meta_rect.top(),
+                max(0, meta_rect.width() - used),
+                meta_rect.height(),
+            )
+            if rest.width() > 12:
+                painter.setPen(QColor(p["TEXT_MUTED"]))
+                painter.drawText(
+                    rest,
+                    Qt.AlignLeft | Qt.AlignVCenter,
+                    meta_metrics.elidedText(str(payload.get("meta") or ""), Qt.ElideRight, rest.width()),
+                )
+        else:
+            painter.setPen(QColor(p["TEXT_MUTED"]))
+            painter.drawText(
+                meta_rect,
+                Qt.AlignLeft | Qt.AlignVCenter,
+                meta_metrics.elidedText(str(payload.get("meta") or ""), Qt.ElideRight, meta_rect.width()),
+            )
+        painter.restore()
 
 
 class WikiLinkHighlighter(QSyntaxHighlighter):
@@ -839,6 +1033,8 @@ class PersonalWindow(QMainWindow):
             if self._notes_splitter.orientation() != orientation:
                 self._notes_splitter.setOrientation(orientation)
                 self._notes_splitter.setSizes([100, 400] if width < 680 else [220, 620])
+        if hasattr(self, "_editor_layout"):
+            self._apply_notes_measure()
         if getattr(self, "_nav_collapsed", False):
             nav = self.findChild(QWidget, "LeftRail")
             if nav:
@@ -934,6 +1130,13 @@ class PersonalWindow(QMainWindow):
                 self.nav_splitter.setSizes([default_w, max(300, sw - default_w)])
 
     def eventFilter(self, obj, ev):
+        # Writing column: its width decides the editor's measure, and it is the
+        # splitter/layout that actually knows the final size (a window resize
+        # reaches _apply_compact_layout before the splitter settles).
+        if obj is getattr(self, "_writing_column", None):
+            if ev.type() == QEvent.Type.Resize:
+                QTimer.singleShot(0, self._apply_notes_measure)
+            return super().eventFilter(obj, ev)
         # Divider between the nav rail and the content: drag to resize, bare
         # click (or double-click) to collapse/expand — same feel as the
         # browser sidebar divider.
@@ -1138,9 +1341,14 @@ class PersonalWindow(QMainWindow):
         l.addWidget(components.page_header("Notes", "A quiet page for reading, writing and linking ideas", kicker="SafeVault"))
         top_row = QHBoxLayout()
         self.ed_note_search = QLineEdit()
-        self.ed_note_search.setPlaceholderText("Search notes in SafeVault...")
-        self.btn_note_back = QPushButton("← All notes")
-        self.btn_note_back.setToolTip("Return to the full, unfiltered note list")
+        self.ed_note_search.setPlaceholderText("Search notes in SafeVault…")
+        self.ed_note_search.setAccessibleName("Search notes")
+        self.ed_note_search.setClearButtonEnabled(True)
+        # This resets the *list* (category filter and selection), so it sits with
+        # the list it resets instead of floating above both columns.
+        self.btn_note_back = components.chip("All notes", checkable=False)
+        self.btn_note_back.setToolTip("Clear the category filter and show every note")
+        self.btn_note_back.setAccessibleName("Show all notes")
         self.cmb_note_category = QComboBox()
         self.cmb_note_category.setEditable(True)
         self.cmb_note_category.setMinimumWidth(130)
@@ -1149,12 +1357,18 @@ class PersonalWindow(QMainWindow):
         # _apply_note_font_size): the old list was point sizes while the control
         # was labelled as a size in the editor's own pixels.
         self.cmb_note_font.addItems([str(size) for size in NOTE_FONT_SIZES])
-        self.btn_new_note = QPushButton("New note")
+        self.btn_new_note = primary_button("New note", "Create a note in the category named in the filter")
         self.btn_delete_note = QPushButton("Delete")
         self.btn_save_note = QPushButton("Save")
-        self.btn_note_ai = QPushButton("Ask AI")
-        self.btn_note_flash = QPushButton("⇄ Make flashcard")
-        self.btn_note_flash.setToolTip("Create a flashcard from the selected text (front = selection, back = prompt)")
+        self.btn_save_note.setObjectName("NoteSave")
+        # Set explicitly so the themed rule is deterministic rather than
+        # depending on a property that no one has written yet.
+        self.btn_save_note.setProperty("dirty", False)
+        self.btn_note_ai = ghost_button("Ask AI", "Ask the assistant about this note")
+        self.btn_note_flash = ghost_button(
+            "⇄ Make flashcard",
+            "Create a flashcard from the selected text (front = selection, back = prompt)",
+        )
         self.chk_neural_graph = QCheckBox("Show neural graph")
         self.chk_neural_graph.setChecked(prefs.get_show_neural_notes_graph(self.base_dir))
         self.chk_neural_graph.toggled.connect(self._on_neural_graph_toggled)
@@ -1165,29 +1379,16 @@ class PersonalWindow(QMainWindow):
         self.ed_note_search.setMinimumWidth(0)
         top_row.addWidget(self.btn_new_note)
         l.addLayout(top_row)
-        # Writing stays primary. Less frequent tools have their own compact,
-        # collapsible row rather than stealing 1300px from the editor.
-        note_actions = QHBoxLayout()
-        note_actions.addWidget(self.btn_note_back)
-        # Transient messages ("Moved 2 notes to Work", "Opened [[X]]") get their
-        # own label. They used to be written into the note title, which then
-        # read as the note's name to the delete prompt, the flashcard back and
-        # the AI context sent to the shell.
-        self.lbl_note_status = QLabel("")
-        self.lbl_note_status.setObjectName("NoteStatus")
-        self.lbl_note_status.setAccessibleName("Note status message")
-        self.lbl_note_status.setWordWrap(True)
-        note_actions.addWidget(self.lbl_note_status, 1)
-        note_actions.addStretch(1)
+        # Save, New note and the note title stay outside this row. Everything
+        # occasional (flashcards, AI, delete, text size, the graph) folds into
+        # one collapsible Tools row inside the writing column.
         self.lbl_note_save = QLabel("Saved locally")
-        self.lbl_note_save.setObjectName("MutedLabel")
+        self.lbl_note_save.setObjectName("NoteSaveState")
         self.lbl_note_save.setAccessibleName("Note save status")
-        note_actions.addWidget(self.lbl_note_save)
-        self.btn_save_note.setObjectName("TopAccentButton")
-        note_actions.addWidget(self.btn_save_note)
+        self.lbl_note_save.setProperty("state", "saved")
         self.btn_note_tools = components.chip("Tools ▾", checkable=True, checked=False)
-        note_actions.addWidget(self.btn_note_tools)
-        l.addLayout(note_actions)
+        self.btn_note_tools.setToolTip("Flashcards, AI, delete, text size and the neural graph")
+        self.btn_note_tools.toggled.connect(self._toggle_note_tools)
         self._note_tools = QWidget()
         tools = QGridLayout(self._note_tools)
         tools.setContentsMargins(0, 0, 0, 0)
@@ -1196,14 +1397,22 @@ class PersonalWindow(QMainWindow):
         tools.addWidget(self.btn_note_flash, 0, 1)
         tools.addWidget(self.btn_delete_note, 0, 2)
         self.btn_delete_note.setObjectName("DangerButton")
-        tools.addWidget(self.cmb_note_font, 1, 0)
+        font_caption = QLabel("Text size")
+        font_caption.setObjectName("MutedLabel")
+        tools.addWidget(font_caption, 1, 0)
+        tools.addWidget(self.cmb_note_font, 1, 1)
         self.cmb_note_font.setAccessibleName("Note text size")
         self.cmb_note_font.setToolTip("Writing size for the note editor")
         self.cmb_note_font.setCurrentText(str(NOTE_FONT_DEFAULT))
-        tools.addWidget(self.chk_neural_graph, 1, 1, 1, 2)
+        tools.addWidget(self.chk_neural_graph, 1, 2)
         self._note_tools.hide()
-        self.btn_note_tools.toggled.connect(self._note_tools.setVisible)
-        l.addWidget(self._note_tools)
+        # Transient messages get their own line at the foot of the page, so a
+        # move or a wiki-link open never rewrites the note's title (see _flash).
+        self.lbl_note_status = QLabel("")
+        self.lbl_note_status.setObjectName("NoteStatus")
+        self.lbl_note_status.setAccessibleName("Note status message")
+        self.lbl_note_status.setWordWrap(True)
+        self.lbl_note_status.hide()
 
         # Find-within-note toolbar. It lives inside the writing column, not
         # above the whole page: two full-width search fields stacked on top of
@@ -1231,14 +1440,21 @@ class PersonalWindow(QMainWindow):
 
         split = QSplitter(Qt.Horizontal)
         left_pane = QWidget()
+        left_pane.setObjectName("NoteListPane")
         left_layout = QVBoxLayout(left_pane)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(4)
+        # The shelf names itself and says how much of the vault it is showing.
+        self._notes_header = components.section_header("Notes", "No notes yet", action=self.btn_note_back)
+        self._notes_header_subtitle = getattr(self._notes_header, "_subtitle", None)
+        left_layout.addWidget(self._notes_header)
         self.notes_list = MeiNotesList(self)
         self.notes_list.setObjectName("CafeList")
         # A narrow shelf must elide its titles, not slice them mid-word.
         self.notes_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.notes_list.setTextElideMode(Qt.ElideRight)
+        self.notes_list.setItemDelegate(NoteRowDelegate(self.notes_list))
+        self.notes_list.setUniformItemSizes(True)
         self.notes_list.currentItemChanged.connect(self._load_selected_note)
         left_layout.addWidget(self.notes_list, 1)
         categories_hint = QLabel("Drag a note to a category to move it")
@@ -1252,15 +1468,33 @@ class PersonalWindow(QMainWindow):
         left_layout.addWidget(self.categories_list)
         split.addWidget(left_pane)
         editor_wrap = QWidget()
+        editor_wrap.setObjectName("NoteWritingColumn")
+        self._writing_column = editor_wrap
+        editor_wrap.installEventFilter(self)
         editor_layout = QVBoxLayout(editor_wrap)
         editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(8)
+        # Kept so the writing column's measure can be inset on a wide window.
+        self._editor_layout = editor_layout
         self.neural_graph = NeuralGraphWidget()
         editor_layout.addWidget(self.neural_graph)
-        editor_layout.addWidget(self._find_bar)
+        # The open note's own header: which note this is, whether it is saved,
+        # and the verbs that act on it — Save next to the text it saves.
+        self._note_head = QWidget()
+        self._note_head.setObjectName("NoteHead")
+        head_row = QHBoxLayout(self._note_head)
+        head_row.setContentsMargins(2, 0, 0, 0)
+        head_row.setSpacing(8)
         self.lbl_note_title = QLabel("No note selected")
         self.lbl_note_title.setObjectName("NoteTitleLabel")
         self.lbl_note_title.setWordWrap(True)
-        editor_layout.addWidget(self.lbl_note_title)
+        head_row.addWidget(self.lbl_note_title, 1)
+        head_row.addWidget(self.lbl_note_save)
+        head_row.addWidget(self.btn_save_note)
+        head_row.addWidget(self.btn_note_tools)
+        editor_layout.addWidget(self._note_head)
+        editor_layout.addWidget(self._note_tools)
+        editor_layout.addWidget(self._find_bar)
         self.lbl_note_image = QLabel()
         self.lbl_note_image.setAlignment(Qt.AlignCenter)
         self.lbl_note_image.hide()
@@ -1269,6 +1503,41 @@ class PersonalWindow(QMainWindow):
         self.btn_open_note_image.setToolTip("Open the attached image at full size")
         self.btn_open_note_image.hide()
         editor_layout.addWidget(self.btn_open_note_image)
+        # Nothing open: say so, and offer the one next step. A live editor with
+        # no note behind it looked broken and quietly dropped what was typed.
+        self._note_empty = QFrame()
+        self._note_empty.setObjectName("EmptyState")
+        empty_box = QVBoxLayout(self._note_empty)
+        empty_box.setContentsMargins(24, 28, 24, 28)
+        empty_box.setSpacing(8)
+        empty_box.setAlignment(Qt.AlignCenter)
+        empty_glyph = QLabel("✎")
+        empty_glyph.setObjectName("EmptyGlyph")
+        empty_glyph.setAlignment(Qt.AlignCenter)
+        empty_box.addWidget(empty_glyph)
+        self._note_empty_title = QLabel("Pick a note to start writing")
+        self._note_empty_title.setObjectName("NoteEmptyTitle")
+        self._note_empty_title.setAlignment(Qt.AlignCenter)
+        self._note_empty_title.setWordWrap(True)
+        empty_box.addWidget(self._note_empty_title)
+        self._note_empty_hint = QLabel("")
+        self._note_empty_hint.setObjectName("NoteEmptyHint")
+        self._note_empty_hint.setAlignment(Qt.AlignCenter)
+        self._note_empty_hint.setWordWrap(True)
+        empty_box.addWidget(self._note_empty_hint)
+        empty_actions = QHBoxLayout()
+        empty_actions.setSpacing(8)
+        empty_actions.addStretch(1)
+        self.btn_empty_new = primary_button("New note", "Create a note in the category named in the filter")
+        self.btn_empty_new.clicked.connect(self._create_note)
+        empty_actions.addWidget(self.btn_empty_new)
+        self.btn_empty_search = ghost_button("Search notes…", "Jump to the note search field")
+        self.btn_empty_search.clicked.connect(self._focus_note_search)
+        empty_actions.addWidget(self.btn_empty_search)
+        empty_actions.addStretch(1)
+        empty_box.addLayout(empty_actions)
+        self._note_empty.hide()
+        editor_layout.addWidget(self._note_empty, 1)
         self.note_editor = QPlainTextEdit()
         self.note_editor.setObjectName("NoteEditor")
         self.note_editor.setAccessibleName("Note content")
@@ -1322,7 +1591,9 @@ class PersonalWindow(QMainWindow):
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         split.setSizes([250, 800])
+        split.splitterMoved.connect(lambda *_: self._apply_notes_measure())
         l.addWidget(split, 1)
+        l.addWidget(self.lbl_note_status)
 
         self.ed_note_search.textChanged.connect(self._schedule_notes_refresh)
         self.btn_note_back.clicked.connect(self._back_to_all_notes)
@@ -1410,6 +1681,69 @@ class PersonalWindow(QMainWindow):
                 document.setDefaultFont(font)
         self.note_editor.update()
 
+    def _toggle_note_tools(self, checked: bool):
+        self._note_tools.setVisible(bool(checked))
+        self.btn_note_tools.setText("Tools ▴" if checked else "Tools ▾")
+        self.btn_note_tools.setToolTip(
+            "Hide the note tools" if checked else "Flashcards, AI, delete, text size and the neural graph"
+        )
+
+    def _focus_note_search(self):
+        self.ed_note_search.setFocus()
+        self.ed_note_search.selectAll()
+
+    def _apply_notes_measure(self):
+        """Keep prose lines readable on a wide window.
+
+        The writing column is inset until the editor measures about 760px; a
+        narrow window and the stacked (vertical) layout keep the full width.
+        Only the column's margins change, so both splitter handles stay
+        draggable and no widget is reparented.
+        """
+        layout = getattr(self, "_editor_layout", None)
+        split = getattr(self, "_notes_splitter", None)
+        if layout is None or split is None:
+            return
+        inset = 0
+        if split.orientation() == Qt.Horizontal:
+            column = getattr(self, "_writing_column", None)
+            width = column.width() if column is not None else 0
+            if width <= 0:
+                sizes = split.sizes()
+                width = sizes[1] if len(sizes) > 1 else 0
+            if width > NOTE_MEASURE_MAX + 120:
+                inset = min(170, (width - NOTE_MEASURE_MAX) // 2)
+        margins = layout.contentsMargins()
+        if margins.left() != inset:
+            layout.setContentsMargins(inset, margins.top(), inset, margins.bottom())
+
+    def _set_save_state(self, state: str, text: str = ""):
+        """One place for the save line and the Save button's weight.
+
+        ``dirty`` gives Save the accent fill so an unsaved note is visible at a
+        glance; ``saved`` leaves it quiet next to a muted line; ``error``
+        (a conflict or a failed write) colours the line instead of adding a
+        badge for a state that should be rare.
+        """
+        label = getattr(self, "lbl_note_save", None)
+        if label is not None:
+            if text:
+                label.setText(text)
+            if label.property("state") != state:
+                label.setProperty("state", state)
+                _repolish(label)
+        button = getattr(self, "btn_save_note", None)
+        if button is not None:
+            on = state == "dirty"
+            if bool(button.property("dirty")) != on:
+                button.setProperty("dirty", on)
+                _repolish(button)
+            button.setToolTip(
+                "Save this note now — it is currently unsaved"
+                if on
+                else "Write this note to SafeVault (saves happen automatically while you type)"
+            )
+
     def _on_note_text_changed(self):
         self._update_note_stats()
         if self._suppress_note_dirty:
@@ -1417,8 +1751,7 @@ class PersonalWindow(QMainWindow):
         if not self.current_note_id:
             return
         self._note_dirty = True
-        if hasattr(self, "lbl_note_save"):
-            self.lbl_note_save.setText("Saving…")
+        self._set_save_state("dirty", "Unsaved changes…")
         self._note_idle_timer.start()
         self._maybe_wiki_autocomplete()
 
@@ -1496,6 +1829,12 @@ class PersonalWindow(QMainWindow):
             if selected_category and selected_category.lower() != "all" and note.get("category", "").lower() != selected_category.lower():
                 continue
             notes.append(note)
+        total_notes = len(personal_service.list_notes(self.base_dir, ""))
+        self._update_notes_header(len(notes), total_notes)
+        # The empty column's wording follows the vault: "no notes yet" becomes
+        # "pick a note" as soon as the first note exists.
+        if not self.current_note_id:
+            self._set_note_empty(bool(total_notes))
         # Honour the user's drag-and-drop arrangement; unknown ids keep their
         # natural (most-recent-first) order at the end.
         order = prefs.get_note_order(self.base_dir)
@@ -1504,9 +1843,12 @@ class PersonalWindow(QMainWindow):
             notes.sort(key=lambda n: rank.get(n["id"], len(order)))
         restored = None
         for note in notes:
-            item = QListWidgetItem(f"[{note.get('category', 'General')}] {note['title']}")
-            item.setToolTip(note["snippet"])
-            item.setData(Qt.UserRole, note["id"])
+            item = QListWidgetItem(note["title"] or "(untitled)")
+            item.setData(NOTE_ID_ROLE, note["id"])
+            # The delegate paints these two lines; the tooltip carries the full
+            # title (long ones elide) and the note's own opening words.
+            item.setData(NOTE_ROW_ROLE, _note_row_payload(note))
+            item.setToolTip(self._note_row_tooltip(note))
             self.notes_list.addItem(item)
             if keep_selection and note["id"] == keep_selection:
                 restored = item
@@ -1525,7 +1867,7 @@ class PersonalWindow(QMainWindow):
         # Empty state: a muted hint row (disabled, unselectable) instead of a
         # blank list when the search/filter matches nothing.
         if self.notes_list.count() == 0:
-            hint = components.hint_list_item("No notes match — press New note to start")
+            hint = components.hint_list_item("No notes match — try another search, or press New note")
             hint.setFlags(Qt.NoItemFlags)
             self.notes_list.addItem(hint)
         if hasattr(self, "_notes_fs_watcher"):
@@ -1533,6 +1875,31 @@ class PersonalWindow(QMainWindow):
             if not hasattr(self, "_last_watcher_sync") or (now - self._last_watcher_sync) > 5.0:
                 self._last_watcher_sync = now
                 self._sync_notes_watcher_paths()
+
+    def _update_notes_header(self, shown: int, total: int):
+        """Say how much of the vault the shelf is showing."""
+        label = getattr(self, "_notes_header_subtitle", None)
+        if label is None:
+            return
+        if total == 0:
+            text = "No notes yet"
+        elif shown == total:
+            text = f"{total} note" if total == 1 else f"{total} notes"
+        else:
+            text = f"{shown} of {total} notes"
+        if label.text() != text:
+            label.setText(text)
+
+    def _note_row_tooltip(self, note: dict) -> str:
+        payload = _note_row_payload(note)
+        head = payload["title"]
+        meta = payload["category"] + (f"  ·  {payload['meta']}" if payload["meta"] else "")
+        preview = _note_preview(note)
+        parts = [head, meta]
+        if preview:
+            parts.append("")
+            parts.append(preview)
+        return "\n".join(parts)
 
     def _refresh_note_categories(self, keep_value: str = ""):
         if not hasattr(self, "cmb_note_category"):
@@ -1628,7 +1995,7 @@ class PersonalWindow(QMainWindow):
         # The category combo is a *filter* only. Do not change it here, or the
         # note's own category would leak into the filter and hide every other note.
         self.lbl_note_title.setText(f"{note['title']}  ·  {self.current_note_category}")
-        self.lbl_note_save.setText("Saved locally")
+        self._set_save_state("saved", "Saved locally")
         self._refresh_backlinks(note)
         self._find_in_note()
 
@@ -1659,13 +2026,49 @@ class PersonalWindow(QMainWindow):
 
         A read-only editor keeps selection, copy and find usable, and stops the
         old failure mode where text typed with nothing open disappeared on the
-        next selection without a word.
+        next selection without a word. The verbs that need an open note go with
+        it, and the column explains the state instead of sitting blank.
         """
+        active = bool(active)
         self.note_editor.setReadOnly(not active)
-        self.btn_save_note.setEnabled(bool(active))
-        self.ed_note_find.setEnabled(bool(active))
-        self.btn_find_prev.setEnabled(bool(active))
-        self.btn_find_next.setEnabled(bool(active))
+        self.btn_save_note.setEnabled(active)
+        self.ed_note_find.setEnabled(active)
+        self.btn_find_prev.setEnabled(active)
+        self.btn_find_next.setEnabled(active)
+        self.lbl_note_save.setVisible(active)
+        self.btn_save_note.setVisible(active)
+        self.btn_note_tools.setVisible(active)
+        if not active:
+            self.btn_note_tools.setChecked(False)
+            self._note_tools.hide()
+            self._set_note_empty()
+        self._find_bar.setVisible(active)
+        self.note_editor.setVisible(active)
+        self._note_empty.setVisible(not active)
+
+    def _set_note_empty(self, has_notes: bool | None = None):
+        """Name the empty column honestly: no vault yet, or nothing selected."""
+        if not hasattr(self, "_note_empty_title"):
+            return
+        if has_notes is None:
+            try:
+                has_notes = bool(personal_service.list_notes(self.base_dir, ""))
+            except OSError:
+                has_notes = True
+        if has_notes:
+            self._note_empty_title.setText("Pick a note to start writing")
+            self._note_empty_hint.setText(
+                "Search or filter on the left. Everything typed here saves to SafeVault automatically, "
+                "and [[double brackets]] link one note to another."
+            )
+            self.btn_empty_search.show()
+        else:
+            self._note_empty_title.setText("Your vault is empty")
+            self._note_empty_hint.setText(
+                "Notes stay on this machine as markdown files under SafeVault. "
+                "Start with a title — you can organise and link them as the shelf fills up."
+            )
+            self.btn_empty_search.hide()
 
     def _refresh_backlinks(self, note):
         """'Linked mentions' — every note whose content references this one."""
@@ -1824,7 +2227,7 @@ class PersonalWindow(QMainWindow):
             saved = personal_service.save_note(self.base_dir, self.current_note_id, self.note_editor.toPlainText(), expected_content=getattr(self, "_note_loaded_content", None))
         except personal_service.NoteConflictError:
             self._flash("Newer version found — your draft is retained. Press Save to keep both.")
-            self.lbl_note_save.setText("Conflict · Save keeps both")
+            self._set_save_state("error", "Conflict · Save keeps both")
             return False
         except OSError:
             saved = False
@@ -1832,13 +2235,11 @@ class PersonalWindow(QMainWindow):
             # Keep both the dirty flag and the text; never navigate away from
             # the only copy of an edit after a failed autosave.
             self._flash("Not saved — check disk access and press Save to retry")
-            if hasattr(self, "lbl_note_save"):
-                self.lbl_note_save.setText("Not saved · retry Save")
+            self._set_save_state("error", "Not saved · retry Save")
             return False
         self._note_dirty = False
         self._note_loaded_content = self.note_editor.toPlainText()
-        if hasattr(self, "lbl_note_save"):
-            self.lbl_note_save.setText("Saved locally")
+        self._set_save_state("saved", "Saved locally")
         return True
 
     def _flash(self, message: str):
@@ -1854,6 +2255,9 @@ class PersonalWindow(QMainWindow):
         if label is None:
             return
         label.setText(message or "")
+        # Hidden while empty so the foot of the page costs nothing until a
+        # message actually exists.
+        label.setVisible(bool(message))
         timer = getattr(self, "_note_status_timer", None)
         if timer is None:
             timer = QTimer(self)
@@ -1867,6 +2271,7 @@ class PersonalWindow(QMainWindow):
         label = getattr(self, "lbl_note_status", None)
         if label is not None:
             label.clear()
+            label.hide()
 
     def _back_to_all_notes(self):
         """Return to the full note list: clear any category filter + selection."""
@@ -2078,7 +2483,7 @@ class PersonalWindow(QMainWindow):
         self._note_loaded_content = note["content"]
         self._note_dirty = False
         self._set_writing_active(True)
-        self.lbl_note_save.setText("Saved locally")
+        self._set_save_state("saved", "Saved locally")
         self._refresh_notes()
         self.select_note(self.current_note_id)
         self._refresh_overview()
