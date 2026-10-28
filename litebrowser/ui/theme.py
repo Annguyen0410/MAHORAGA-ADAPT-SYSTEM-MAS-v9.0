@@ -672,6 +672,9 @@ QListWidget::item:selected, QTreeWidget::item:selected, #TabList::item:selected 
 }
 QListView#CafeList, QListView#TabList { background-color: transparent; }
 #CafeList::item:selected, #TabList::item:selected { background-color: %(ACCENT_WASH)s; color: %(TEXT)s; }
+/* Where the keyboard is: the open row's left rule thickens while the shelf has
+   focus, so tabbing into the note list is visible without a second outline. */
+#CafeList:focus::item:selected { border-left: 3px solid %(ACCENT)s; }
 #TabList:focus {
     border: 1px solid %(ACCENT)s;
     border-radius: %(RADIUS_XS)s;
